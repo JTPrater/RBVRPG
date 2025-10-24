@@ -22,13 +22,13 @@ socket.on("voyage-start-time", (serverStartTime) => {
     narrativeSystem.startTime = voyageStartTime;
     console.log("✅ Narrative system synchronized with server time");
   }
-  
+
   // Update info bar immediately with server time
   if (typeof updateInfoBar === "function") {
     updateInfoBar();
     console.log("🔄 Updated info bar with server-synced time");
   }
-  
+
   // Update sky immediately
   if (typeof updateSkyImage === "function") {
     updateSkyImage();
@@ -5319,11 +5319,35 @@ document.addEventListener("DOMContentLoaded", function () {
     // Speed zones based on timeline
     const acceleration = 0.012; // knots per second squared
 
-    // TESTING: Normal gameplay - start from beginning
-    const SKIP_AHEAD_TIME = 0; // Start from departure
-
-    let targetSpeed = 6; // Target 6 knots for Southampton Water
-    let currentSpeed = 0; // Start from standstill and accelerate
+    // Use server voyage time for synchronization
+    const startTime = voyageStartTime || Date.now(); // Use server time if available
+    const elapsedAtStart = voyageStartTime ? Date.now() - voyageStartTime : 0; // How much time has already passed
+    
+    // Calculate initial speed based on voyage progress
+    let targetSpeed = 6; // Default target
+    let currentSpeed = 0; // Default to stopped
+    
+    if (elapsedAtStart > 0) {
+      // Ship has already been traveling - calculate appropriate speed
+      const elapsedSeconds = elapsedAtStart / 1000;
+      
+      if (elapsedSeconds < 630) { // Less than 10.5 minutes (Southampton Water)
+        targetSpeed = 6;
+        currentSpeed = Math.min(6, elapsedSeconds * 0.05); // Gradual acceleration
+      } else if (elapsedSeconds < 4680) { // Less than 1h 18m (Solent)
+        targetSpeed = 12;
+        currentSpeed = 12;
+      } else if (elapsedSeconds < 5160) { // Less than 1h 26m (Near Isle of Wight)
+        targetSpeed = 18;
+        currentSpeed = 18;
+      } else { // English Channel
+        targetSpeed = 21;
+        currentSpeed = 21;
+      }
+      
+      console.log(`🚢 Syncing departure animation: elapsed=${Math.floor(elapsedSeconds / 60)}min, speed=${currentSpeed}kts`);
+    }
+    
     let departurePosition = 0; // Start from beginning
     let wavesPosition = 0; // Waves start from beginning
     let waterPosition = 0; // Water start from beginning
@@ -5331,7 +5355,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let landMiddlePosition = 0; // Land_middle starts from beginning
     let landEndPosition = 0;
     let isleOfWightPosition = 0;
-    const startTime = Date.now() - SKIP_AHEAD_TIME; // Offset start time to simulate elapsed time
+    // startTime already defined above - using server voyage time
     let lastTimestamp = Date.now();
     let isleOfWightPassing = false;
     let isleOfWightCompleted = false;
@@ -5385,9 +5409,10 @@ document.addEventListener("DOMContentLoaded", function () {
     };
 
     // Start yacht spawning after Southampton Water
+    const elapsedSinceStart = Date.now() - startTime;
     setTimeout(() => {
       scheduleNextYacht();
-    }, Math.max(0, SOUTHAMPTON_WATER_END - SKIP_AHEAD_TIME));
+    }, Math.max(0, SOUTHAMPTON_WATER_END - elapsedSinceStart));
 
     const interval = setInterval(() => {
       if (!departureStarted) {
