@@ -72,8 +72,8 @@ const upload = multer({
 });
 
 // Middleware Setup
-// Disable caching for game files to ensure users get latest updates
-app.use("/game", (req, res, next) => {
+// Disable caching for ALL files to ensure users get latest updates
+app.use((req, res, next) => {
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
