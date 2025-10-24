@@ -1,125 +1,328 @@
-/* registration.css */
+/* registration.css - 1910s Aesthetic */
+
+:root {
+  /* Base Colors - Sepia & Edwardian Era */
+  --primary-color: #2b1810;
+  --secondary-color: #d4af37;
+  --accent-color: #f5f5dc;
+  --text-color: #3d2817;
+  --color-bronze: #8b6914;
+  --color-ivory: #fffef0;
+  --color-copper: #b87333;
+  --color-slate: #5a4a42;
+
+  /* Typography */
+  --font-primary: "Playfair Display", serif;
+  --font-secondary: "Raleway", sans-serif;
+
+  /* Spacing */
+  --spacing-unit: 24px;
+
+  /* Effects */
+  --transition-speed: 0.4s;
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 6px 12px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.3);
+
+  /* Gradients */
+  --gradient-deco: linear-gradient(
+    135deg,
+    #d4af37 0%,
+    #b8860b 50%,
+    #8b6914 100%
+  );
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
 body {
-    margin: 0;
-    font-family: 'Raleway', sans-serif;
-    color: #2c3e50;
-    min-height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: #1a1a1a;
+  margin: 0;
+  font-family: var(--font-secondary);
+  color: var(--text-color);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-image: linear-gradient(
+      135deg,
+      rgba(43, 24, 16, 0.88) 0%,
+      rgba(60, 40, 32, 0.85) 50%,
+      rgba(43, 24, 16, 0.9) 100%
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.03),
+      rgba(0, 0, 0, 0.03) 2px,
+      transparent 2px,
+      transparent 4px
+    ),
+    url("../images/rms britannic new background.png");
+  background-size: cover, 100% 100%, cover;
+  background-position: center, 0 0, center;
+  background-repeat: no-repeat, repeat, no-repeat;
+  background-attachment: fixed, fixed, fixed;
+  padding: var(--spacing-unit);
+  line-height: 1.8;
 }
 
 .registration-container {
-    width: 100%;
-    max-width: 800px;
-    margin: 20px;
-    padding: 40px;
-    background: rgba(255, 255, 255, 0.95);
-    border: 2px solid #c0932b;
-    position: relative;
+  width: 100%;
+  max-width: 700px;
+  padding: 3rem;
+  background: linear-gradient(
+    135deg,
+    rgba(245, 245, 220, 0.97),
+    rgba(245, 245, 220, 0.95)
+  );
+  border: 2px solid var(--secondary-color);
+  border-radius: 0;
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+.registration-container::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  border: 1px dashed var(--secondary-color);
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.registration-container h1 {
+  font-family: var(--font-primary);
+  font-size: 2.2rem;
+  color: var(--text-color);
+  letter-spacing: 2px;
+  text-align: center;
+  margin-bottom: 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.registration-container h1::after {
+  content: "✦ ✦ ✦";
+  display: block;
+  font-size: 1rem;
+  letter-spacing: 8px;
+  color: var(--secondary-color);
+  opacity: 0.7;
+  margin-top: 1rem;
+}
+
+form {
+  position: relative;
+  z-index: 1;
 }
 
 .form-group {
-    margin-bottom: 30px;
-    position: relative;
-    border-bottom: 1px solid #c0932b;
-    padding-bottom: 20px;
+  margin-bottom: 2rem;
+  position: relative;
+  border-bottom: 1px solid var(--secondary-color);
+  padding-bottom: 1.5rem;
+}
+
+.form-group:last-of-type {
+  border-bottom: none;
 }
 
 label {
-    display: block;
-    margin-bottom: 12px;
-    font-family: 'Playfair Display', serif;
-    font-size: 1.2em;
-    color: #1a1a1a;
-    font-weight: 600;
-    letter-spacing: 1px;
+  display: block;
+  margin-bottom: 12px;
+  font-family: var(--font-primary);
+  font-size: 1.1rem;
+  color: var(--text-color);
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
-input, select, textarea {
-    width: 100%;
-    padding: 15px;
-    border: 1px solid #c0932b;
-    font-size: 1.1em;
-    color: #1a1a1a;
-    transition: all 0.3s ease;
-    background: rgba(255, 255, 255, 0.9);
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--secondary-color);
+  border-radius: 2px;
+  font-size: 1rem;
+  color: var(--text-color);
+  transition: all var(--transition-speed) ease;
+  background: rgba(255, 255, 255, 0.95);
+  font-family: var(--font-secondary);
 }
 
-/* Date input constraints */
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--secondary-color);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.1);
+  background: rgba(255, 255, 255, 1);
+}
+
 input[type="date"] {
-    min: "1819-01-01";
-    max: "1919-07-09";
+  width: 100%;
 }
 
 input[type="date"]:invalid {
-    border-color: #e74c3c;
-}
-
-input:focus, select:focus, textarea:focus {
-    border-color: #c0932b;
-    outline: none;
-    box-shadow: 0 0 10px rgba(192, 147, 43, 0.2);
-}
-
-button {
-    background: #c0932b;
-    color: white;
-    padding: 15px 40px;
-    border: none;
-    cursor: pointer;
-    font-family: 'Playfair Display', serif;
-    font-size: 1.2em;
-    transition: all 0.3s ease;
-    margin-top: 20px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-}
-
-button:hover {
-    background: #8b6b1f;
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(192, 147, 43, 0.3);
-}
-
-#avatar-preview {
-    width: 110px;
-    height: 110px;
-    border: 2px solid #c0932b;
-    margin-top: 10px;
-    background: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
+  border-color: #c41e3a;
 }
 
 textarea {
-    resize: vertical;
-    min-height: 120px;
-    line-height: 1.6;
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.7;
 }
 
 select {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23c0932b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11l-7-7h14l-7 7z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 15px center;
-    padding-right: 40px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23d4af37' viewBox='0 0 16 16'%3E%3Cpath d='M8 11l-7-7h14l-7 7z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 15px center;
+  padding-right: 40px;
 }
 
-/* Age display styling */
+/* Avatar Preview */
+#avatar-preview {
+  width: 110px;
+  height: 110px;
+  border: 2px solid var(--secondary-color);
+  border-radius: 2px;
+  margin-top: 12px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background-size: cover;
+  background-position: center;
+  box-shadow: var(--shadow-sm);
+}
+
+#avatar-preview::before {
+  content: "Your Avatar";
+  color: var(--secondary-color);
+  opacity: 0.5;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+#avatar-preview[style*="backgroundImage"]::before {
+  display: none;
+}
+
+/* Age Display */
 #age-display {
-    display: block;
-    margin-top: 8px;
-    font-style: italic;
-    color: #666;
+  display: block;
+  margin-top: 8px;
+  font-style: italic;
+  color: var(--color-slate);
+  font-size: 0.95rem;
 }
 
-/* Error message styling */
+/* Error Messages */
 .error-message {
-    color: #e74c3c;
-    font-size: 0.9em;
-    margin-top: 5px;
+  color: #c41e3a;
+  font-size: 0.9rem;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+/* Submit Button */
+button {
+  background: var(--gradient-deco);
+  color: var(--primary-color);
+  padding: 12px 2.2rem;
+  border: 2px solid var(--secondary-color);
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--font-secondary);
+  font-size: 1rem;
+  font-weight: 600;
+  transition: all var(--transition-speed) ease;
+  margin-top: 1.5rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
+}
+
+button::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.15) 0%,
+    transparent 70%
+  );
+  transform: scale(0);
+  transition: transform 0.5s;
+}
+
+button:hover {
+  background: linear-gradient(135deg, #e8c547 0%, #c4970d 50%, #9a7a1a 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(212, 175, 55, 0.25);
+}
+
+button:hover::before {
+  transform: scale(1);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .registration-container {
+    max-width: 95%;
+    padding: 2rem 1.5rem;
+  }
+
+  .registration-container h1 {
+    font-size: 1.8rem;
+    letter-spacing: 1px;
+  }
+
+  .registration-container h1::after {
+    font-size: 0.85rem;
+    letter-spacing: 6px;
+  }
+
+  label {
+    font-size: 1rem;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 0.95rem;
+    padding: 10px;
+  }
+
+  button {
+    font-size: 0.9rem;
+    padding: 10px 1.5rem;
+  }
+
+  .form-group {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+  }
 }

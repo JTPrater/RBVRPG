@@ -1,77 +1,99 @@
 <!-- registration.html -->
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Britannic Voyage - Registration</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="../css/registration.css">
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Raleway:wght@400;700&display=swap" rel="stylesheet">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Britannic Voyage - Passenger Registration</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="../css/registration.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Raleway:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
     <div class="registration-container">
-        <h1>Passenger Registration</h1>
-        <form id="registrationForm" enctype="multipart/form-data" method="post">
-            <div class="form-group">
-                <label for="avatar">Avatar (110x110px)</label>
-                <input type="file" id="avatar" name="avatar" accept="image/*" required>
-                <div id="avatar-preview"></div>
-            </div>
+      <h1>Passenger Registration</h1>
+      <form id="registrationForm" enctype="multipart/form-data" method="post">
+        <div class="form-group">
+          <label for="avatar">Avatar (110x110px)</label>
+          <input
+            type="file"
+            id="avatar"
+            name="avatar"
+            accept="image/*"
+            required
+          />
+          <div id="avatar-preview"></div>
+        </div>
 
-            <div class="form-group">
-                <label for="forename">Forename</label>
-                <input type="text" id="forename" name="forename" required>
-            </div>
+        <div class="form-group">
+          <label for="forename">Forename</label>
+          <input type="text" id="forename" name="forename" required />
+        </div>
 
-            <div class="form-group">
-                <label for="surname">Surname</label>
-                <input type="text" id="surname" name="surname" required>
-            </div>
+        <div class="form-group">
+          <label for="surname">Surname</label>
+          <input type="text" id="surname" name="surname" required />
+        </div>
 
-            <div class="form-group">
-                <label for="email">Email</label>
-                <input type="email" id="email" name="email" required>
-            </div>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required />
+        </div>
 
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required>
-            </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required />
+        </div>
 
-            <div class="form-group">
-                <label for="birthdate">Birthdate</label>
-                <input type="date" id="birthdate" name="birthdate" required>
-                <span id="age-display"></span>
-            </div>
+        <div class="form-group">
+          <label for="birthdate">Birthdate</label>
+          <input type="date" id="birthdate" name="birthdate" required />
+          <span id="age-display"></span>
+        </div>
 
-            <div class="form-group">
-                <label for="cabin">Select Cabin</label>
-                <select id="cabin" name="cabin" required>
-                    <optgroup label="A Deck">
-                        <option value="A1">A1</option>
-                        <option value="A2">A2</option>
-                    </optgroup>
-                    <optgroup label="B Deck">
-                        <option value="B1">B1</option>
-                        <option value="B2">B2</option>
-                    </optgroup>
-                    <!-- Add more deck options -->
-                </select>
-            </div>
+        <div class="form-group">
+          <label for="cabin">Select Cabin Type</label>
+          <select id="cabin" name="cabin" required>
+            <option value="1st_class_cabins">1st Class Cabins</option>
+            <option value="1st_men">1st Class Single Berths (Men)</option>
+            <option value="1st_women">1st Class Single Berths (Women)</option>
+            <option value="2nd_class_cabins">2nd Class Cabins</option>
+            <option value="2nd_men">2nd Class Single Berths (Men)</option>
+            <option value="2nd_women">2nd Class Single Berths (Women)</option>
+            <option value="3rd_class_cabins">3rd Class Cabins</option>
+            <option value="3rd_men">3rd Class Single Berths (Men)</option>
+            <option value="3rd_women">3rd Class Single Berths (Women)</option>
+            <option value="crew_berths">Crew Berths</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="cabin_number">Select Cabin Number</label>
+          <select id="cabin_number" name="cabin_number" required>
+            <option value="">-- Select a cabin type first --</option>
+          </select>
+        </div>
 
-            <div class="form-group">
-                <label for="departure">Departure</label>
-                <input type="text" id="departure" name="departure" value="Southampton, July 9th 1919, 9:30 AM" readonly>
-            </div>
+        <div class="form-group">
+          <label for="departure">Departure</label>
+          <input
+            type="text"
+            id="departure"
+            name="departure"
+            value="Southampton, July 9th 1919, 9:30 AM"
+            readonly
+          />
+        </div>
 
-            <div class="form-group">
-                <label for="bio">Character Biography</label>
-                <textarea id="bio" name="bio" rows="5" required></textarea>
-            </div>
+        <div class="form-group">
+          <label for="bio">Character Biography</label>
+          <textarea id="bio" name="bio" rows="5" required></textarea>
+        </div>
 
-            <button type="submit">Register</button>
-        </form>
+        <button type="submit">Register</button>
+      </form>
     </div>
     <script src="../js/registration.js"></script>
-</body>
+  </body>
 </html>
