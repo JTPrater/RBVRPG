@@ -11,8 +11,12 @@ let voyageStartTime = null;
 // Listen for voyage start time from server
 socket.on("voyage-start-time", (serverStartTime) => {
   voyageStartTime = serverStartTime;
-  console.log(`⏰ Received voyage start time from server: ${new Date(voyageStartTime).toISOString()}`);
-  
+  console.log(
+    `⏰ Received voyage start time from server: ${new Date(
+      voyageStartTime
+    ).toISOString()}`
+  );
+
   // Initialize narrative system now that we have the start time
   if (narrativeSystem) {
     narrativeSystem.startTime = voyageStartTime;
@@ -167,18 +171,18 @@ window.addEventListener("resize", setScale);
 setScale(); // Initial call to set the scale
 
 // Initialize the open_map audio
-const openMapSound = new Audio("../sounds/open_map.mp3");
+const openMapSound = new Audio("/sounds/open_map.mp3");
 openMapSound.preload = "auto";
 
 console.log("✅ Initialized open_map audio.");
 
 // Initialize door sound effects
-const openDoorSound = new Audio("../sounds/open_door.mp3");
-const closeDoorSound = new Audio("../sounds/close_door.mp3");
+const openDoorSound = new Audio("/sounds/open_door.mp3");
+const closeDoorSound = new Audio("/sounds/close_door.mp3");
 openDoorSound.preload = "auto";
 closeDoorSound.preload = "auto";
 
-const interiorSound = new Audio("../sounds/ship_interior.mp3");
+const interiorSound = new Audio("/sounds/ship_interior.mp3");
 interiorSound.loop = true; // Loop the ambient sound
 interiorSound.volume = 0.5; // Set volume (adjustable as needed)
 
@@ -1705,16 +1709,16 @@ document.addEventListener("DOMContentLoaded", function () {
       fixed.setHours(12, 0, 0); // Set to 12:00:00 PM
       return fixed;
     }
-    
+
     // Calculate elapsed time since voyage started
     const elapsedMs = Date.now() - voyageStartTime;
     const elapsedMinutes = Math.floor(elapsedMs / 60000);
-    
+
     // Start at 12:00 PM (noon) and add elapsed time
     const voyageTime = new Date();
     voyageTime.setHours(12, 0, 0, 0); // Start at noon
     voyageTime.setMinutes(voyageTime.getMinutes() + elapsedMinutes);
-    
+
     return voyageTime;
   }
 
@@ -1739,33 +1743,38 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function updateInfoBar() {
     const bstTime = getBSTTime();
-    
+
     // Calculate voyage progress
     let location = "Southampton";
     let speed = "0 knots";
-    
+
     if (voyageStartTime) {
       const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
-      
+
       // Update location and speed based on voyage progress
-      if (elapsedSeconds < 420) { // First 7 minutes
+      if (elapsedSeconds < 420) {
+        // First 7 minutes
         location = "Southampton";
         speed = "0 knots";
-      } else if (elapsedSeconds < 630) { // 7-10.5 minutes - departing
+      } else if (elapsedSeconds < 630) {
+        // 7-10.5 minutes - departing
         location = "Southampton Water";
         speed = "5 knots";
-      } else if (elapsedSeconds < 4080) { // Up to 1h 8m
+      } else if (elapsedSeconds < 4080) {
+        // Up to 1h 8m
         location = "The Solent";
         speed = "18 knots";
-      } else if (elapsedSeconds < 5160) { // Up to 1h 26m
+      } else if (elapsedSeconds < 5160) {
+        // Up to 1h 26m
         location = "Near Isle of Wight";
         speed = "18 knots";
-      } else { // After 1h 26m
+      } else {
+        // After 1h 26m
         location = "English Channel";
         speed = "21 knots";
       }
     }
-    
+
     const date = `${bstTime.getDate()} of ${bstTime.toLocaleString("default", {
       month: "long",
     })}, ${bstTime.getHours()}:${bstTime
@@ -1815,9 +1824,9 @@ document.addEventListener("DOMContentLoaded", function () {
       night: new Image(),
     };
 
-    cloudImages.day.src = "../images/animations/clouds/day.png";
-    cloudImages.ms.src = "../images/animations/clouds/ms.png";
-    cloudImages.night.src = "../images/animations/clouds/night.png";
+    cloudImages.day.src = "/images/animations/clouds/day.png";
+    cloudImages.ms.src = "/images/animations/clouds/ms.png";
+    cloudImages.night.src = "/images/animations/clouds/night.png";
 
     cloudImages.day.onload = () =>
       console.log("✅ Loaded cloud image: day.png");
@@ -1910,7 +1919,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const smokeParticles = [];
     const smokeImage = new Image();
-    smokeImage.src = "../images/animations/smoke/day.png";
+    smokeImage.src = "/images/animations/smoke/day.png";
 
     smokeImage.onload = () => console.log("✅ Loaded smoke image: day.png");
 
@@ -2101,7 +2110,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const progressBar = document.querySelector(".progress");
   const startButton = document.getElementById("start-button");
   const gameContainer = document.querySelector(".game-container");
-  const whistleSound = new Audio("../sounds/whistle.mp3");
+  const whistleSound = new Audio("/sounds/whistle.mp3");
 
   let progress = 0;
   const loadingInterval = setInterval(() => {
@@ -2247,16 +2256,16 @@ document.addEventListener("DOMContentLoaded", function () {
         const imageToShow = roomData.images[roomData.currentIndex];
         // Check if this is a Southampton location
         if (isSouthamptonRoom(room)) {
-          imageSrc = `../images/animations/locations/southampton/${imageToShow}`;
+          imageSrc = `/images/animations/locations/southampton/${imageToShow}`;
         } else {
-          imageSrc = `../images/animations/locations/britannic/${imageToShow}`;
+          imageSrc = `/images/animations/locations/britannic/${imageToShow}`;
         }
       } else {
         // Check if this is a Southampton location
         if (isSouthamptonRoom(room)) {
-          imageSrc = `../images/animations/locations/southampton/${room.location.image}`;
+          imageSrc = `/images/animations/locations/southampton/${room.location.image}`;
         } else {
-          imageSrc = `../images/animations/locations/britannic/${room.location.image}`;
+          imageSrc = `/images/animations/locations/britannic/${room.location.image}`;
         }
       }
       const locationImage = document.querySelector(".location-image");
@@ -2793,7 +2802,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (category === "town") {
       // Show Town of Southampton map
-      currentDeckImage.src = "../images/decks/southampton.png";
+      currentDeckImage.src = "/images/decks/southampton.png";
 
       // Reset to smaller width for town map (444x600)
       deckplanDisplay.style.maxWidth = "444px";
@@ -2855,7 +2864,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     } else if (category === "berth44ground") {
       // Show Berth 44 Ground map (1132x222 original dimensions)
-      currentDeckImage.src = "../images/decks/berth44ground.jpg";
+      currentDeckImage.src = "/images/decks/berth44ground.jpg";
 
       // Set width to accommodate the wider berth44ground image
       deckplanDisplay.style.maxWidth = "1132px";
@@ -3148,7 +3157,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     } else if (category === "berth44second") {
       // Show Berth 44 2nd Floor map (770x150 original dimensions)
-      currentDeckImage.src = "../images/decks/berth44second.jpg";
+      currentDeckImage.src = "/images/decks/berth44second.jpg";
 
       // Set width to accommodate the berth44second image
       deckplanDisplay.style.maxWidth = "770px";
@@ -3308,7 +3317,7 @@ document.addEventListener("DOMContentLoaded", function () {
     button.addEventListener("click", () => {
       const deck = button.getAttribute("data-deck");
       console.log(`🖱️ Deck button clicked: ${deck}`);
-      currentDeckImage.src = `../images/decks/${deck}.jpg`;
+      currentDeckImage.src = `/images/decks/${deck}.jpg`;
       roomMarkers.innerHTML = "";
       const existingSvg = document.querySelector(".deck-svg-overlay");
       if (existingSvg) existingSvg.remove();
@@ -4137,8 +4146,8 @@ document.addEventListener("DOMContentLoaded", function () {
         );
 
       const newImagePath = isSouthamptonRoom
-        ? `../images/animations/locations/southampton/${newImage}`
-        : `../images/animations/locations/britannic/${newImage}`;
+        ? `/images/animations/locations/southampton/${newImage}`
+        : `/images/animations/locations/britannic/${newImage}`;
 
       // Set the new image source directly (no transitions)
       imgElement.src = newImagePath;
@@ -4181,9 +4190,9 @@ document.addEventListener("DOMContentLoaded", function () {
           deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
 
         if (isSouthamptonImage) {
-          img.src = `../images/animations/locations/southampton/${imageName}`;
+          img.src = `/images/animations/locations/southampton/${imageName}`;
         } else {
-          img.src = `../images/animations/locations/britannic/${imageName}`;
+          img.src = `/images/animations/locations/britannic/${imageName}`;
         }
         this.preloadedImages[roomName].push(img);
       });
@@ -4213,9 +4222,9 @@ document.addEventListener("DOMContentLoaded", function () {
         deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
 
       if (isSouthamptonImage) {
-        imgElement.src = `../images/animations/locations/southampton/${newImage}`;
+        imgElement.src = `/images/animations/locations/southampton/${newImage}`;
       } else {
-        imgElement.src = `../images/animations/locations/britannic/${newImage}`;
+        imgElement.src = `/images/animations/locations/britannic/${newImage}`;
       }
 
       // Create a system message for the change
@@ -4272,7 +4281,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const bioElement = document.getElementById("profile-bio");
 
       // Populate avatar
-      avatarImg.src = characterData.avatar || "../images/default-avatar.png";
+      avatarImg.src = characterData.avatar || "/images/default-avatar.png";
 
       // Populate name
       nameElement.textContent = `${characterData.forename} ${characterData.surname}`;
@@ -5028,7 +5037,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
       playerDiv.innerHTML = `
         <div class="player-avatar">
-          <img src="${player.avatar || "../images/default-avatar.png"}" alt="${
+          <img src="${player.avatar || "/images/default-avatar.png"}" alt="${
         player.name
       }" />
         </div>
@@ -5167,16 +5176,16 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // Play whistle sound
-    const whistleSound = new Audio("../sounds/whistle.mp3");
+    const whistleSound = new Audio("/sounds/whistle.mp3");
     whistleSound.volume = 0.7;
     whistleSound.play();
     console.log("📯 Playing ship whistle...");
 
     // Start "Leaving Port" music midway through whistle (assuming whistle is ~3 seconds)
     setTimeout(() => {
-      const primarySrc = "../sounds/music (not in game)/Leaving Port.mp3";
+      const primarySrc = "/sounds/music (not in game)/Leaving Port.mp3";
       const fallbackSrc =
-        "../sounds/music/[TITANIC] - Leaving Port (Complete Score _ Film Version) - RadioKidCharlemagne (youtube).mp3";
+        "/sounds/music/[TITANIC] - Leaving Port (Complete Score _ Film Version) - RadioKidCharlemagne (youtube).mp3";
 
       const leavingPortMusic = new Audio(primarySrc);
       leavingPortMusic.volume = 0.5;
