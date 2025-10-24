@@ -5,6 +5,21 @@ const chatHistory = {
 };
 console.log("✅ Initialized socket connection and global variables.");
 
+// Global voyage start time (will be set by server)
+let voyageStartTime = null;
+
+// Listen for voyage start time from server
+socket.on("voyage-start-time", (serverStartTime) => {
+  voyageStartTime = serverStartTime;
+  console.log(`⏰ Received voyage start time from server: ${new Date(voyageStartTime).toISOString()}`);
+  
+  // Initialize narrative system now that we have the start time
+  if (narrativeSystem) {
+    narrativeSystem.startTime = voyageStartTime;
+    console.log("✅ Narrative system synchronized with server time");
+  }
+});
+
 // Narrative System
 const narrativeSystem = {
   startTime: null,
@@ -15,7 +30,7 @@ const narrativeSystem = {
       text: "Final preparations are being made for departure...",
     },
     {
-      time: 30, // 30 seconds - Departure begins
+      time: 420, // 7 minutes - Departure begins
       text: "The ship's horn echoes across Southampton Water. The moorings are cast off, and Britannic slowly pulls away from the dock.",
     },
     {
@@ -66,7 +81,8 @@ const narrativeSystem = {
   ],
 
   init() {
-    this.startTime = Date.now();
+    // startTime will be set by server via socket event
+    // Don't set it here anymore
     this.updateNarrative();
     this.updateWeather();
 
@@ -75,7 +91,7 @@ const narrativeSystem = {
     // Update weather every 2 minutes
     setInterval(() => this.updateWeather(), 120000);
 
-    console.log("✅ Narrative system initialized");
+    console.log("✅ Narrative system initialized (waiting for server time)");
   },
 
   updateNarrative() {
@@ -1681,10 +1697,25 @@ document.addEventListener("DOMContentLoaded", function () {
   ];
 
   function getBSTTime() {
-    const now = new Date();
-    const fixed = new Date(now);
-    fixed.setHours(12, 0, 0); // Set to 12:00:00 PM
-    return fixed;
+    // Use server voyage time for synchronization
+    if (!voyageStartTime) {
+      // Fallback if server time not yet received
+      const now = new Date();
+      const fixed = new Date(now);
+      fixed.setHours(12, 0, 0); // Set to 12:00:00 PM
+      return fixed;
+    }
+    
+    // Calculate elapsed time since voyage started
+    const elapsedMs = Date.now() - voyageStartTime;
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    
+    // Start at 12:00 PM (noon) and add elapsed time
+    const voyageTime = new Date();
+    voyageTime.setHours(12, 0, 0, 0); // Start at noon
+    voyageTime.setMinutes(voyageTime.getMinutes() + elapsedMinutes);
+    
+    return voyageTime;
   }
 
   function updateSkyImage() {
@@ -1708,8 +1739,33 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function updateInfoBar() {
     const bstTime = getBSTTime();
-    const location = "Southampton";
-    const speed = "0 knots";
+    
+    // Calculate voyage progress
+    let location = "Southampton";
+    let speed = "0 knots";
+    
+    if (voyageStartTime) {
+      const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
+      
+      // Update location and speed based on voyage progress
+      if (elapsedSeconds < 420) { // First 7 minutes
+        location = "Southampton";
+        speed = "0 knots";
+      } else if (elapsedSeconds < 630) { // 7-10.5 minutes - departing
+        location = "Southampton Water";
+        speed = "5 knots";
+      } else if (elapsedSeconds < 4080) { // Up to 1h 8m
+        location = "The Solent";
+        speed = "18 knots";
+      } else if (elapsedSeconds < 5160) { // Up to 1h 26m
+        location = "Near Isle of Wight";
+        speed = "18 knots";
+      } else { // After 1h 26m
+        location = "English Channel";
+        speed = "21 knots";
+      }
+    }
+    
     const date = `${bstTime.getDate()} of ${bstTime.toLocaleString("default", {
       month: "long",
     })}, ${bstTime.getHours()}:${bstTime

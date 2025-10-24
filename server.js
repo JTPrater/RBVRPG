@@ -16,6 +16,9 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
+// Global voyage start time (set when server starts)
+const voyageStartTime = Date.now();
+
 // MongoDB Configuration
 const initMongoDB = async () => {
   try {
@@ -348,6 +351,10 @@ io.on("connection", (socket) => {
   console.log(`👥 User count increased: ${userCount}`);
 
   socket.isGameClient = false;
+
+  // Send voyage start time to client for synchronization
+  socket.emit("voyage-start-time", voyageStartTime);
+  console.log(`⏰ Sent voyage start time to ${socket.id}: ${voyageStartTime}`);
 
   // Assign a default color or retrieve from a database
   const defaultColor = "#ffffff"; // Default chat color
