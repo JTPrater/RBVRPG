@@ -1674,6 +1674,25 @@ document.addEventListener("DOMContentLoaded", function () {
     console.log("⚠️ No character data found.");
   }
 
+  // Helper function to find player's cabin room
+  function findPlayerCabin() {
+    const characterData = JSON.parse(sessionStorage.getItem("character"));
+    if (!characterData || !characterData.cabin_number) return null;
+    
+    const cabinNumber = characterData.cabin_number;
+    const cabinId = `cabin_${cabinNumber.toLowerCase()}`;
+    
+    // Try to find cabin in a_deck
+    const cabinRoom = deckRooms.a_deck?.find((r) => r.id === cabinId);
+    if (cabinRoom) {
+      console.log(`🏠 Found player's cabin: ${cabinRoom.name}`);
+      return cabinRoom;
+    }
+    
+    console.log(`⚠️ Could not find cabin ${cabinNumber}`);
+    return null;
+  }
+
   // Add event listeners for chat functionality
   sendButton.addEventListener("click", sendMessage);
   chatInput.addEventListener("keypress", function (e) {
@@ -2155,25 +2174,51 @@ document.addEventListener("DOMContentLoaded", function () {
         musicPlayer.updatePlayButton();
         console.log("🎶 Music started.");
       }
-      // Force all players to spawn at Southampton for now
-      // Clear any saved room data to ensure fresh start
-      localStorage.removeItem("lastRoom");
-
-      const initialRoom = deckRooms.southampton.find(
-        (r) => r.name === "Berth 44 Forward Docks"
-      );
-      if (initialRoom) {
-        enterRoom(initialRoom);
-      } else {
-        console.error(
-          "❌ Initial room not found, defaulting to Berth 44 Forward Docks"
-        );
-        const defaultRoom = deckRooms.southampton.find(
-          (r) => r.name === "Berth 44 Forward Docks"
-        );
-        if (defaultRoom) enterRoom(defaultRoom);
-      }
-      console.log("🔑 Attempted to enter initial room.");
+      
+      // Smart spawn logic based on voyage progress
+      // Wait a moment for voyageStartTime to be received from server
+      const waitForSpawn = setInterval(() => {
+        if (!voyageStartTime) return; // Wait for server time
+        
+        clearInterval(waitForSpawn);
+        const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
+        
+        // If ship has already departed (past 7 minutes), spawn on ship
+        if (elapsedSeconds >= 420) {
+          console.log(`🚢 Voyage already departed (${Math.floor(elapsedSeconds / 60)} min elapsed) - spawning on ship`);
+          
+          // Try to find player's cabin first, otherwise default to promenade
+          const cabinRoom = findPlayerCabin();
+          const defaultShipRoom = (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
+            (r) => r.id === "port_promenade_bd"
+          ) || deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd");
+          
+          const spawnRoom = cabinRoom || defaultShipRoom;
+          if (spawnRoom) {
+            enterRoom(spawnRoom);
+          } else {
+            console.error("❌ Could not find ship spawn location");
+          }
+        } else {
+          // Ship hasn't departed yet - spawn at Southampton docks
+          console.log(`⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - spawning at Southampton`);
+          localStorage.removeItem("lastRoom");
+          
+          const initialRoom = deckRooms.southampton.find(
+            (r) => r.name === "Berth 44 Forward Docks"
+          );
+          if (initialRoom) {
+            enterRoom(initialRoom);
+          } else {
+            console.error("❌ Initial room not found, defaulting to Berth 44 Forward Docks");
+            const defaultRoom = deckRooms.southampton.find(
+              (r) => r.name === "Berth 44 Forward Docks"
+            );
+            if (defaultRoom) enterRoom(defaultRoom);
+          }
+        }
+        console.log("🔑 Attempted to enter initial room.");
+      }, 100); // Check every 100ms until server time arrives
     }, 1000);
   });
 
@@ -5493,12 +5538,24 @@ document.addEventListener("DOMContentLoaded", function () {
     // Check repeatedly if it's time to start departure
     const checkDepartureTime = setInterval(() => {
       if (!voyageStartTime) return; // Wait for server time
-      
+
       const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
-      if (elapsedSeconds >= 420) { // 7 minutes
+      
+      // If we're past departure time but haven't started yet
+      if (elapsedSeconds >= 420) {
         clearInterval(checkDepartureTime);
-        startDepartureSequence();
-        console.log("🚢 Starting departure at server-synced 7 minute mark");
+        
+        // Check if departure already happened (player joined late or refreshed)
+        if (elapsedSeconds > 425) { // 5 second grace period after departure
+          console.log(`🚢 Departure already occurred (${Math.floor(elapsedSeconds / 60)} min elapsed) - skipping sequence`);
+          departureStarted = true; // Mark as started to prevent re-triggering
+          // Start animation at current state without playing sounds/music/teleport
+          animateDeparture();
+        } else {
+          // Normal departure - play full sequence
+          console.log("🚢 Starting departure at server-synced 7 minute mark");
+          startDepartureSequence();
+        }
       }
     }, 1000); // Check every second
   } else {
