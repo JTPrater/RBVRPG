@@ -1,0 +1,125 @@
+/* registration.css */
+body {
+    margin: 0;
+    font-family: 'Raleway', sans-serif;
+    color: #2c3e50;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #1a1a1a;
+}
+
+.registration-container {
+    width: 100%;
+    max-width: 800px;
+    margin: 20px;
+    padding: 40px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 2px solid #c0932b;
+    position: relative;
+}
+
+.form-group {
+    margin-bottom: 30px;
+    position: relative;
+    border-bottom: 1px solid #c0932b;
+    padding-bottom: 20px;
+}
+
+label {
+    display: block;
+    margin-bottom: 12px;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.2em;
+    color: #1a1a1a;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+input, select, textarea {
+    width: 100%;
+    padding: 15px;
+    border: 1px solid #c0932b;
+    font-size: 1.1em;
+    color: #1a1a1a;
+    transition: all 0.3s ease;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+/* Date input constraints */
+input[type="date"] {
+    min: "1819-01-01";
+    max: "1919-07-09";
+}
+
+input[type="date"]:invalid {
+    border-color: #e74c3c;
+}
+
+input:focus, select:focus, textarea:focus {
+    border-color: #c0932b;
+    outline: none;
+    box-shadow: 0 0 10px rgba(192, 147, 43, 0.2);
+}
+
+button {
+    background: #c0932b;
+    color: white;
+    padding: 15px 40px;
+    border: none;
+    cursor: pointer;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.2em;
+    transition: all 0.3s ease;
+    margin-top: 20px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+button:hover {
+    background: #8b6b1f;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(192, 147, 43, 0.3);
+}
+
+#avatar-preview {
+    width: 110px;
+    height: 110px;
+    border: 2px solid #c0932b;
+    margin-top: 10px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+textarea {
+    resize: vertical;
+    min-height: 120px;
+    line-height: 1.6;
+}
+
+select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23c0932b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11l-7-7h14l-7 7z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 15px center;
+    padding-right: 40px;
+}
+
+/* Age display styling */
+#age-display {
+    display: block;
+    margin-top: 8px;
+    font-style: italic;
+    color: #666;
+}
+
+/* Error message styling */
+.error-message {
+    color: #e74c3c;
+    font-size: 0.9em;
+    margin-top: 5px;
+}

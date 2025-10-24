@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Britannic Voyage - Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../game/game.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Economica:ital,wght@0,400;0,700;1,400;1,700&family=Julius+Sans+One&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="loading-screen">
+        <img src="../images/game/loading screen.jpg" alt="Loading Screen" class="loading-image">
+        <div class="progress-bar">
+            <div class="progress"></div>
+        </div>
+        <button id="start-button" style="display: none;">Start</button>
+    </div>
+    <div id="chat-container" class="chat-container">
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="chat-input-container">
+            <input type="text" id="chat-input" placeholder="Type a message...">
+            <button id="send-message">Send</button>
+        </div>
+    </div>
+
+    <div class="location-display">
+        <img class="location-image" src="../images/animations/locations/britannic/Grand Staircase.jpg" alt="Current Location">
+    </div>
+
+    <div class="game-container" style="display: none;">
+        <div class="top-bar">
+            <img src="../images/game/top bar.jpg" alt="Game Top Bar" class="game-gui">
+            <img src="../images/game/top bar.png" alt="Game Top Bar Overlay" class="top-text-border">
+            <div class="info-bar">
+                <span id="location">Location: Southampton</span>
+                <span id="speed">Speed: 0 knots</span>
+                <span id="people">People Onboard: 0</span>
+                <span id="date">Date: 01 of January, 00:00</span>
+            </div>
+        </div>
+        
+        <div class="sprite-container">
+            <div class="sky-container">
+                <img src="../images/animations/sky/day.jpg" alt="Day" class="sky day">
+                <img src="../images/animations/sky/ms_5.png" alt="Transition 5" class="sky ms-5">
+                <img src="../images/animations/sky/ms_4.png" alt="Transition 4" class="sky ms-4">
+                <img src="../images/animations/sky/ms_3.png" alt="Transition 3" class="sky ms-3">
+                <img src="../images/animations/sky/ms_2.png" alt="Transition 2" class="sky ms-2">
+                <img src="../images/animations/sky/ms_1.png" alt="Transition 1" class="sky ms-1">
+                <img src="../images/animations/sky/ms_0.png" alt="Transition 0" class="sky ms-0">
+                <img src="../images/animations/sky/night.png" alt="Night" class="sky night">
+            </div>
+
+            <div class="cloud-container">
+                <img src="../images/animations/clouds/day.png" alt="Day Clouds" class="clouds day">
+                <img src="../images/animations/clouds/ms.png" alt="Morning/Sunset Clouds" class="clouds ms">
+                <img src="../images/animations/clouds/night.png" alt="Night Clouds" class="clouds night">
+            </div>
+
+            <div class="water-container">
+                <img src="../images/animations/water.png" alt="Water" class="water">
+                <img src="../images/animations/locations/southampton/southampton_city.png" alt="Southampton City" class="location city">
+                <img src="../images/animations/locations/southampton/dock.png" alt="Dock" class="location dock">
+                <img src="../images/animations/britannic/britannic.png" alt="Britannic" class="britannic">
+                <img src="../images/animations/swater.png" alt="SWater" class="swater">
+            </div>
+        </div>
+
+        <div class="bottom-bar">
+            <img src="../images/game/bottom bar.jpg" alt="Game Bottom Bar" class="game-gui">
+            <img src="../images/game/panel1.png" alt="Panel 1" class="panel1">
+            <div class="panel1-buttons">
+                <button class="panel-btn" id="settings-btn">Settings</button>
+                <button class="panel-btn" id="deckplans-btn">Deckplans</button>
+                <button class="panel-btn" id="rules-btn">Rules</button>
+                <button class="panel-btn">Letters</button>
+                <button class="panel-btn">Events</button>
+                <button class="panel-btn">Log Out</button>
+            </div>
+        </div>
+
+        <div class="character-display">
+            <div class="avatar-frame">
+                <img id="character-avatar" alt="Character Avatar">
+            </div>
+            <span id="character-name"></span>
+        </div>
+
+        <div id="settings-popup" class="settings-popup">
+            <div class="settings-content">
+                <span class="close-settings">&times;</span>
+                <h2>Settings</h2>
+                <div class="music-controls">
+                    <div class="now-playing">
+                        <span id="current-song">Now Playing: </span>
+                    </div>
+                    <div class="audio-controls">
+                        <button id="prev-track" class="control-btn">⏮</button>
+                        <button id="play-pause" class="control-btn">⏯</button>
+                        <button id="next-track" class="control-btn">⏭</button>
+                        <button id="mute-toggle" class="control-btn">🔊</button>
+                    </div>
+                    <div class="volume-control">
+                        <input type="range" id="volume-slider" min="0" max="100" value="100">
+                    </div>
+                </div>
+                <div class="chat-color-selector">
+                    <label for="chat-color-picker">Choose Chat Color:</label>
+                    <input type="color" id="chat-color-picker" name="chat-color-picker" value="#ffffff">
+                </div>
+            </div>
+        </div>
+
+        <div id="deckplans-popup" class="deckplans-popup">
+            <div class="deckplans-content">
+                <span class="close-deckplans">&times;</span>
+                <h2>Ship Deckplans</h2>
+                <div class="deck-buttons">
+                    <button class="deck-btn" data-deck="boat_deck">Boat Deck</button>
+                    <button class="deck-btn" data-deck="a_deck">A Deck</button>
+                    <button class="deck-btn" data-deck="b_deck">B Deck</button>
+                    <button class="deck-btn" data-deck="c_deck">C Deck</button>
+                    <button class="deck-btn" data-deck="d_deck">D Deck</button>
+                    <button class="deck-btn" data-deck="e_deck">E Deck</button>
+                    <button class="deck-btn" data-deck="f_deck">F Deck</button>
+                    <button class="deck-btn" data-deck="lo_deck">Lower Orlop</button>
+                    <button class="deck-btn" data-deck="tank_deck">Tank Deck</button>
+                </div>
+                <div class="deckplan-display">
+                    <img id="current-deck" src="" alt="Deck Plan">
+                    <div id="room-markers"></div>
+                </div>
+            </div>
+        </div>
+
+        <canvas id="smokeCanvas1" width="85" height="200" style="position: absolute; top: -22px; left: 630px;"></canvas>
+        <canvas id="smokeCanvas2" width="85" height="200" style="position: absolute; top: -22px; left: 505px;"></canvas>
+        <canvas id="smokeCanvas3" width="85" height="200" style="position: absolute; top: -22px; left: 390px;"></canvas>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="../game/game.js"></script>
+</body>
+</html>

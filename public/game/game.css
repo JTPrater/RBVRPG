@@ -1,0 +1,814 @@
+/* Ensure all elements use border-box sizing */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+/* game.css */
+body {
+    position: relative;
+    margin: 0;
+    font-family: "Julius Sans One", serif;
+    background-color: #1a1a1a;
+    color: #fff;
+    overflow: auto; /* Allow scrolling */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-width: 1916px; /* Minimum width */
+    min-height: 953px; /* Minimum height */
+}
+
+#loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: url('../images/game/loading screen.jpg') no-repeat center center;
+    background-size: cover;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.loading-image {
+    display: none; /* Hide the loading image as the background image is used */
+}
+
+.progress-bar {
+    width: 30%;
+    height: 20px;
+    background-color: rgba(255, 255, 255, 0.3);
+    margin-top: 20px;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    border: 2px solid #000; /* Art deco style border */
+}
+
+.progress {
+    width: 0;
+    height: 100%;
+    background-color: #333; /* Changed to a dark grey color */
+    border-radius: 10px;
+    transition: width 0.5s;
+}
+
+#start-button {
+    margin-top: 20px;
+    padding: 10px 20px;
+    font-size: 16px;
+    background-color: #333; /* Changed to match the progress bar */
+    color: #fff;
+    border: 2px solid #000; /* Art deco style border */
+    border-radius: 5px;
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    transition: background-color 0.3s, transform 0.3s;
+}
+
+#start-button:hover {
+    background-color: #555; /* Lighter grey on hover */
+    transform: scale(1.05);
+}
+
+.game-container {
+    position: relative; /* Ensure positioning context for its children */
+    width: 1916px; /* Fixed width */
+    height: 953px; /* Fixed height */
+    overflow: hidden; /* Prevent child overflow */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.sprite-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.top-bar {
+    width: 100%;
+    height: 130px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: absolute;
+    top: -50px;
+    z-index: 10;
+}
+
+.bottom-bar {
+    width: 100%;
+    height: 130px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: absolute;
+    bottom: 0;
+    z-index: 10;
+    transition: height 0.3s ease;
+}
+
+.water-container {
+    position: relative;
+    width: 100%;
+    height: 540px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    transition: height 0.3s ease;
+}
+
+.water {
+    width: 100%;
+    height: 130%;
+    position: absolute;
+    bottom: -259px;
+    z-index: 1;
+}
+
+.swater {
+    width: 100%;
+    height: 130%;
+    position: absolute;
+    bottom: -259px;
+    z-index: 4;
+}
+
+.sky-container {
+    position: absolute;
+    top: 130px;
+    width: 100%;
+    height: 373px;
+    z-index: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cloud-container {
+    position: absolute;
+    top: -120px;
+    width: 100%;
+    height: 300px;
+    z-index: 1;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.location {
+    position: absolute;
+    bottom: 430px;
+    left: 0px;
+    width: 50%;
+    z-index: 2;
+}
+
+.britannic {
+    position: absolute;
+    bottom: 390px;
+    left: 0px;
+    width: 50%;
+    z-index: 3;
+}
+
+.top-text-border {
+    position: absolute;
+    top: 55px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 972px;
+    height: 20px;
+    z-index: 11;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.info-bar {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 768px;
+    color: #000000;
+    font-size: 14px;
+    z-index: 12;
+    display: flex;
+    justify-content: space-around;
+}
+
+@keyframes cloudMove {
+    from {
+        transform: translateX(100%);
+    }
+    to {
+        transform: translateX(-100%);
+    }
+}
+
+.clouds {
+    position: absolute;
+    top: 0;
+    width: 45%;
+    height: 50%;
+    opacity: 0;
+    animation: cloudMove 60s linear infinite;
+}
+
+.sky {
+    width: 100%;
+    height: 75%;
+    position: absolute;
+    top: -100px;
+    left: 0;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 5s ease-in-out;
+}
+
+.day, .ms-5, .ms-4, .ms-3, .ms-2, .ms-1, .ms-0, .night {
+    z-index: 0;
+}
+
+.panel1 {
+    position: absolute;
+    bottom: 0;
+    left: 65%;
+    transform: translateX(-50%);
+    z-index: 11;
+    height: 120px; /* Match bottom-bar height */
+    width: 350px;
+}
+
+.panel1-buttons {
+    position: absolute;
+    bottom: 15px;
+    left: 65%;
+    transform: translateX(-50%);
+    z-index: 12;
+    width: 300px;  /* Increased width to accommodate 3 columns */
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);  /* Changed to 3 columns */
+    grid-template-rows: repeat(2, 1fr);     /* Changed to 2 rows */
+    gap: 10px;
+    padding: 10px;
+    z-index: 12; /* Ensure z-index allows the button to be clickable */
+}
+
+.panel-btn {
+    font-family: "Julius Sans One", serif;
+    background-color: #333;
+    color: #fff;
+    border: 1px solid #000;
+    border-radius: 3px;
+    padding: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.3s;
+    font-size: 14px;
+    display: inline-block; /* Ensure visibility */
+}
+
+.settings-popup {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(26, 26, 26, 0.95);
+    border: 2px solid #c0932b;
+    padding: 20px;
+    z-index: 1000;
+    width: 400px;
+    border-radius: 5px;
+}
+
+.settings-content {
+    position: relative;
+    color: #fff;
+}
+
+.close-settings {
+    position: absolute;
+    right: 10px;
+    top: 5px;
+    font-size: 24px;
+    cursor: pointer;
+    color: #c0932b;
+}
+
+.music-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.now-playing {
+    text-align: center;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.audio-controls {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+}
+
+.control-btn {
+    background-color: #333;
+    color: #fff;
+    border: 1px solid #c0932b;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.3s;
+}
+
+.control-btn:hover {
+    background-color: #555;
+    transform: scale(1.1);
+}
+
+.volume-control {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#volume-slider {
+    width: 80%;
+    height: 5px;
+    -webkit-appearance: none;
+    background: #333;
+    border-radius: 5px;
+    outline: none;
+}
+
+#volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    background: #c0932b;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.panel-btn:hover {
+    background-color: #555;
+    transform: scale(1.05);
+}
+
+.character-display {
+    position: absolute;
+    bottom: 15px;
+    left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 12;
+}
+
+.avatar-frame {
+    width: 80px;
+    height: 80px;
+    border: 2px solid #c0932b;
+    background-color: rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+#character-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#character-name {
+    font-family: "Julius Sans One", serif;
+    color: #fff;
+    font-size: 18px;
+    text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.5);
+}
+
+.deckplans-popup {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(26, 26, 26, 0.95);
+    border: 2px solid #c0932b;
+    padding: 20px;
+    z-index: 1000;
+    width: 60%; /* Reduced from 80% */
+    height: 50%; /* Reduced from 80% */
+    border-radius: 5px;
+}
+
+.close-deckplans {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 24px;
+    cursor: pointer;
+    color: #c0932b;
+}
+
+.deckplan-display {
+    position: relative;
+    flex-grow: 1;
+    overflow: hidden;
+    margin-top: 20px;
+    border: 1px solid #c0932b;
+    background-color: rgba(0, 0, 0, 0.3);
+}
+
+#current-deck {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border: 1px solid #c0932b;
+}
+
+/* Base room marker style */
+.room-marker {
+    position: absolute;
+    background-color: #4177f7;
+    border: 2px solid #4177f7;
+    opacity: 0.2;
+    border-radius: 0%;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    pointer-events: auto;
+}
+
+/* Base room marker style */
+.room-marker {
+    position: absolute;
+    background-color: #4177f7;
+    border: 2px solid #4177f7;
+    opacity: 0.2;
+    border-radius: 5%; /* Slight rounding for aesthetics */
+    cursor: pointer;
+    transition: all 0.3s ease;
+    pointer-events: auto;
+    /* Ensure markers scale with viewport width */
+    width: 3.5vw;
+    height: 6.2vw;
+}
+
+/* Specific room size classes using relative units */
+.room-marker.grand-staircase {
+    left: 10%; /* Positioned 10% from the left of the container */
+    bottom: 20%; /* Positioned 20% from the bottom of the container */
+}
+
+.room-marker.gymnasium {
+    width: 4.5vw; /* Adjusted width */
+    height: 2.0vw; /* Adjusted height */
+    left: 50%;    /* Centered horizontally */
+    bottom: 15%;  /* Positioned 15% from the bottom */
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 1024px) {
+    .room-marker.grand-staircase {
+        width: 5vw;
+        height: 8vw;
+        left: 8%;
+        bottom: 18%;
+    }
+
+    .room-marker.gymnasium {
+        width: 6vw;
+        height: 3vw;
+        left: 48%;
+        bottom: 13%;
+    }
+
+    /* Adjust tooltip font size for smaller screens */
+    .room-marker::after {
+        font-size: 14px;
+    }
+}
+
+#toggle-global-chat {
+    background-color: #333;
+    color: #fff;
+    border: 1px solid #c0932b;
+    border-radius: 3px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-family: "Julius Sans One", serif;
+    font-size: 12px;
+    transition: background-color 0.3s;
+    z-index: 10000;
+}
+
+#toggle-global-chat:hover {
+    background-color: #555;
+}
+
+
+.room-marker.cabin {
+    width: 30px;
+    height: 40px;
+}
+
+.room-marker.dining {
+    width: 60px;
+    height: 50px;
+}
+
+/* Keep hover effect */
+.room-marker:hover {
+    background-color: rgba(192, 147, 43, 1);
+    transform: scale(1.05);
+    box-shadow: 0 0 10px rgba(192, 147, 43, 0.5);
+}
+
+.chat-container {
+    display: none; /* Initially hidden */
+    position: absolute;
+    bottom: 132px;
+    left: 0px;
+    width: calc(50vw - 20px); /* 50% of viewport width minus margins */
+    height: 375px;
+    max-height: 375px;
+    background-color: rgba(26, 26, 26, 0.95);
+    border: 2px solid #c0932b;
+    z-index: 9; /* Higher than game-container */
+    overflow: hidden;
+    padding: 10px;
+}
+
+.location-display {
+    display: none;
+    position: absolute;
+    bottom: 132px;
+    right: 0;
+    height: 375px;
+    width: auto; /* Let width be determined by image */
+    background-color: rgba(26, 26, 26, 0.95);
+    border: 2px solid #c0932b;
+    z-index: 9;
+    padding: 0;
+    overflow: hidden;
+}
+
+.location-image {
+    height: 375px;
+    width: auto; /* Maintain aspect ratio */
+    object-fit: contain;
+    display: block;
+}
+
+.chat-messages {
+    height: calc(100% - 50px);
+    overflow-y: auto;
+    padding: 10px;
+    scroll-behavior: smooth; /* Add smooth scrolling */
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-input-container {
+    display: flex;
+    padding: 10px;
+    gap: 5px;
+}
+
+#chat-input {
+    flex-grow: 1;
+    padding: 5px;
+    border: 1px solid #c0932b;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+#send-message {
+    background-color: #c0932b;
+    color: #fff;
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
+}
+
+/* Chat Message Styling */
+.chat-message {
+    font-family: Georgia, serif;
+    font-size: 12px;
+    margin-bottom: 5px;
+}
+
+.chat-message.user {
+    color: var(--user-chat-color, #c0932b); /* Default color if not set */
+}
+
+.chat-message.system {
+    color: #ffcc00; /* System messages retain their color */
+}
+
+@media screen and (width: 1920px) and (height: 1080px) {
+    .game-container {
+        width: 1920px;
+        height: 1080px;
+    }
+
+    .panel1-buttons {
+        bottom: 20px;
+    }
+
+    .bottom-bar {
+        position: fixed;
+        bottom: 0;
+        height: 130px;
+    }
+    
+    .water-container {
+        height: 540px;
+    }
+
+    .water, .swater {
+        bottom: -259px;
+        height: 130%;
+    }
+
+    .location {
+        bottom: 430px;
+    }
+
+    .britannic {
+        bottom: 390px;
+    }
+
+    .sky-container {
+        top: 125px;      /* Adjusted slightly up */
+        height: 485px;   /* Slightly reduced height */
+    }
+
+    .cloud-container {
+        top: -100px;
+        height: 320px;
+    }
+
+    .panel1 {
+        bottom: 0;
+        height: 120px;
+    }
+
+    canvas#smokeCanvas1 {
+        top: 10px !important;
+        left: 625px !important;    /* Moved 15px left from 620px */
+        height: 235px !important;
+    }
+    
+    canvas#smokeCanvas2 {
+        top: 10px !important; 
+        left: 500px !important;    /* Moved 15px left from 495px */
+        height: 235px !important;
+    }
+    
+    canvas#smokeCanvas3 {
+        top: 10px !important;
+        left: 385px !important;    /* Moved 15px left from 380px */
+        height: 235px !important;
+    }
+    .top-bar {
+        top: -50px;
+    }
+}
+
+@media (max-width: 1920px) {
+    .game-container {
+        transform: scale(calc(100vw / 1920));
+    }
+    
+    .chat-container {
+        width: 65%;
+        height: 375px;
+    }
+    .location-display {
+        width: 35%;
+        height: 375px; /* Fixed height */
+    }
+
+    .location-image {
+        height: 100%;
+        width: auto; /* Let width adjust naturally */
+        object-fit: contain;
+    }
+}
+
+@media (max-width: 1366px) {
+    .chat-container,
+    .location-display {
+        width: 35%;
+        height: 40%;
+    }
+}
+
+@media (max-width: 1024px) {
+    .chat-container,
+    .location-display {
+        width: 90vw;
+        left: 5vw;
+        right: 5vw;
+        bottom: 200px;
+    }
+}
+
+.deckplans-content {
+    position: relative;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.deck-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.deck-btn {
+    font-family: "Julius Sans One", serif;
+    background-color: #333;
+    color: #fff;
+    border: 1px solid #c0932b;
+    border-radius: 3px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 14px;
+}
+
+.deck-btn:hover {
+    background-color: #555;
+    transform: scale(1.05);
+}
+
+#room-markers {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 2;
+}
+
+#room-markers {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+@keyframes fadeOutUp {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+}
+
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-out {
+    animation: fadeOutUp 0.5s forwards;
+}
+
+.fade-in {
+    animation: fadeInDown 0.5s forwards;
+}
+
