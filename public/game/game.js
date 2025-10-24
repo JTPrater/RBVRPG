@@ -5488,11 +5488,19 @@ document.addEventListener("DOMContentLoaded", function () {
     }, 16); // ~60fps, but works even when tab is inactive
   }
 
-  // Start departure sequence 30 seconds after game loads
+  // Start departure sequence synchronized with server time (7 minutes after voyage start)
   if (DEPARTURE_SEQUENCE_ENABLED) {
-    setTimeout(() => {
-      startDepartureSequence();
-    }, 30000);
+    // Check repeatedly if it's time to start departure
+    const checkDepartureTime = setInterval(() => {
+      if (!voyageStartTime) return; // Wait for server time
+      
+      const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
+      if (elapsedSeconds >= 420) { // 7 minutes
+        clearInterval(checkDepartureTime);
+        startDepartureSequence();
+        console.log("🚢 Starting departure at server-synced 7 minute mark");
+      }
+    }, 1000); // Check every second
   } else {
     console.log("🚧 Departure sequence scheduling skipped (disabled)");
   }
