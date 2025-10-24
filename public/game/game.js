@@ -22,6 +22,18 @@ socket.on("voyage-start-time", (serverStartTime) => {
     narrativeSystem.startTime = voyageStartTime;
     console.log("✅ Narrative system synchronized with server time");
   }
+  
+  // Update info bar immediately with server time
+  if (typeof updateInfoBar === "function") {
+    updateInfoBar();
+    console.log("🔄 Updated info bar with server-synced time");
+  }
+  
+  // Update sky immediately
+  if (typeof updateSkyImage === "function") {
+    updateSkyImage();
+    console.log("🌤️ Updated sky with server-synced time");
+  }
 });
 
 // Narrative System
@@ -1678,17 +1690,17 @@ document.addEventListener("DOMContentLoaded", function () {
   function findPlayerCabin() {
     const characterData = JSON.parse(sessionStorage.getItem("character"));
     if (!characterData || !characterData.cabin_number) return null;
-    
+
     const cabinNumber = characterData.cabin_number;
     const cabinId = `cabin_${cabinNumber.toLowerCase()}`;
-    
+
     // Try to find cabin in a_deck
     const cabinRoom = deckRooms.a_deck?.find((r) => r.id === cabinId);
     if (cabinRoom) {
       console.log(`🏠 Found player's cabin: ${cabinRoom.name}`);
       return cabinRoom;
     }
-    
+
     console.log(`⚠️ Could not find cabin ${cabinNumber}`);
     return null;
   }
@@ -1811,7 +1823,7 @@ document.addEventListener("DOMContentLoaded", function () {
   updateSkyImage(); // Initial update
   updateInfoBar(); // Initial update
   setInterval(updateSkyImage, 60000); // Update every minute
-  setInterval(updateInfoBar, 60000); // Update every minute
+  setInterval(updateInfoBar, 5000); // Update every 5 seconds for better sync
 
   console.log("✅ Initialized sky image and info bar updates.");
 
@@ -2174,25 +2186,32 @@ document.addEventListener("DOMContentLoaded", function () {
         musicPlayer.updatePlayButton();
         console.log("🎶 Music started.");
       }
-      
+
       // Smart spawn logic based on voyage progress
       // Wait a moment for voyageStartTime to be received from server
       const waitForSpawn = setInterval(() => {
         if (!voyageStartTime) return; // Wait for server time
-        
+
         clearInterval(waitForSpawn);
-        const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
-        
+        const elapsedSeconds = Math.floor(
+          (Date.now() - voyageStartTime) / 1000
+        );
+
         // If ship has already departed (past 7 minutes), spawn on ship
         if (elapsedSeconds >= 420) {
-          console.log(`🚢 Voyage already departed (${Math.floor(elapsedSeconds / 60)} min elapsed) - spawning on ship`);
-          
+          console.log(
+            `🚢 Voyage already departed (${Math.floor(
+              elapsedSeconds / 60
+            )} min elapsed) - spawning on ship`
+          );
+
           // Try to find player's cabin first, otherwise default to promenade
           const cabinRoom = findPlayerCabin();
-          const defaultShipRoom = (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
-            (r) => r.id === "port_promenade_bd"
-          ) || deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd");
-          
+          const defaultShipRoom =
+            (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
+              (r) => r.id === "port_promenade_bd"
+            ) || deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd");
+
           const spawnRoom = cabinRoom || defaultShipRoom;
           if (spawnRoom) {
             enterRoom(spawnRoom);
@@ -2201,16 +2220,20 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         } else {
           // Ship hasn't departed yet - spawn at Southampton docks
-          console.log(`⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - spawning at Southampton`);
+          console.log(
+            `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - spawning at Southampton`
+          );
           localStorage.removeItem("lastRoom");
-          
+
           const initialRoom = deckRooms.southampton.find(
             (r) => r.name === "Berth 44 Forward Docks"
           );
           if (initialRoom) {
             enterRoom(initialRoom);
           } else {
-            console.error("❌ Initial room not found, defaulting to Berth 44 Forward Docks");
+            console.error(
+              "❌ Initial room not found, defaulting to Berth 44 Forward Docks"
+            );
             const defaultRoom = deckRooms.southampton.find(
               (r) => r.name === "Berth 44 Forward Docks"
             );
@@ -5540,14 +5563,19 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!voyageStartTime) return; // Wait for server time
 
       const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
-      
+
       // If we're past departure time but haven't started yet
       if (elapsedSeconds >= 420) {
         clearInterval(checkDepartureTime);
-        
+
         // Check if departure already happened (player joined late or refreshed)
-        if (elapsedSeconds > 425) { // 5 second grace period after departure
-          console.log(`🚢 Departure already occurred (${Math.floor(elapsedSeconds / 60)} min elapsed) - skipping sequence`);
+        if (elapsedSeconds > 425) {
+          // 5 second grace period after departure
+          console.log(
+            `🚢 Departure already occurred (${Math.floor(
+              elapsedSeconds / 60
+            )} min elapsed) - skipping sequence`
+          );
           departureStarted = true; // Mark as started to prevent re-triggering
           // Start animation at current state without playing sounds/music/teleport
           animateDeparture();
