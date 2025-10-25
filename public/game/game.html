@@ -532,7 +532,45 @@
       </div>
     </div>
 
+    <!-- Report Modal -->
+    <div id="report-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Report Issue/Player</h2>
+          <span class="close-modal" id="close-report-modal">&times;</span>
+        </div>
+        <div class="modal-body">
+          <form id="report-form">
+            <div class="form-group">
+              <label for="report-type">Report Type:</label>
+              <select id="report-type" required>
+                <option value="">Select type...</option>
+                <option value="Player Behavior">Player Behavior</option>
+                <option value="Technical Issue">Technical Issue</option>
+                <option value="Game Bug">Game Bug</option>
+                <option value="Harassment">Harassment</option>
+                <option value="Spam">Spam</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="reported-user">Reported Player (optional):</label>
+              <input type="text" id="reported-user" placeholder="Username of player being reported">
+            </div>
+            <div class="form-group">
+              <label for="report-description">Description:</label>
+              <textarea id="report-description" required placeholder="Please describe the issue in detail..." rows="4"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="button" id="cancel-report" class="btn-secondary">Cancel</button>
+              <button type="submit" class="btn-primary">Submit Report</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
-    <script src="../game/game.js"></script>
+    <script src="../game/game.js?v=2"></script>
   </body>
 </html>

@@ -200,6 +200,78 @@ app.get("/api/get-songs", async (req, res) => {
   }
 });
 
+// Report endpoint with Discord webhook
+app.post("/api/report", async (req, res) => {
+  try {
+    const { type, description, reportedUser, reporterName } = req.body;
+    
+    if (!description || !type) {
+      return res.status(400).json({ success: false, error: "Missing required fields" });
+    }
+
+    // Prepare Discord webhook payload
+    const webhookPayload = {
+      embeds: [{
+        title: "🚨 New Player Report",
+        color: 0xff0000, // Red color
+        fields: [
+          {
+            name: "Report Type",
+            value: type,
+            inline: true
+          },
+          {
+            name: "Reporter",
+            value: reporterName || "Anonymous",
+            inline: true
+          },
+          {
+            name: "Time",
+            value: new Date().toLocaleString(),
+            inline: true
+          },
+          {
+            name: "Description",
+            value: description.substring(0, 1024), // Discord embed limit
+            inline: false
+          }
+        ],
+        timestamp: new Date().toISOString()
+      }]
+    };
+
+    // Add reported user if provided
+    if (reportedUser) {
+      webhookPayload.embeds[0].fields.splice(2, 0, {
+        name: "Reported User",
+        value: reportedUser,
+        inline: true
+      });
+    }
+
+    // Send to Discord webhook
+    const webhookResponse = await fetch(process.env.DISCORD_WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(webhookPayload)
+    });
+
+    if (!webhookResponse.ok) {
+      console.error("❌ Discord webhook failed:", webhookResponse.status);
+      return res.status(500).json({ success: false, error: "Failed to send report" });
+    }
+
+    console.log(`✅ Report sent to Discord: ${type} by ${reporterName || 'Anonymous'}`);
+    res.json({ success: true, message: "Report submitted successfully" });
+
+  } catch (error) {
+    console.error("❌ Report error:", error);
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
 // Page Routes
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public/main/registration.html"));

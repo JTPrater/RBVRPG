@@ -2542,3 +2542,157 @@ body {
   font-size: 14px;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.6);
 }
+
+/* Report Modal Styles */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  background: linear-gradient(145deg, #2c3e50, #34495e);
+  margin: 10% auto;
+  padding: 0;
+  border: 3px solid #c0932b;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-50px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-header {
+  background: linear-gradient(145deg, #c0932b, #daa520);
+  color: #2c3e50;
+  padding: 20px;
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #b8860b;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-family: "Julius Sans One", serif;
+  font-size: 24px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.close-modal {
+  color: #2c3e50;
+  font-size: 32px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.close-modal:hover {
+  color: #e74c3c;
+}
+
+.modal-body {
+  padding: 25px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  color: #f5f5dc;
+  font-family: "Julius Sans One", serif;
+  font-size: 16px;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+
+.form-group select,
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #c0932b;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #2c3e50;
+  font-family: "Economica", sans-serif;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.form-group select:focus,
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: #daa520;
+  box-shadow: 0 0 8px rgba(218, 165, 32, 0.3);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: flex-end;
+  margin-top: 25px;
+}
+
+.btn-primary,
+.btn-secondary {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  font-family: "Julius Sans One", serif;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: linear-gradient(145deg, #c0932b, #daa520);
+  color: #2c3e50;
+  border: 2px solid #b8860b;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(145deg, #daa520, #ffd700);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(218, 165, 32, 0.3);
+}
+
+.btn-secondary {
+  background: linear-gradient(145deg, #7f8c8d, #95a5a6);
+  color: #2c3e50;
+  border: 2px solid #6c7b7d;
+}
+
+.btn-secondary:hover {
+  background: linear-gradient(145deg, #95a5a6, #bdc3c7);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(127, 140, 141, 0.3);
+}

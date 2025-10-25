@@ -2756,6 +2756,75 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("settings-popup").style.display = "none";
   });
 
+  // Report button functionality
+  const reportBtn = document.getElementById("report-btn");
+  const reportModal = document.getElementById("report-modal");
+  const closeReportModal = document.getElementById("close-report-modal");
+  const cancelReport = document.getElementById("cancel-report");
+  const reportForm = document.getElementById("report-form");
+
+  reportBtn.addEventListener("click", () => {
+    reportModal.style.display = "block";
+    console.log("🚨 Report modal opened");
+  });
+
+  closeReportModal.addEventListener("click", () => {
+    reportModal.style.display = "none";
+    reportForm.reset();
+  });
+
+  cancelReport.addEventListener("click", () => {
+    reportModal.style.display = "none";
+    reportForm.reset();
+  });
+
+  window.addEventListener("click", (event) => {
+    if (event.target === reportModal) {
+      reportModal.style.display = "none";
+      reportForm.reset();
+    }
+  });
+
+  // Handle report form submission
+  reportForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(reportForm);
+    const reportData = {
+      type: formData.get("report-type"),
+      description: formData.get("report-description"),
+      reportedUser: formData.get("reported-user") || null,
+      reporterName: sessionStorage.getItem("character") ? 
+        JSON.parse(sessionStorage.getItem("character")).forename + " " + 
+        JSON.parse(sessionStorage.getItem("character")).surname : "Anonymous"
+    };
+
+    try {
+      const response = await fetch("/api/report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(reportData),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        alert("✅ Report submitted successfully! Thank you for helping keep the game safe.");
+        reportModal.style.display = "none";
+        reportForm.reset();
+        console.log("✅ Report submitted successfully");
+      } else {
+        alert("❌ Failed to submit report. Please try again.");
+        console.error("❌ Report submission failed:", result.error);
+      }
+    } catch (error) {
+      alert("❌ Error submitting report. Please check your connection and try again.");
+      console.error("❌ Report submission error:", error);
+    }
+  });
+
   // Add Deckplans button functionality
   const deckplansBtn = document.getElementById("deckplans-btn");
   const closeDeckplansBtn = document.querySelector(".close-deckplans");
@@ -5322,32 +5391,40 @@ document.addEventListener("DOMContentLoaded", function () {
     // Use server voyage time for synchronization
     const startTime = voyageStartTime || Date.now(); // Use server time if available
     const elapsedAtStart = voyageStartTime ? Date.now() - voyageStartTime : 0; // How much time has already passed
-    
+
     // Calculate initial speed based on voyage progress
     let targetSpeed = 6; // Default target
     let currentSpeed = 0; // Default to stopped
-    
+
     if (elapsedAtStart > 0) {
       // Ship has already been traveling - calculate appropriate speed
       const elapsedSeconds = elapsedAtStart / 1000;
-      
-      if (elapsedSeconds < 630) { // Less than 10.5 minutes (Southampton Water)
+
+      if (elapsedSeconds < 630) {
+        // Less than 10.5 minutes (Southampton Water)
         targetSpeed = 6;
         currentSpeed = Math.min(6, elapsedSeconds * 0.05); // Gradual acceleration
-      } else if (elapsedSeconds < 4680) { // Less than 1h 18m (Solent)
+      } else if (elapsedSeconds < 4680) {
+        // Less than 1h 18m (Solent)
         targetSpeed = 12;
         currentSpeed = 12;
-      } else if (elapsedSeconds < 5160) { // Less than 1h 26m (Near Isle of Wight)
+      } else if (elapsedSeconds < 5160) {
+        // Less than 1h 26m (Near Isle of Wight)
         targetSpeed = 18;
         currentSpeed = 18;
-      } else { // English Channel
+      } else {
+        // English Channel
         targetSpeed = 21;
         currentSpeed = 21;
       }
-      
-      console.log(`🚢 Syncing departure animation: elapsed=${Math.floor(elapsedSeconds / 60)}min, speed=${currentSpeed}kts`);
+
+      console.log(
+        `🚢 Syncing departure animation: elapsed=${Math.floor(
+          elapsedSeconds / 60
+        )}min, speed=${currentSpeed}kts`
+      );
     }
-    
+
     let departurePosition = 0; // Start from beginning
     let wavesPosition = 0; // Waves start from beginning
     let waterPosition = 0; // Water start from beginning
