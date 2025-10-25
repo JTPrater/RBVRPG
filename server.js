@@ -396,7 +396,60 @@ app.get("/", (req, res) => {
 });
 
 app.get("/game", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/game/game.html"));
+  // Check if user is logged in
+  if (!req.session.userId) {
+    return res.redirect("/");
+  }
+
+  // Check admin-only mode
+  const adminOnlyMode = process.env.ADMIN_ONLY_MODE === "true";
+  if (adminOnlyMode) {
+    // For simplicity, we'll check if the user's email matches the admin email
+    // In a production app, you'd want to store user ID in session and look up properly
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (!adminEmail) {
+      console.error("❌ ADMIN_EMAIL not set in environment variables");
+      return res.status(500).send("Server configuration error");
+    }
+
+    // Check if this user is the admin
+    User.findById(req.session.userId)
+      .then((user) => {
+        if (!user || user.email !== adminEmail || !user.isAdmin) {
+          return res.status(403).send(`
+            <html>
+              <head>
+                <title>Access Restricted</title>
+                <style>
+                  body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+                  .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                  h1 { color: #c41e3a; margin-bottom: 20px; }
+                  p { color: #666; line-height: 1.6; }
+                  .back-link { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
+                  .back-link:hover { background: #0056b3; }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <h1>🚫 Access Restricted</h1>
+                  <p>Game access is currently restricted to administrators only.</p>
+                  <p>Registration is open, but gameplay is limited to authorized personnel.</p>
+                  <a href="/" class="back-link">← Return to Registration</a>
+                </div>
+              </body>
+            </html>
+          `);
+        } else {
+          res.sendFile(path.join(__dirname, "public/game/game.html"));
+        }
+      })
+      .catch((error) => {
+        console.error("❌ Error checking admin status:", error);
+        res.status(500).send("Server error during authentication");
+      });
+  } else {
+    res.sendFile(path.join(__dirname, "public/game/game.html"));
+  }
 });
 
 app.get("/list", (req, res) => {
