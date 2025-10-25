@@ -16,6 +16,9 @@ Required:
 MONGO_URL=mongodb+srv://your-connection-string
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your-webhook-url
 SESSION_SECRET=your-secure-random-session-secret
+CLOUDINARY_CLOUD_NAME=your-cloudinary-cloud-name
+CLOUDINARY_API_KEY=your-cloudinary-api-key
+CLOUDINARY_API_SECRET=your-cloudinary-api-secret
 ADMIN_EMAIL=your-admin-email@example.com
 ADMIN_ONLY_MODE=true
 ALLOWED_ORIGINS=https://your-render-app.onrender.com
@@ -59,7 +62,7 @@ After deployment:
 ### Features Working on Render
 
 ✅ WebSocket connections (Socket.IO)
-✅ File uploads (multer)
+✅ File uploads (Cloudinary - persistent storage)
 ✅ Static file serving
 ✅ Database connections (MongoDB Atlas)
 ✅ Session management
@@ -71,5 +74,6 @@ After deployment:
 
 - **WebSocket Issues**: Check that `ALLOWED_ORIGINS` includes your Render domain
 - **Database Connection**: Ensure MongoDB Atlas allows connections from Render's IP ranges (0.0.0.0/0)
-- **File Uploads**: Render's file system is ephemeral - uploaded files may be lost on redeploy
+- **File Uploads**: Now use Cloudinary for persistent storage - ensure all Cloudinary credentials are set
 - **Session Issues**: Ensure `SESSION_SECRET` is set and secure
+- **Cloudinary Issues**: Verify your Cloudinary account is active and credentials are correct
