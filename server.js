@@ -506,28 +506,36 @@ function emitRoomCount(roomId) {
 // Add cabin data
 const cabins = {
   "1st_class_cabins": {
-    A3: { capacity: 3, occupied: 0 },
     A1: { capacity: 2, occupied: 0 },
     A2: { capacity: 2, occupied: 0 },
+    A3: { capacity: 3, occupied: 0 },
     A4: { capacity: 3, occupied: 0 },
-  },
-  "1st_men": {
-    A9: { capacity: 1, occupied: 0 },
-    A7: { capacity: 1, occupied: 0 },
     A5: { capacity: 1, occupied: 0 },
     A6: { capacity: 1, occupied: 0 },
+    A7: { capacity: 1, occupied: 0 },
     A8: { capacity: 1, occupied: 0 },
+    A9: { capacity: 1, occupied: 0 },
     A10: { capacity: 1, occupied: 0 },
+    A11: { capacity: 1, occupied: 0 },
+    A12: { capacity: 1, occupied: 0 },
+    A14: { capacity: 1, occupied: 0 },
+    A15: { capacity: 1, occupied: 0 },
+    A16: { capacity: 1, occupied: 0 },
+    A17: { capacity: 1, occupied: 0 },
+    A18: { capacity: 1, occupied: 0 },
+    A19: { capacity: 1, occupied: 0 },
+    A20: { capacity: 1, occupied: 0 },
+    A21: { capacity: 1, occupied: 0 },
+    A22: { capacity: 1, occupied: 0 },
+    A23: { capacity: 1, occupied: 0 },
+    A30: { capacity: 2, occupied: 0 },
+    A32: { capacity: 2, occupied: 0 },
+    A34: { capacity: 2, occupied: 0 },
+    A36: { capacity: 1, occupied: 0 },
   },
-  // Placeholder for other types (extend as needed)
-  "1st_women": {},
   "2nd_class_cabins": {},
-  "2nd_men": {},
-  "2nd_women": {},
   "3rd_class_cabins": {},
-  "3rd_men": {},
-  "3rd_women": {},
-  crew_berths: {},
+  "crew_berths": {},
 };
 
 app.get("/api/get_available_cabins", (req, res) => {
