@@ -535,7 +535,7 @@ const cabins = {
   },
   "2nd_class_cabins": {},
   "3rd_class_cabins": {},
-  "crew_berths": {},
+  crew_berths: {},
 };
 
 app.get("/api/get_available_cabins", (req, res) => {
