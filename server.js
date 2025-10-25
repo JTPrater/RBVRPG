@@ -175,7 +175,7 @@ const limiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 auth attempts per windowMs
+  max: 20, // limit each IP to 20 auth attempts per windowMs
   message: "Too many authentication attempts, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
@@ -201,7 +201,10 @@ app.post(
   upload.single("avatar"),
   async (req, res) => {
     try {
+      console.log(`📝 Registration attempt from IP: ${req.ip}, Email: ${req.body.email}`);
+
       if (!req.file) {
+        console.log(`❌ Registration failed: No avatar file uploaded for ${req.body.email}`);
         return res
           .status(400)
           .json({ success: false, error: "No avatar file uploaded" });
@@ -209,6 +212,7 @@ app.post(
 
       const existingUser = await User.findOne({ email: req.body.email });
       if (existingUser) {
+        console.log(`❌ Registration failed: Email already registered: ${req.body.email}`);
         return res
           .status(400)
           .json({ success: false, error: "Email already registered" });
@@ -216,15 +220,21 @@ app.post(
 
       const cabinType = req.body.cabin;
       const cabinNumber = req.body.cabin_number;
+
+      console.log(`🏠 Checking cabin: ${cabinType} - ${cabinNumber}`);
+
       if (!cabins[cabinType] || !cabins[cabinType][cabinNumber]) {
+        console.log(`❌ Registration failed: Invalid cabin selected: ${cabinType} - ${cabinNumber}`);
         return res
           .status(400)
           .json({ success: false, error: "Invalid cabin selected" });
       }
+
       if (
         cabins[cabinType][cabinNumber].occupied >=
         cabins[cabinType][cabinNumber].capacity
       ) {
+        console.log(`❌ Registration failed: Cabin fully booked: ${cabinType} - ${cabinNumber}`);
         return res
           .status(400)
           .json({ success: false, error: "Selected cabin is fully booked" });
@@ -249,7 +259,7 @@ app.post(
       cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
       io.emit("new-passenger", newUser.character);
       console.log(
-        `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`
+        `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}, Total registered: ${await User.countDocuments()}`
       );
       res.json({ success: true, passenger: newUser.character });
     } catch (error) {
