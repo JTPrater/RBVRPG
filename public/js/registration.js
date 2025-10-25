@@ -120,6 +120,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
+  // Load cabins on page load if cabin type is already selected
+  if (cabinSelect.value) {
+    cabinSelect.dispatchEvent(new Event('change'));
+  }
+
   // Form submission
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
