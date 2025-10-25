@@ -129,6 +129,9 @@ const upload = multer({
 });
 
 // Middleware Setup
+// Trust proxy - required for Render and other reverse proxies
+app.set("trust proxy", 1);
+
 // Disable caching for ALL files to ensure users get latest updates
 app.use((req, res, next) => {
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
