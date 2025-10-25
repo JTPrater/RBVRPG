@@ -389,6 +389,21 @@
         </div>
 
         <div id="chat-container" class="chat-container">
+          <button
+            id="global-chat-toggle"
+            style="
+              position: absolute;
+              top: 10px;
+              right: 10px;
+              background: transparent;
+              border: none;
+              font-size: 20px;
+              cursor: pointer;
+              z-index: 10;
+            "
+          >
+            🌐
+          </button>
           <div id="chat-messages" class="chat-messages"></div>
           <div class="chat-input-container">
             <input
@@ -555,14 +570,25 @@
             </div>
             <div class="form-group">
               <label for="reported-user">Reported Player (optional):</label>
-              <input type="text" id="reported-user" placeholder="Username of player being reported">
+              <input
+                type="text"
+                id="reported-user"
+                placeholder="Username of player being reported"
+              />
             </div>
             <div class="form-group">
               <label for="report-description">Description:</label>
-              <textarea id="report-description" required placeholder="Please describe the issue in detail..." rows="4"></textarea>
+              <textarea
+                id="report-description"
+                required
+                placeholder="Please describe the issue in detail..."
+                rows="4"
+              ></textarea>
             </div>
             <div class="form-actions">
-              <button type="button" id="cancel-report" class="btn-secondary">Cancel</button>
+              <button type="button" id="cancel-report" class="btn-secondary">
+                Cancel
+              </button>
               <button type="submit" class="btn-primary">Submit Report</button>
             </div>
           </form>
@@ -571,6 +597,8 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
+    <!-- DOMPurify for XSS protection -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.7/purify.min.js"></script>
     <script src="../game/game.js?v=2"></script>
   </body>
 </html>

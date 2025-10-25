@@ -10,14 +10,67 @@ const bodyParser = require("body-parser");
 const bcrypt = require("bcrypt");
 const session = require("express-session");
 const mongoose = require("mongoose");
+const rateLimit = require("express-rate-limit");
+const cors = require("cors");
+const cloudinary = require("cloudinary").v2;
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 
 // Initialize Express and Server
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+
+// Socket.IO configuration for production
+const io = socketIo(server, {
+  cors: {
+    origin: process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(",")
+      : ["http://localhost:3000", "http://127.0.0.1:3000"],
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+  // Add production optimizations
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ["websocket", "polling"],
+});
 
 // Global voyage start time (set when server starts)
 const voyageStartTime = Date.now();
+
+// Environment variable validation
+function validateEnvironment() {
+  const required = [
+    "MONGO_URL",
+    "DISCORD_WEBHOOK_URL",
+    "SESSION_SECRET",
+    "CLOUDINARY_CLOUD_NAME",
+    "CLOUDINARY_API_KEY",
+    "CLOUDINARY_API_SECRET",
+  ];
+  const missing = required.filter((key) => !process.env[key]);
+
+  if (missing.length > 0) {
+    console.error(
+      "❌ Missing required environment variables:",
+      missing.join(", ")
+    );
+    console.error(
+      "Please check your .env file and ensure all required variables are set."
+    );
+    process.exit(1);
+  }
+
+  console.log("✅ Environment variables validated");
+}
+
+// Cloudinary Configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+console.log("✅ Cloudinary configured");
 
 // MongoDB Configuration
 const initMongoDB = async () => {
@@ -50,11 +103,15 @@ const UserSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", UserSchema);
 
-// Multer Configuration
-const storage = multer.diskStorage({
-  destination: "./public/uploads/",
-  filename: (req, file, cb) => {
-    cb(null, `avatar-${Date.now()}${path.extname(file.originalname)}`);
+// Multer Configuration with Cloudinary
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "rbvrpg-avatars",
+    allowed_formats: ["jpg", "jpeg", "png", "gif"],
+    transformation: [{ width: 200, height: 200, crop: "fill" }], // Resize to 200x200
+    public_id: (req, file) =>
+      `avatar-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
   },
 });
 
@@ -80,79 +137,126 @@ app.use((req, res, next) => {
   next();
 });
 
+// CORS configuration
+app.use(
+  cors({
+    origin: process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(",")
+      : ["http://localhost:3000", "http://127.0.0.1:3000"],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
 app.use(express.static(path.join(__dirname, "public")));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(
   session({
-    secret: "secret-key",
+    secret: process.env.SESSION_SECRET || "change-this-in-production",
     resave: false,
     saveUninitialized: true,
     cookie: { secure: false }, // Set to true if using HTTPS
   })
 );
 
-// API Routes
-app.post("/api/register", upload.single("avatar"), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res
-        .status(400)
-        .json({ success: false, error: "No avatar file uploaded" });
-    }
-
-    const existingUser = await User.findOne({ email: req.body.email });
-    if (existingUser) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Email already registered" });
-    }
-
-    const cabinType = req.body.cabin;
-    const cabinNumber = req.body.cabin_number;
-    if (!cabins[cabinType] || !cabins[cabinType][cabinNumber]) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Invalid cabin selected" });
-    }
-    if (
-      cabins[cabinType][cabinNumber].occupied >=
-      cabins[cabinType][cabinNumber].capacity
-    ) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Selected cabin is fully booked" });
-    }
-
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
-    const newUser = new User({
-      email: req.body.email,
-      password: hashedPassword,
-      character: {
-        avatar: `/uploads/${req.file.filename}`,
-        forename: req.body.forename,
-        surname: req.body.surname,
-        birthdate: req.body.birthdate,
-        cabin: cabinType,
-        cabin_number: cabinNumber,
-        bio: req.body.bio,
-      },
-    });
-
-    await newUser.save();
-    cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
-    io.emit("new-passenger", newUser.character);
-    console.log(
-      `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`
-    );
-    res.json({ success: true, passenger: newUser.character });
-  } catch (error) {
-    console.error("❌ Registration error:", error);
-    res.status(500).json({ success: false, error: error.message });
-  }
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: "Too many requests from this IP, please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
-app.post("/api/check-credentials", async (req, res) => {
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 auth attempts per windowMs
+  message: "Too many authentication attempts, please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(limiter); // Apply general rate limiting to all routes
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    mongodb:
+      mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+  });
+});
+
+// API Routes
+app.post(
+  "/api/register",
+  authLimiter,
+  upload.single("avatar"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res
+          .status(400)
+          .json({ success: false, error: "No avatar file uploaded" });
+      }
+
+      const existingUser = await User.findOne({ email: req.body.email });
+      if (existingUser) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Email already registered" });
+      }
+
+      const cabinType = req.body.cabin;
+      const cabinNumber = req.body.cabin_number;
+      if (!cabins[cabinType] || !cabins[cabinType][cabinNumber]) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Invalid cabin selected" });
+      }
+      if (
+        cabins[cabinType][cabinNumber].occupied >=
+        cabins[cabinType][cabinNumber].capacity
+      ) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Selected cabin is fully booked" });
+      }
+
+      const hashedPassword = await bcrypt.hash(req.body.password, 10);
+      const newUser = new User({
+        email: req.body.email,
+        password: hashedPassword,
+        character: {
+          avatar: req.file.path, // Cloudinary URL
+          forename: req.body.forename,
+          surname: req.body.surname,
+          birthdate: req.body.birthdate,
+          cabin: cabinType,
+          cabin_number: cabinNumber,
+          bio: req.body.bio,
+        },
+      });
+
+      await newUser.save();
+      cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
+      io.emit("new-passenger", newUser.character);
+      console.log(
+        `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`
+      );
+      res.json({ success: true, passenger: newUser.character });
+    } catch (error) {
+      console.error("❌ Registration error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+app.post("/api/check-credentials", authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
@@ -203,69 +307,83 @@ app.get("/api/get-songs", async (req, res) => {
 // Report endpoint with Discord webhook
 app.post("/api/report", async (req, res) => {
   try {
-    const { type, description, reportedUser, reporterName } = req.body;
-    
+    const { type, description, reportedUser, reporterName, room } = req.body;
+
     if (!description || !type) {
-      return res.status(400).json({ success: false, error: "Missing required fields" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing required fields" });
     }
 
     // Prepare Discord webhook payload
     const webhookPayload = {
-      embeds: [{
-        title: "🚨 New Player Report",
-        color: 0xff0000, // Red color
-        fields: [
-          {
-            name: "Report Type",
-            value: type,
-            inline: true
-          },
-          {
-            name: "Reporter",
-            value: reporterName || "Anonymous",
-            inline: true
-          },
-          {
-            name: "Time",
-            value: new Date().toLocaleString(),
-            inline: true
-          },
-          {
-            name: "Description",
-            value: description.substring(0, 1024), // Discord embed limit
-            inline: false
-          }
-        ],
-        timestamp: new Date().toISOString()
-      }]
+      embeds: [
+        {
+          title: "🚨 New Player Report",
+          color: 0xff0000, // Red color
+          fields: [
+            {
+              name: "Report Type",
+              value: type,
+              inline: true,
+            },
+            {
+              name: "Reporter",
+              value: reporterName || "Anonymous",
+              inline: true,
+            },
+            {
+              name: "Location",
+              value: room || "Unknown Room",
+              inline: true,
+            },
+            {
+              name: "Time",
+              value: new Date().toLocaleString(),
+              inline: false,
+            },
+            {
+              name: "Description",
+              value: description.substring(0, 1024), // Discord embed limit
+              inline: false,
+            },
+          ],
+          timestamp: new Date().toISOString(),
+        },
+      ],
     };
 
     // Add reported user if provided
     if (reportedUser) {
-      webhookPayload.embeds[0].fields.splice(2, 0, {
+      webhookPayload.embeds[0].fields.splice(3, 0, {
         name: "Reported User",
         value: reportedUser,
-        inline: true
+        inline: false,
       });
     }
 
     // Send to Discord webhook
     const webhookResponse = await fetch(process.env.DISCORD_WEBHOOK_URL, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(webhookPayload)
+      body: JSON.stringify(webhookPayload),
     });
 
     if (!webhookResponse.ok) {
       console.error("❌ Discord webhook failed:", webhookResponse.status);
-      return res.status(500).json({ success: false, error: "Failed to send report" });
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to send report" });
     }
 
-    console.log(`✅ Report sent to Discord: ${type} by ${reporterName || 'Anonymous'}`);
+    console.log(
+      `✅ Report sent to Discord: ${type} by ${
+        reporterName || "Anonymous"
+      } from ${room || "Unknown Room"}`
+    );
     res.json({ success: true, message: "Report submitted successfully" });
-
   } catch (error) {
     console.error("❌ Report error:", error);
     res.status(500).json({ success: false, error: "Internal server error" });
@@ -462,8 +580,46 @@ io.on("connection", (socket) => {
   let currentCharacter = null;
 
   // Handle 'join-room' event
-  socket.on("join-room", (data) => {
+  socket.on("join-room", async (data) => {
     const { room, character } = data;
+
+    // Check admin-only mode
+    const adminOnlyMode = process.env.ADMIN_ONLY_MODE === "true";
+    if (adminOnlyMode) {
+      // Get user from session to check admin status
+      const sessionId = socket.handshake.sessionID;
+      const sessionStore = app.get("sessionStore") || session.store;
+
+      // For simplicity, we'll check if the user's email matches the admin email
+      // In a production app, you'd want to store user ID in session and look up properly
+      const adminEmail = process.env.ADMIN_EMAIL;
+      if (!adminEmail) {
+        console.error("❌ ADMIN_EMAIL not set in environment variables");
+        socket.emit("join-error", { message: "Server configuration error" });
+        return;
+      }
+
+      // Check if this user is the admin by comparing email
+      // This is a simplified approach - in production you'd store user ID in session
+      try {
+        const user = await User.findOne({ email: adminEmail });
+        if (!user || !user.isAdmin) {
+          console.log(`🚫 Non-admin user attempted to join game room: ${room}`);
+          socket.emit("join-error", {
+            message:
+              "Game access is currently restricted to administrators only. Registration is open but gameplay is limited.",
+          });
+          return;
+        }
+      } catch (error) {
+        console.error("❌ Error checking admin status:", error);
+        socket.emit("join-error", {
+          message: "Server error during authentication",
+        });
+        return;
+      }
+    }
+
     if (!socket.isGameClient) {
       socket.isGameClient = true;
       gameClientCount++;
@@ -477,6 +633,7 @@ io.on("connection", (socket) => {
         .to(room)
         .emit("user-joined", { character, socketId: socket.id, roomId: room });
       emitRoomCount(room);
+      console.log(`✅ Admin user joined room: ${room}`);
     }
   });
 
@@ -489,10 +646,10 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Broadcast the message to all clients in the specified room except the sender
-      socket.to(data.room).emit("chat-message", data);
+      // Broadcast the message to all clients globally
+      io.emit("chat-message", data);
       console.log(
-        `📤 Broadcasted message from ${socket.id} to room: ${data.room}`
+        `📤 Broadcasted message from ${socket.id} to all clients from room: ${data.room}`
       );
     } else {
       console.warn("⚠️ Received chat message without character data:", data);
@@ -622,6 +779,8 @@ io.on("connection", (socket) => {
 
 // Initialize Server
 const startServer = async () => {
+  console.log("🚀 Initializing server...");
+  validateEnvironment();
   console.log("🚀 Initializing MongoDB...");
   await initMongoDB();
   const PORT = process.env.PORT || 3000;

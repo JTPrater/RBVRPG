@@ -3,6 +3,7 @@ let currentRoom = { name: null, id: null };
 const chatHistory = {
   rooms: {},
 };
+let isGlobalChat = false; // Global chat toggle state
 console.log("✅ Initialized socket connection and global variables.");
 
 // Global voyage start time (will be set by server)
@@ -1714,6 +1715,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
+  // Add event listener for global chat toggle
+  const globalChatToggle = document.getElementById("global-chat-toggle");
+  globalChatToggle.addEventListener("click", toggleGlobalChat);
+
   console.log("✅ Added event listeners for chat functionality.");
 
   const skyImages = document.querySelectorAll(".sky");
@@ -2343,8 +2348,8 @@ document.addEventListener("DOMContentLoaded", function () {
       const prevCabinActions = document.getElementById("cabin-action-buttons");
       if (prevCabinActions) prevCabinActions.remove();
 
-      // Add shower, toilet, and sleep buttons for Cabin A1 and A2
-      if (room.id === "cabin_a1" || room.id === "cabin_a2") {
+      // Add shower, toilet, and sleep buttons for all cabin types
+      if (room.type === "cabin") {
         const locationDisplay = document.querySelector(".location-display");
         const actionDiv = document.createElement("div");
         actionDiv.id = "cabin-action-buttons";
@@ -2574,8 +2579,6 @@ document.addEventListener("DOMContentLoaded", function () {
       console.log("✉️ Sending message:", messageData);
       socket.emit("chat-message", messageData);
       chatInput.value = "";
-
-      addChatMessage(messageData);
     }
   }
 
@@ -2584,35 +2587,60 @@ document.addEventListener("DOMContentLoaded", function () {
     const chatMessages = document.getElementById("chat-messages");
     chatMessages.innerHTML = "";
 
-    // Get messages only for current room
-    const roomMessages = chatHistory.rooms[currentRoom.name] || [];
-    console.log(
-      `📦 Found ${roomMessages.length} messages for room ${currentRoom.name}`
-    );
+    let messagesToShow = [];
+    if (isGlobalChat) {
+      // Collect all messages from all rooms
+      Object.values(chatHistory.rooms).forEach((roomMessages) => {
+        messagesToShow = messagesToShow.concat(roomMessages);
+      });
+      // Sort by timestamp
+      messagesToShow.sort((a, b) => a.timestamp - b.timestamp);
+    } else {
+      // Get messages only for current room
+      messagesToShow = chatHistory.rooms[currentRoom.name] || [];
+    }
 
-    roomMessages.forEach((data) => {
-      // Double check the room match
-      if (data.room === currentRoom.name) {
-        const messageDiv = document.createElement("div");
-        messageDiv.className = `chat-message ${data.type || "user"}`;
-        messageDiv.setAttribute("data-user-id", data.userId);
+    console.log(`📦 Found ${messagesToShow.length} messages to display`);
 
-        if (data.type === "system") {
-          messageDiv.textContent = data.message;
-          messageDiv.style.color = "#ffcc00";
+    messagesToShow.forEach((data) => {
+      const messageDiv = document.createElement("div");
+      messageDiv.className = `chat-message ${data.type || "user"}`;
+      messageDiv.setAttribute("data-user-id", data.userId);
+
+      if (data.type === "system") {
+        messageDiv.textContent = data.message;
+        messageDiv.style.color = "#ffcc00";
+      } else {
+        const fullName = `${data.character.forename} ${data.character.surname}`;
+        if (isGlobalChat) {
+          const roomName = getRoomNameById(data.room);
+          const roomSpan = document.createElement("span");
+          roomSpan.textContent = roomName;
+          roomSpan.style.textDecoration = "underline";
+          roomSpan.style.cursor = "pointer";
+          roomSpan.addEventListener("click", () => {
+            // Find the room object and enter it
+            const room = findRoomById(data.room);
+            if (room) {
+              enterRoom(room);
+            }
+          });
+          messageDiv.appendChild(document.createTextNode(`${fullName} `));
+          messageDiv.appendChild(roomSpan);
+          messageDiv.appendChild(document.createTextNode(`: ${data.message}`));
         } else {
-          const fullName =
-            `${data.character.forename} ${data.character.surname}`.trim();
           messageDiv.textContent = `${fullName}: ${data.message}`;
-          messageDiv.style.color = data.color || "#c0932b";
         }
-
-        chatMessages.appendChild(messageDiv);
+        messageDiv.style.color = data.color || "#c0932b";
       }
+
+      chatMessages.appendChild(messageDiv);
     });
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
-    console.log(`✅ Updated chat display with ${roomMessages.length} messages`);
+    console.log(
+      `✅ Updated chat display with ${messagesToShow.length} messages`
+    );
   }
 
   // Add a toggle for global chat
@@ -2620,6 +2648,8 @@ document.addEventListener("DOMContentLoaded", function () {
     isGlobalChat = !isGlobalChat;
     console.log(`🔄 Toggled global chat. Now isGlobalChat: ${isGlobalChat}`);
     updateChatDisplay();
+    const globalChatToggle = document.getElementById("global-chat-toggle");
+    globalChatToggle.textContent = "🌐";
     const systemMessage = {
       type: "system",
       message: `Switched to ${
@@ -2640,27 +2670,35 @@ document.addEventListener("DOMContentLoaded", function () {
     return "Unknown";
   }
 
+  // Helper function to find room object by ID
+  function findRoomById(roomId) {
+    for (const deck in deckRooms) {
+      const room = deckRooms[deck].find((r) => r.id === roomId);
+      if (room) return room;
+    }
+    return null;
+  }
+
   // Socket event listeners
   socket.on("chat-message", (data) => {
     try {
       if (data.character && data.character.forename && data.character.surname) {
-        // Ensure the message is for the current room
-        if (data.room === currentRoom.name) {
-          addChatMessage(data);
-          console.log(
-            `✉️ Message from ${data.character.forename}: ${data.message}`
-          );
-        } else {
-          console.log(
-            `📭 Message from ${data.character.forename} ignored, not in the same room.`
-          );
-        }
+        addChatMessage(data);
+        console.log(
+          `✉️ Message from ${data.character.forename}: ${data.message}`
+        );
       } else {
         console.warn("⚠️ Received chat message without character data:", data);
       }
     } catch (error) {
       console.error(`❌ Error handling incoming message: ${error.message}`);
     }
+  });
+
+  // Handle join room errors (admin-only mode)
+  socket.on("join-error", (error) => {
+    console.log("🚫 Join room error:", error);
+    alert(error.message || "Unable to join the game at this time.");
   });
 
   socket.on("user-joined", (data) => {
@@ -2689,38 +2727,53 @@ document.addEventListener("DOMContentLoaded", function () {
   function addChatMessage(data) {
     console.log("📝 Adding chat message:", data);
 
-    // Only proceed if message is for current room
-    if (data.room !== currentRoom.name) {
-      console.log(
-        `📭 Ignoring message for room ${data.room} (we're in ${currentRoom.name})`
-      );
-      return;
-    }
-
     // Store message in room history
     if (!chatHistory.rooms[data.room]) {
       chatHistory.rooms[data.room] = [];
     }
     chatHistory.rooms[data.room].push(data);
 
-    // Create message element
-    const messageDiv = document.createElement("div");
-    messageDiv.className = `chat-message ${data.type || "user"}`;
-    messageDiv.setAttribute("data-user-id", data.userId);
+    // Update display if needed
+    if (isGlobalChat || data.room === currentRoom.name) {
+      const messageDiv = document.createElement("div");
+      messageDiv.className = `chat-message ${data.type || "user"}`;
+      messageDiv.setAttribute("data-user-id", data.userId);
 
-    if (data.type === "system") {
-      messageDiv.textContent = data.message;
-      messageDiv.style.color = "#ffcc00";
-    } else {
-      const fullName = `${data.character.forename} ${data.character.surname}`;
-      messageDiv.textContent = `${fullName}: ${data.message}`;
-      messageDiv.style.color = data.color || "#c0932b";
+      if (data.type === "system") {
+        messageDiv.textContent = data.message;
+        messageDiv.style.color = "#ffcc00";
+      } else {
+        const fullName = `${data.character.forename} ${data.character.surname}`;
+
+        // Only show room name if in global chat mode
+        if (isGlobalChat) {
+          const roomName = getRoomNameById(data.room);
+          const roomSpan = document.createElement("span");
+          roomSpan.textContent = roomName;
+          roomSpan.style.textDecoration = "underline";
+          roomSpan.style.cursor = "pointer";
+          roomSpan.addEventListener("click", () => {
+            // Find the room object and enter it
+            const room = findRoomById(data.room);
+            if (room) {
+              enterRoom(room);
+            }
+          });
+          messageDiv.appendChild(document.createTextNode(`${fullName} `));
+          messageDiv.appendChild(roomSpan);
+          messageDiv.appendChild(document.createTextNode(`: ${data.message}`));
+        } else {
+          // Local chat mode - just show name and message
+          messageDiv.textContent = `${fullName}: ${data.message}`;
+        }
+        messageDiv.style.color = data.color || "#c0932b";
+      }
+
+      // Add to chat display
+      const chatMessages = document.getElementById("chat-messages");
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
     }
-
-    // Add to chat display
-    const chatMessages = document.getElementById("chat-messages");
-    chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
   // Add color picker event listener
@@ -2788,15 +2841,18 @@ document.addEventListener("DOMContentLoaded", function () {
   // Handle report form submission
   reportForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    
+
     const formData = new FormData(reportForm);
     const reportData = {
       type: formData.get("report-type"),
       description: formData.get("report-description"),
       reportedUser: formData.get("reported-user") || null,
-      reporterName: sessionStorage.getItem("character") ? 
-        JSON.parse(sessionStorage.getItem("character")).forename + " " + 
-        JSON.parse(sessionStorage.getItem("character")).surname : "Anonymous"
+      reporterName: sessionStorage.getItem("character")
+        ? JSON.parse(sessionStorage.getItem("character")).forename +
+          " " +
+          JSON.parse(sessionStorage.getItem("character")).surname
+        : "Anonymous",
+      room: currentRoom ? currentRoom.name : "Unknown",
     };
 
     try {
@@ -2809,9 +2865,11 @@ document.addEventListener("DOMContentLoaded", function () {
       });
 
       const result = await response.json();
-      
+
       if (result.success) {
-        alert("✅ Report submitted successfully! Thank you for helping keep the game safe.");
+        alert(
+          "✅ Report submitted successfully! Thank you for helping keep the game safe."
+        );
         reportModal.style.display = "none";
         reportForm.reset();
         console.log("✅ Report submitted successfully");
@@ -2820,7 +2878,9 @@ document.addEventListener("DOMContentLoaded", function () {
         console.error("❌ Report submission failed:", result.error);
       }
     } catch (error) {
-      alert("❌ Error submitting report. Please check your connection and try again.");
+      alert(
+        "❌ Error submitting report. Please check your connection and try again."
+      );
       console.error("❌ Report submission error:", error);
     }
   });
@@ -2846,9 +2906,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   closeDeckplansBtn.addEventListener("click", () => {
     deckplansPopup.style.display = "none";
-  });
-
-  closeDeckplansBtn.addEventListener("click", () => {
     openMapSound.pause();
   });
 
@@ -2863,7 +2920,6 @@ document.addEventListener("DOMContentLoaded", function () {
   const currentDeckImage = document.getElementById("current-deck");
   const roomMarkers = document.getElementById("room-markers");
 
-  // Helper function to check if player is in Southampton
   // Helper function to check if player is in Southampton
   function isPlayerInSouthampton() {
     return (
@@ -4721,25 +4777,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // Update the enterRoom function to show the video poker button in the right rooms
-  const originalEnterRoom = enterRoom;
-  enterRoom = function (room) {
-    originalEnterRoom(room);
-
-    // Show video poker button only in specific rooms
-    const videoPokerBtn = document.getElementById("video-poker-btn");
-    if (videoPokerBtn) {
-      if (
-        room.id === "first_class_lounge_a" ||
-        room.id === "first_class_smoking_room_a"
-      ) {
-        videoPokerBtn.style.display = "block";
-      } else {
-        videoPokerBtn.style.display = "none";
-      }
-    }
-  };
-
   const gamesToggleBtn = document.getElementById("games-toggle-btn");
   const gamesSidePanel = document.getElementById("games-side-panel");
   const closeGamesPanel = document.querySelector(".close-games-panel");
@@ -5172,7 +5209,7 @@ document.addEventListener("DOMContentLoaded", function () {
         `${currentCharacter.forename} ${currentCharacter.surname}` ===
           player.name;
 
-      playerDiv.innerHTML = `
+      playerDiv.innerHTML = DOMPurify.sanitize(`
         <div class="player-avatar">
           <img src="${player.avatar || "/images/default-avatar.png"}" alt="${
         player.name
@@ -5185,7 +5222,7 @@ document.addEventListener("DOMContentLoaded", function () {
           <div class="player-class">Passenger</div>
           <div class="player-cabin">${player.cabin || "No cabin assigned"}</div>
         </div>
-      `;
+      `);
 
       // Add click handler for player interaction (future feature)
       if (!isCurrentPlayer) {
@@ -5425,13 +5462,42 @@ document.addEventListener("DOMContentLoaded", function () {
       );
     }
 
-    let departurePosition = 0; // Start from beginning
-    let wavesPosition = 0; // Waves start from beginning
-    let waterPosition = 0; // Water start from beginning
-    let swaterPosition = 0; // SWater start from beginning
-    let landMiddlePosition = 0; // Land_middle starts from beginning
+    // Calculate initial positions based on elapsed time (for late joiners)
+    // Southampton should be fully off-screen after ~20 minutes
+    let departurePosition = 0;
+    let wavesPosition = 0;
+    let waterPosition = 0;
+    let swaterPosition = 0;
+    let landMiddlePosition = 0;
     let landEndPosition = 0;
     let isleOfWightPosition = 0;
+
+    if (elapsedAtStart > 0) {
+      const elapsedSeconds = elapsedAtStart / 1000;
+      // Calculate how far Southampton should have moved based on time
+      // Average speed for first 20 minutes is roughly 6 knots
+      // After 20 minutes (1200s), Southampton should be off-screen
+      if (elapsedSeconds >= 1200) {
+        // Southampton is completely off-screen
+        departurePosition = window.innerWidth * 3; // Way off screen
+        wavesPosition = elapsedSeconds * 6; // Continue from current position
+        waterPosition = elapsedSeconds * 6;
+        swaterPosition = elapsedSeconds * 6;
+        landMiddlePosition = elapsedSeconds * 6;
+      } else {
+        // Southampton is still moving off-screen
+        departurePosition = elapsedSeconds * 6; // 6 pixels per second at 6 knots
+        wavesPosition = elapsedSeconds * 6;
+        waterPosition = elapsedSeconds * 6;
+        swaterPosition = elapsedSeconds * 6;
+        landMiddlePosition = elapsedSeconds * 6;
+      }
+      console.log(
+        `🎬 Starting animation from position: ${departurePosition}px (${Math.floor(
+          elapsedSeconds / 60
+        )}min elapsed)`
+      );
+    }
     // startTime already defined above - using server voyage time
     let lastTimestamp = Date.now();
     let isleOfWightPassing = false;

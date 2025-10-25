@@ -16,15 +16,15 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById(
       "modalName"
     ).textContent = `${passenger.forename} ${passenger.surname}`;
-    document.getElementById(
-      "modalDob"
-    ).innerHTML = `<i class="fas fa-calendar-alt"></i> Born: ${birthDate}`;
-    document.getElementById(
-      "modalCabin"
-    ).innerHTML = `<i class="fas fa-key"></i> Cabin: ${passenger.cabin}`;
-    document.getElementById("modalBio").innerHTML = `<p>${
-      passenger.bio || "No biography provided."
-    }</p>`;
+    document.getElementById("modalDob").innerHTML = DOMPurify.sanitize(
+      `<i class="fas fa-calendar-alt"></i> Born: ${birthDate}`
+    );
+    document.getElementById("modalCabin").innerHTML = DOMPurify.sanitize(
+      `<i class="fas fa-key"></i> Cabin: ${passenger.cabin}`
+    );
+    document.getElementById("modalBio").innerHTML = DOMPurify.sanitize(
+      `<p>${passenger.bio || "No biography provided."}</p>`
+    );
 
     // Show the modal and disable background scrolling
     modal.style.display = "block";
@@ -57,7 +57,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Format the birthdate
     const birthDate = new Date(passenger.birthdate).toLocaleDateString();
 
-    card.innerHTML = `
+    card.innerHTML = DOMPurify.sanitize(`
       <div class="avatar">
         <img src="${passenger.avatar}" alt="${passenger.forename} ${passenger.surname}">
       </div>
@@ -66,7 +66,7 @@ document.addEventListener("DOMContentLoaded", function () {
         <p class="dob"><i class="fas fa-calendar-alt"></i> Born: ${birthDate}</p>
         <p class="cabin"><i class="fas fa-key"></i> Cabin: ${passenger.cabin}</p>
       </div>
-    `;
+    `);
 
     // Add click event to open modal
     card.addEventListener("click", function () {
