@@ -81,21 +81,39 @@ document.addEventListener("DOMContentLoaded", function () {
   // Event listener for cabin type selection
   cabinSelect.addEventListener("change", async function () {
     const cabinType = this.value;
+    console.log(`🏠 Cabin type selected: ${cabinType}`);
+
     if (!cabinType) {
       cabinNumberSelect.innerHTML =
         '<option value="">-- Select a cabin type first --</option>';
       return;
     }
 
+    // Show loading state
+    cabinNumberSelect.innerHTML = '<option value="">Loading cabins...</option>';
+    cabinNumberSelect.disabled = true;
+
     try {
       // Fetch available cabins from the server
       const response = await fetch(
-        `/api/get_available_cabins?cabin_type=${cabinType}`
+        `/api/get_available_cabins?cabin_type=${encodeURIComponent(cabinType)}`
       );
+
+      console.log(`📡 Cabin API response status: ${response.status}`);
+
       if (!response.ok) {
-        throw new Error(`Server responded with status: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        console.error("❌ Cabin API error:", errorData);
+        throw new Error(
+          errorData.error || `Server responded with status: ${response.status}`
+        );
       }
+
       const availableCabins = await response.json();
+      console.log(
+        `✅ Received ${availableCabins.length} available cabins:`,
+        availableCabins
+      );
 
       // Clear existing options
       cabinNumberSelect.innerHTML =
@@ -109,20 +127,27 @@ document.addEventListener("DOMContentLoaded", function () {
           option.textContent = cabin;
           cabinNumberSelect.appendChild(option);
         });
+        cabinNumberSelect.disabled = false;
       } else {
         cabinNumberSelect.innerHTML =
           '<option value="">-- No cabins available --</option>';
+        alert("No cabins are currently available for this cabin type.");
       }
     } catch (error) {
-      console.error("Error fetching available cabins:", error);
+      console.error("❌ Error fetching available cabins:", error);
       cabinNumberSelect.innerHTML =
         '<option value="">-- Error loading cabins --</option>';
+      alert(
+        `Failed to load cabin numbers: ${error.message}\n\nPlease try refreshing the page or contact support if the issue persists.`
+      );
+    } finally {
+      cabinNumberSelect.disabled = false;
     }
   });
 
   // Load cabins on page load if cabin type is already selected
   if (cabinSelect.value) {
-    cabinSelect.dispatchEvent(new Event('change'));
+    cabinSelect.dispatchEvent(new Event("change"));
   }
 
   // Form submission

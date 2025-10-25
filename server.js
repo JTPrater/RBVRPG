@@ -593,12 +593,34 @@ const cabins = {
 
 app.get("/api/get_available_cabins", (req, res) => {
   const cabinType = req.query.cabin_type;
-  if (!cabins[cabinType]) {
-    return res.status(400).json({ error: "Invalid cabin type" });
+  console.log(`📋 Cabin request received for type: ${cabinType}`);
+
+  if (!cabinType) {
+    console.error("❌ No cabin type provided in request");
+    return res.status(400).json({ error: "Cabin type is required" });
   }
-  const availableCabins = Object.entries(cabins[cabinType])
+
+  if (!cabins[cabinType]) {
+    console.error(`❌ Invalid cabin type requested: ${cabinType}`);
+    console.log(`Available cabin types: ${Object.keys(cabins).join(", ")}`);
+    return res.status(400).json({
+      error: "Invalid cabin type",
+      availableTypes: Object.keys(cabins),
+    });
+  }
+
+  const cabinEntries = Object.entries(cabins[cabinType]);
+  console.log(`📊 Found ${cabinEntries.length} cabins in ${cabinType}`);
+
+  const availableCabins = cabinEntries
     .filter(([_, cabin]) => cabin.occupied < cabin.capacity)
     .map(([cabinNumber]) => cabinNumber);
+
+  console.log(
+    `✅ Returning ${
+      availableCabins.length
+    } available cabins: ${availableCabins.join(", ")}`
+  );
   res.json(availableCabins);
 });
 
