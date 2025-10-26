@@ -113,7 +113,7 @@ const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: "rbvrpg-avatars",
-    allowed_formats: ["jpg", "jpeg", "png", "gif"],
+    allowed_formats: ["jpg", "jpeg", "png", "gif", "webp"],
     transformation: [{ width: 200, height: 200, crop: "fill" }], // Resize to 200x200
     public_id: (req, file) =>
       `avatar-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
@@ -124,7 +124,7 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ["image/jpeg", "image/png", "image/gif"];
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     if (!allowedTypes.includes(file.mimetype)) {
       cb(new Error("Invalid file type"), false);
       return;
