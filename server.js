@@ -201,10 +201,14 @@ app.post(
   upload.single("avatar"),
   async (req, res) => {
     try {
-      console.log(`📝 Registration attempt from IP: ${req.ip}, Email: ${req.body.email}`);
+      console.log(
+        `📝 Registration attempt from IP: ${req.ip}, Email: ${req.body.email}`
+      );
 
       if (!req.file) {
-        console.log(`❌ Registration failed: No avatar file uploaded for ${req.body.email}`);
+        console.log(
+          `❌ Registration failed: No avatar file uploaded for ${req.body.email}`
+        );
         return res
           .status(400)
           .json({ success: false, error: "No avatar file uploaded" });
@@ -212,7 +216,9 @@ app.post(
 
       const existingUser = await User.findOne({ email: req.body.email });
       if (existingUser) {
-        console.log(`❌ Registration failed: Email already registered: ${req.body.email}`);
+        console.log(
+          `❌ Registration failed: Email already registered: ${req.body.email}`
+        );
         return res
           .status(400)
           .json({ success: false, error: "Email already registered" });
@@ -224,7 +230,9 @@ app.post(
       console.log(`🏠 Checking cabin: ${cabinType} - ${cabinNumber}`);
 
       if (!cabins[cabinType] || !cabins[cabinType][cabinNumber]) {
-        console.log(`❌ Registration failed: Invalid cabin selected: ${cabinType} - ${cabinNumber}`);
+        console.log(
+          `❌ Registration failed: Invalid cabin selected: ${cabinType} - ${cabinNumber}`
+        );
         return res
           .status(400)
           .json({ success: false, error: "Invalid cabin selected" });
@@ -234,7 +242,9 @@ app.post(
         cabins[cabinType][cabinNumber].occupied >=
         cabins[cabinType][cabinNumber].capacity
       ) {
-        console.log(`❌ Registration failed: Cabin fully booked: ${cabinType} - ${cabinNumber}`);
+        console.log(
+          `❌ Registration failed: Cabin fully booked: ${cabinType} - ${cabinNumber}`
+        );
         return res
           .status(400)
           .json({ success: false, error: "Selected cabin is fully booked" });
@@ -259,7 +269,9 @@ app.post(
       cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
       io.emit("new-passenger", newUser.character);
       console.log(
-        `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}, Total registered: ${await User.countDocuments()}`
+        `✅ New user registered: ${
+          req.body.email
+        }, Cabin: ${cabinNumber}, Total registered: ${await User.countDocuments()}`
       );
       res.json({ success: true, passenger: newUser.character });
     } catch (error) {
@@ -409,13 +421,22 @@ app.get("/", (req, res) => {
 });
 
 app.get("/game", (req, res) => {
+  console.log(`🎮 Game access attempt - Session userId: ${req.session.userId}`);
+
   // Check if user is logged in
   if (!req.session.userId) {
+    console.log(
+      `🚫 Game access denied: No session userId, redirecting to registration`
+    );
     return res.redirect("/");
   }
 
   // Check admin-only mode
   const adminOnlyMode = process.env.ADMIN_ONLY_MODE === "true";
+  console.log(
+    `🔒 Admin-only mode: ${adminOnlyMode}, Admin email: ${process.env.ADMIN_EMAIL}`
+  );
+
   if (adminOnlyMode) {
     // For simplicity, we'll check if the user's email matches the admin email
     // In a production app, you'd want to store user ID in session and look up properly
@@ -428,7 +449,18 @@ app.get("/game", (req, res) => {
     // Check if this user is the admin
     User.findById(req.session.userId)
       .then((user) => {
+        console.log(
+          `👤 Found user: ${user ? user.email : "null"}, isAdmin: ${
+            user ? user.isAdmin : "null"
+          }`
+        );
+
         if (!user || user.email !== adminEmail || !user.isAdmin) {
+          console.log(
+            `🚫 Game access denied: User ${
+              user ? user.email : "unknown"
+            } is not admin`
+          );
           return res.status(403).send(`
             <html>
               <head>
@@ -453,6 +485,9 @@ app.get("/game", (req, res) => {
             </html>
           `);
         } else {
+          console.log(
+            `✅ Game access granted: Admin user ${user.email} accessing game`
+          );
           res.sendFile(path.join(__dirname, "public/game/game.html"));
         }
       })
@@ -461,6 +496,7 @@ app.get("/game", (req, res) => {
         res.status(500).send("Server error during authentication");
       });
   } else {
+    console.log(`✅ Game access granted: Admin-only mode disabled`);
     res.sendFile(path.join(__dirname, "public/game/game.html"));
   }
 });
@@ -695,20 +731,55 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Check if this user is the admin by comparing email
-      // This is a simplified approach - in production you'd store user ID in session
+      // Get the session data to find the current user's ID
       try {
-        const user = await User.findOne({ email: adminEmail });
-        if (!user || !user.isAdmin) {
-          console.log(`🚫 Non-admin user attempted to join game room: ${room}`);
+        const sessionData = await new Promise((resolve, reject) => {
+          sessionStore.get(sessionId, (err, session) => {
+            if (err) reject(err);
+            else resolve(session);
+          });
+        });
+
+        if (!sessionData || !sessionData.userId) {
+          console.log(
+            `🚫 Socket join denied: No valid session for socket ${socket.id}`
+          );
+          socket.emit("join-error", {
+            message: "Authentication required. Please log in again.",
+          });
+          return;
+        }
+
+        // Find the user by their session userId
+        const currentUser = await User.findById(sessionData.userId);
+        console.log(
+          `🔍 Socket join attempt - User: ${
+            currentUser ? currentUser.email : "unknown"
+          }, isAdmin: ${currentUser ? currentUser.isAdmin : "null"}`
+        );
+
+        if (
+          !currentUser ||
+          currentUser.email !== adminEmail ||
+          !currentUser.isAdmin
+        ) {
+          console.log(
+            `🚫 Non-admin user ${
+              currentUser ? currentUser.email : "unknown"
+            } attempted to join game room: ${room}`
+          );
           socket.emit("join-error", {
             message:
               "Game access is currently restricted to administrators only. Registration is open but gameplay is limited.",
           });
           return;
         }
+
+        console.log(
+          `✅ Admin user ${currentUser.email} joining game room: ${room}`
+        );
       } catch (error) {
-        console.error("❌ Error checking admin status:", error);
+        console.error("❌ Error checking admin status for socket:", error);
         socket.emit("join-error", {
           message: "Server error during authentication",
         });
