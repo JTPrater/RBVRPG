@@ -19,6 +19,7 @@ const userSchema = new mongoose.Schema({
     surname: String,
     birthdate: Date,
     cabin: String,
+    cabin_number: String,
     bio: String,
     avatar: String,
   },
