@@ -291,13 +291,17 @@ app.post("/api/check-credentials", authLimiter, async (req, res) => {
 
     // Automatically grant admin privileges to admin email users
     const isAdminUser = email === process.env.ADMIN_EMAIL;
-    console.log(`🔍 Login check - Email: ${email}, ADMIN_EMAIL: ${process.env.ADMIN_EMAIL}, isAdminUser: ${isAdminUser}, Current user.isAdmin: ${user.isAdmin}`);
-    
+    console.log(
+      `🔍 Login check - Email: ${email}, ADMIN_EMAIL: ${process.env.ADMIN_EMAIL}, isAdminUser: ${isAdminUser}, Current user.isAdmin: ${user.isAdmin}`
+    );
+
     if (isAdminUser && user.isAdmin !== true) {
       console.log(`🔧 Setting isAdmin to true for ${email}`);
       user.isAdmin = true;
       const savedUser = await user.save();
-      console.log(`👑 Admin privileges saved to database for: ${email}, Verified isAdmin: ${savedUser.isAdmin}`);
+      console.log(
+        `👑 Admin privileges saved to database for: ${email}, Verified isAdmin: ${savedUser.isAdmin}`
+      );
     }
 
     req.session.userId = user._id;
@@ -479,14 +483,21 @@ app.get("/game", (req, res) => {
 
     // Check if this user is the admin
     User.findById(req.session.userId)
+      .select('+isAdmin') // Explicitly select isAdmin field
       .then((user) => {
         console.log(
           `👤 Found user: ${user ? user.email : "null"}, isAdmin: ${
             user ? user.isAdmin : "null"
-          }`
+          }, Raw user data: ${user ? JSON.stringify({email: user.email, isAdmin: user.isAdmin}) : 'null'}`
         );
 
-        if (!user || user.email !== adminEmail || !user.isAdmin) {
+        // Double-check: if this is the admin email, force isAdmin to true
+        const isAdminEmail = user && user.email === adminEmail;
+        const userIsAdmin = user && (user.isAdmin === true || isAdminEmail);
+        
+        console.log(`🔍 Admin check - isAdminEmail: ${isAdminEmail}, userIsAdmin: ${userIsAdmin}`);
+
+        if (!user || !userIsAdmin) {
           console.log(
             `🚫 Game access denied: User ${
               user ? user.email : "unknown"
