@@ -190,53 +190,6 @@ const authLimiter = rateLimit({
 
 app.use(limiter); // Apply general rate limiting to all routes
 
-// Debug endpoint to check session status
-app.get("/debug/session", (req, res) => {
-  res.json({
-    sessionId: req.sessionID,
-    userId: req.session.userId,
-    session: req.session,
-    adminOnlyMode: process.env.ADMIN_ONLY_MODE,
-    adminEmail: process.env.ADMIN_EMAIL,
-  });
-});
-
-// Temporary admin setup endpoint (remove after use)
-app.post("/debug/setup-admin", async (req, res) => {
-  try {
-    const adminEmail = process.env.ADMIN_EMAIL;
-    if (!adminEmail) {
-      return res.status(500).json({ error: "ADMIN_EMAIL not configured" });
-    }
-
-    const result = await User.findOneAndUpdate(
-      { email: adminEmail },
-      { isAdmin: true },
-      { new: true }
-    );
-
-    if (result) {
-      res.json({
-        success: true,
-        message: `Admin privileges granted to: ${adminEmail}`,
-        user: {
-          email: result.email,
-          isAdmin: result.isAdmin,
-          id: result._id
-        }
-      });
-    } else {
-      res.status(404).json({
-        success: false,
-        message: `User with email ${adminEmail} not found. Register first.`
-      });
-    }
-  } catch (error) {
-    console.error("Error setting up admin:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // API Routes
 app.post(
   "/api/register",
@@ -294,9 +247,11 @@ app.post(
       }
 
       const hashedPassword = await bcrypt.hash(req.body.password, 10);
+      const isAdminUser = req.body.email === process.env.ADMIN_EMAIL;
       const newUser = new User({
         email: req.body.email,
         password: hashedPassword,
+        isAdmin: isAdminUser, // Automatically set admin for admin email
         character: {
           avatar: req.file.path, // Cloudinary URL
           forename: req.body.forename,
@@ -314,7 +269,7 @@ app.post(
       console.log(
         `✅ New user registered: ${
           req.body.email
-        }, Cabin: ${cabinNumber}, Total registered: ${await User.countDocuments()}`
+        }, Cabin: ${cabinNumber}, Admin: ${isAdminUser}, Total registered: ${await User.countDocuments()}`
       );
       res.json({ success: true, passenger: newUser.character });
     } catch (error) {
@@ -334,8 +289,16 @@ app.post("/api/check-credentials", authLimiter, async (req, res) => {
       return res.json({ success: false });
     }
 
+    // Automatically grant admin privileges to admin email users
+    const isAdminUser = email === process.env.ADMIN_EMAIL;
+    if (isAdminUser && !user.isAdmin) {
+      user.isAdmin = true;
+      await user.save();
+      console.log(`👑 Admin privileges automatically granted to: ${email}`);
+    }
+
     req.session.userId = user._id;
-    console.log(`✅ User logged in: ${email}`);
+    console.log(`✅ User logged in: ${email}, Admin: ${user.isAdmin}`);
     res.json({
       success: true,
       character: user.character, // Return the full character object
