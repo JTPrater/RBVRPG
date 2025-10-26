@@ -421,11 +421,15 @@ app.get("/game", (req, res) => {
 
   // Check if user is logged in
   if (!req.session.userId) {
-    console.log(`🚫 Game access denied: No session userId, redirecting to login`);
+    console.log(
+      `🚫 Game access denied: No session userId, redirecting to login`
+    );
     return res.redirect("/");
   }
 
-  console.log(`✅ Game access granted: User ${req.session.userId} accessing game`);
+  console.log(
+    `✅ Game access granted: User ${req.session.userId} accessing game`
+  );
   res.sendFile(path.join(__dirname, "public/game/game.html"));
 });
 
