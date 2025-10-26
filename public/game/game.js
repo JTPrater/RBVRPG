@@ -2701,6 +2701,14 @@ document.addEventListener("DOMContentLoaded", function () {
     alert(error.message || "Unable to join the game at this time.");
   });
 
+  // Handle admin-only mode disconnection
+  socket.on("admin-only-mode", (data) => {
+    console.log("🚫 Admin-only mode:", data);
+    alert(data.message || "Game access is restricted to administrators only.");
+    // Redirect to registration page
+    window.location.href = "/";
+  });
+
   socket.on("user-joined", (data) => {
     console.log("📢 User joined:", data);
     addChatMessage({
