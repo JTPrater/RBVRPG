@@ -423,14 +423,6 @@ app.get("/", (req, res) => {
 app.get("/game", (req, res) => {
   console.log(`🎮 Game access attempt - Session userId: ${req.session.userId}`);
 
-  // Check if user is logged in
-  if (!req.session.userId) {
-    console.log(
-      `🚫 Game access denied: No session userId, redirecting to registration`
-    );
-    return res.redirect("/");
-  }
-
   // Check admin-only mode
   const adminOnlyMode = process.env.ADMIN_ONLY_MODE === "true";
   console.log(
@@ -438,6 +430,36 @@ app.get("/game", (req, res) => {
   );
 
   if (adminOnlyMode) {
+    // Check if user is logged in
+    if (!req.session.userId) {
+      console.log(
+        `🚫 Game access denied: No session userId, showing access restricted page`
+      );
+      return res.status(403).send(`
+        <html>
+          <head>
+            <title>Access Restricted</title>
+            <style>
+              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+              .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+              h1 { color: #c41e3a; margin-bottom: 20px; }
+              p { color: #666; line-height: 1.6; }
+              .back-link { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
+              .back-link:hover { background: #0056b3; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>� Access Restricted</h1>
+              <p>Game access is currently restricted to administrators only.</p>
+              <p>Please log in with administrator credentials to access the game.</p>
+              <a href="/" class="back-link">← Return to Login</a>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+
     // For simplicity, we'll check if the user's email matches the admin email
     // In a production app, you'd want to store user ID in session and look up properly
     const adminEmail = process.env.ADMIN_EMAIL;
@@ -478,8 +500,8 @@ app.get("/game", (req, res) => {
                 <div class="container">
                   <h1>🚫 Access Restricted</h1>
                   <p>Game access is currently restricted to administrators only.</p>
-                  <p>Registration is open, but gameplay is limited to authorized personnel.</p>
-                  <a href="/" class="back-link">← Return to Registration</a>
+                  <p>Please log in with administrator credentials to access the game.</p>
+                  <a href="/" class="back-link">← Return to Login</a>
                 </div>
               </body>
             </html>
@@ -681,6 +703,47 @@ io.on("connection", (socket) => {
   console.log(`👥 User count increased: ${userCount}`);
 
   socket.isGameClient = false;
+
+  // Check admin-only mode and disconnect non-admin users immediately
+  const adminOnlyMode = process.env.ADMIN_ONLY_MODE === "true";
+  if (adminOnlyMode) {
+    // Get user from session to check admin status
+    const sessionId = socket.handshake.sessionID;
+    const sessionStore = app.get("sessionStore") || session.store;
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    if (adminEmail) {
+      // Get the session data to find the current user's ID
+      sessionStore.get(sessionId, async (err, session) => {
+        if (err || !session || !session.userId) {
+          console.log(`🚫 Disconnecting socket ${socket.id}: No valid session in admin-only mode`);
+          socket.emit("admin-only-mode", { message: "Game access is restricted to administrators only." });
+          socket.disconnect(true);
+          return;
+        }
+
+        try {
+          const currentUser = await User.findById(session.userId);
+          if (!currentUser || currentUser.email !== adminEmail || !currentUser.isAdmin) {
+            console.log(`🚫 Disconnecting non-admin user ${currentUser ? currentUser.email : 'unknown'} (socket: ${socket.id})`);
+            socket.emit("admin-only-mode", { message: "Game access is restricted to administrators only." });
+            socket.disconnect(true);
+            return;
+          }
+          console.log(`✅ Admin user ${currentUser.email} connected (socket: ${socket.id})`);
+        } catch (error) {
+          console.error(`❌ Error checking admin status for socket ${socket.id}:`, error);
+          socket.emit("admin-only-mode", { message: "Server error during authentication." });
+          socket.disconnect(true);
+        }
+      });
+    } else {
+      console.log(`🚫 Disconnecting socket ${socket.id}: ADMIN_EMAIL not configured`);
+      socket.emit("admin-only-mode", { message: "Server configuration error." });
+      socket.disconnect(true);
+      return;
+    }
+  }
 
   // Send voyage start time to client for synchronization
   socket.emit("voyage-start-time", voyageStartTime);
