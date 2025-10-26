@@ -197,8 +197,44 @@ app.get("/debug/session", (req, res) => {
     userId: req.session.userId,
     session: req.session,
     adminOnlyMode: process.env.ADMIN_ONLY_MODE,
-    adminEmail: process.env.ADMIN_EMAIL
+    adminEmail: process.env.ADMIN_EMAIL,
   });
+});
+
+// Temporary admin setup endpoint (remove after use)
+app.post("/debug/setup-admin", async (req, res) => {
+  try {
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (!adminEmail) {
+      return res.status(500).json({ error: "ADMIN_EMAIL not configured" });
+    }
+
+    const result = await User.findOneAndUpdate(
+      { email: adminEmail },
+      { isAdmin: true },
+      { new: true }
+    );
+
+    if (result) {
+      res.json({
+        success: true,
+        message: `Admin privileges granted to: ${adminEmail}`,
+        user: {
+          email: result.email,
+          isAdmin: result.isAdmin,
+          id: result._id
+        }
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: `User with email ${adminEmail} not found. Register first.`
+      });
+    }
+  } catch (error) {
+    console.error("Error setting up admin:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // API Routes
