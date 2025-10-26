@@ -34,6 +34,11 @@ const io = socketIo(server, {
   transports: ["websocket", "polling"],
 });
 
+// Share session middleware with Socket.IO
+io.use((socket, next) => {
+  sessionMiddleware(socket.request, socket.request.res || {}, next);
+});
+
 // Global voyage start time (set when server starts)
 const voyageStartTime = Date.now();
 
@@ -698,7 +703,7 @@ app.get("/api/get_available_cabins", (req, res) => {
 });
 
 // Socket.IO Setup
-io.on("connection", (socket) => {
+io.on("connection", async (socket) => {
   console.log(`🔌 New connection: ${socket.id}`);
   userCount++;
   io.emit("global-user-count", userCount); // Global site-wide count
@@ -709,77 +714,55 @@ io.on("connection", (socket) => {
   // Check admin-only mode and disconnect non-admin users immediately
   const adminOnlyMode = process.env.ADMIN_ONLY_MODE === "true";
   if (adminOnlyMode) {
-    // Get user from session to check admin status
-    const sessionId = socket.handshake.sessionID;
-    const adminEmail = process.env.ADMIN_EMAIL;
+    try {
+      // Get session from socket request (now available via io.use middleware)
+      const session = socket.request.session;
+      console.log("Session data:", session);
 
-    if (adminEmail && sessionId) {
-      // Access the session store from the session middleware
-      const store = sessionMiddleware.store || sessionMiddleware;
-      
-      // Get the session data to find the current user's ID
-      if (store && typeof store.get === 'function') {
-        store.get(sessionId, async (err, session) => {
-          if (err || !session || !session.userId) {
-            console.log(
-              `🚫 Disconnecting socket ${socket.id}: No valid session in admin-only mode`
-            );
-            socket.emit("admin-only-mode", {
-              message: "Game access is restricted to administrators only.",
-            });
-            socket.disconnect(true);
-            return;
-          }
-
-          try {
-            const currentUser = await User.findById(session.userId);
-            if (
-              !currentUser ||
-              currentUser.email !== adminEmail ||
-              !currentUser.isAdmin
-            ) {
-              console.log(
-                `🚫 Disconnecting non-admin user ${
-                  currentUser ? currentUser.email : "unknown"
-                } (socket: ${socket.id})`
-              );
-              socket.emit("admin-only-mode", {
-                message: "Game access is restricted to administrators only.",
-              });
-              socket.disconnect(true);
-              return;
-            }
-            console.log(
-              `✅ Admin user ${currentUser.email} connected (socket: ${socket.id})`
-            );
-          } catch (error) {
-            console.error(
-              `❌ Error checking admin status for socket ${socket.id}:`,
-              error
-            );
-            socket.emit("admin-only-mode", {
-              message: "Server error during authentication.",
-            });
-            socket.disconnect(true);
-          }
-        });
-      } else {
+      if (!session || !session.userId) {
         console.log(
-          `🚫 Disconnecting socket ${socket.id}: Session store not available`
+          `🚫 Disconnecting socket ${socket.id}: No valid session in admin-only mode`
         );
-        socket.emit("admin-only-mode", {
-          message: "Server configuration error.",
-        });
+        socket.emit(
+          "admin-only-mode",
+          "Game access is restricted to administrators only."
+        );
         socket.disconnect(true);
         return;
       }
-    } else {
+
+      // Check if user is admin
+      const user = await User.findById(session.userId);
       console.log(
-        `🚫 Disconnecting socket ${socket.id}: ADMIN_EMAIL not configured or no session ID`
+        "User found:",
+        user ? user.email : "none",
+        "isAdmin:",
+        user ? user.isAdmin : "N/A"
       );
-      socket.emit("admin-only-mode", {
-        message: "Server configuration error.",
-      });
+
+      if (!user || !user.isAdmin) {
+        console.log(
+          `🚫 Disconnecting non-admin user ${
+            user ? user.email : "unknown"
+          } (socket: ${socket.id})`
+        );
+        socket.emit(
+          "admin-only-mode",
+          "Game access is restricted to administrators only."
+        );
+        socket.disconnect(true);
+        return;
+      }
+
+      console.log(
+        `✅ Admin user ${user.email} connected (socket: ${socket.id})`
+      );
+    } catch (error) {
+      console.error(
+        `❌ Error checking admin status for socket ${socket.id}:`,
+        error
+      );
+      socket.emit("admin-only-mode", "Server error during authentication.");
       socket.disconnect(true);
       return;
     }
@@ -821,35 +804,11 @@ io.on("connection", (socket) => {
     // Check admin-only mode
     const adminOnlyMode = process.env.ADMIN_ONLY_MODE === "true";
     if (adminOnlyMode) {
-      // Get user from session to check admin status
-      const sessionId = socket.handshake.sessionID;
-      const store = sessionMiddleware.store || sessionMiddleware;
-
-      // For simplicity, we'll check if the user's email matches the admin email
-      // In a production app, you'd want to store user ID in session and look up properly
-      const adminEmail = process.env.ADMIN_EMAIL;
-      if (!adminEmail) {
-        console.error("❌ ADMIN_EMAIL not set in environment variables");
-        socket.emit("join-error", { message: "Server configuration error" });
-        return;
-      }
-
-      // Get the session data to find the current user's ID
       try {
-        if (!store || typeof store.get !== 'function') {
-          console.error("❌ Session store not available");
-          socket.emit("join-error", { message: "Server configuration error" });
-          return;
-        }
+        // Get session from socket request
+        const session = socket.request.session;
 
-        const sessionData = await new Promise((resolve, reject) => {
-          store.get(sessionId, (err, session) => {
-            if (err) reject(err);
-            else resolve(session);
-          });
-        });
-
-        if (!sessionData || !sessionData.userId) {
+        if (!session || !session.userId) {
           console.log(
             `🚫 Socket join denied: No valid session for socket ${socket.id}`
           );
@@ -860,18 +819,14 @@ io.on("connection", (socket) => {
         }
 
         // Find the user by their session userId
-        const currentUser = await User.findById(sessionData.userId);
+        const currentUser = await User.findById(session.userId);
         console.log(
           `🔍 Socket join attempt - User: ${
             currentUser ? currentUser.email : "unknown"
           }, isAdmin: ${currentUser ? currentUser.isAdmin : "null"}`
         );
 
-        if (
-          !currentUser ||
-          currentUser.email !== adminEmail ||
-          !currentUser.isAdmin
-        ) {
+        if (!currentUser || !currentUser.isAdmin) {
           console.log(
             `🚫 Non-admin user ${
               currentUser ? currentUser.email : "unknown"
