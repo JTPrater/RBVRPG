@@ -155,14 +155,16 @@ app.use(
 app.use(express.static(path.join(__dirname, "public")));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "change-this-in-production",
-    resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false }, // Set to true if using HTTPS
-  })
-);
+
+// Create session middleware with store
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || "change-this-in-production",
+  resave: false,
+  saveUninitialized: true,
+  cookie: { secure: false }, // Set to true if using HTTPS
+});
+
+app.use(sessionMiddleware);
 
 // Rate limiting
 const limiter = rateLimit({
@@ -709,37 +711,75 @@ io.on("connection", (socket) => {
   if (adminOnlyMode) {
     // Get user from session to check admin status
     const sessionId = socket.handshake.sessionID;
-    const sessionStore = app.get("sessionStore") || session.store;
     const adminEmail = process.env.ADMIN_EMAIL;
 
-    if (adminEmail) {
+    if (adminEmail && sessionId) {
+      // Access the session store from the session middleware
+      const store = sessionMiddleware.store || sessionMiddleware;
+      
       // Get the session data to find the current user's ID
-      sessionStore.get(sessionId, async (err, session) => {
-        if (err || !session || !session.userId) {
-          console.log(`🚫 Disconnecting socket ${socket.id}: No valid session in admin-only mode`);
-          socket.emit("admin-only-mode", { message: "Game access is restricted to administrators only." });
-          socket.disconnect(true);
-          return;
-        }
-
-        try {
-          const currentUser = await User.findById(session.userId);
-          if (!currentUser || currentUser.email !== adminEmail || !currentUser.isAdmin) {
-            console.log(`🚫 Disconnecting non-admin user ${currentUser ? currentUser.email : 'unknown'} (socket: ${socket.id})`);
-            socket.emit("admin-only-mode", { message: "Game access is restricted to administrators only." });
+      if (store && typeof store.get === 'function') {
+        store.get(sessionId, async (err, session) => {
+          if (err || !session || !session.userId) {
+            console.log(
+              `🚫 Disconnecting socket ${socket.id}: No valid session in admin-only mode`
+            );
+            socket.emit("admin-only-mode", {
+              message: "Game access is restricted to administrators only.",
+            });
             socket.disconnect(true);
             return;
           }
-          console.log(`✅ Admin user ${currentUser.email} connected (socket: ${socket.id})`);
-        } catch (error) {
-          console.error(`❌ Error checking admin status for socket ${socket.id}:`, error);
-          socket.emit("admin-only-mode", { message: "Server error during authentication." });
-          socket.disconnect(true);
-        }
-      });
+
+          try {
+            const currentUser = await User.findById(session.userId);
+            if (
+              !currentUser ||
+              currentUser.email !== adminEmail ||
+              !currentUser.isAdmin
+            ) {
+              console.log(
+                `🚫 Disconnecting non-admin user ${
+                  currentUser ? currentUser.email : "unknown"
+                } (socket: ${socket.id})`
+              );
+              socket.emit("admin-only-mode", {
+                message: "Game access is restricted to administrators only.",
+              });
+              socket.disconnect(true);
+              return;
+            }
+            console.log(
+              `✅ Admin user ${currentUser.email} connected (socket: ${socket.id})`
+            );
+          } catch (error) {
+            console.error(
+              `❌ Error checking admin status for socket ${socket.id}:`,
+              error
+            );
+            socket.emit("admin-only-mode", {
+              message: "Server error during authentication.",
+            });
+            socket.disconnect(true);
+          }
+        });
+      } else {
+        console.log(
+          `🚫 Disconnecting socket ${socket.id}: Session store not available`
+        );
+        socket.emit("admin-only-mode", {
+          message: "Server configuration error.",
+        });
+        socket.disconnect(true);
+        return;
+      }
     } else {
-      console.log(`🚫 Disconnecting socket ${socket.id}: ADMIN_EMAIL not configured`);
-      socket.emit("admin-only-mode", { message: "Server configuration error." });
+      console.log(
+        `🚫 Disconnecting socket ${socket.id}: ADMIN_EMAIL not configured or no session ID`
+      );
+      socket.emit("admin-only-mode", {
+        message: "Server configuration error.",
+      });
       socket.disconnect(true);
       return;
     }
@@ -783,7 +823,7 @@ io.on("connection", (socket) => {
     if (adminOnlyMode) {
       // Get user from session to check admin status
       const sessionId = socket.handshake.sessionID;
-      const sessionStore = app.get("sessionStore") || session.store;
+      const store = sessionMiddleware.store || sessionMiddleware;
 
       // For simplicity, we'll check if the user's email matches the admin email
       // In a production app, you'd want to store user ID in session and look up properly
@@ -796,8 +836,14 @@ io.on("connection", (socket) => {
 
       // Get the session data to find the current user's ID
       try {
+        if (!store || typeof store.get !== 'function') {
+          console.error("❌ Session store not available");
+          socket.emit("join-error", { message: "Server configuration error" });
+          return;
+        }
+
         const sessionData = await new Promise((resolve, reject) => {
-          sessionStore.get(sessionId, (err, session) => {
+          store.get(sessionId, (err, session) => {
             if (err) reject(err);
             else resolve(session);
           });
