@@ -190,14 +190,14 @@ const authLimiter = rateLimit({
 
 app.use(limiter); // Apply general rate limiting to all routes
 
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    mongodb:
-      mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+// Debug endpoint to check session status
+app.get("/debug/session", (req, res) => {
+  res.json({
+    sessionId: req.sessionID,
+    userId: req.session.userId,
+    session: req.session,
+    adminOnlyMode: process.env.ADMIN_ONLY_MODE,
+    adminEmail: process.env.ADMIN_EMAIL
   });
 });
 
