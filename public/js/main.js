@@ -107,7 +107,7 @@ async function handleLogin(event) {
   if (result.success) {
     sessionStorage.setItem("character", JSON.stringify(result.character));
     // Redirect to the game or main page
-    window.location.href = "/game/game.html";
+    window.location.href = "/game";
   } else {
     alert("Login failed. Please check your credentials.");
   }
