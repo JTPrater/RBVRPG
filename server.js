@@ -711,63 +711,6 @@ io.on("connection", async (socket) => {
 
   socket.isGameClient = false;
 
-  // Check admin-only mode and disconnect non-admin users immediately
-  const adminOnlyMode = process.env.ADMIN_ONLY_MODE === "true";
-  if (adminOnlyMode) {
-    try {
-      // Get session from socket request (now available via io.use middleware)
-      const session = socket.request.session;
-      console.log("Session data:", session);
-
-      if (!session || !session.userId) {
-        console.log(
-          `🚫 Disconnecting socket ${socket.id}: No valid session in admin-only mode`
-        );
-        socket.emit(
-          "admin-only-mode",
-          "Game access is restricted to administrators only."
-        );
-        socket.disconnect(true);
-        return;
-      }
-
-      // Check if user is admin
-      const user = await User.findById(session.userId);
-      console.log(
-        "User found:",
-        user ? user.email : "none",
-        "isAdmin:",
-        user ? user.isAdmin : "N/A"
-      );
-
-      if (!user || !user.isAdmin) {
-        console.log(
-          `🚫 Disconnecting non-admin user ${
-            user ? user.email : "unknown"
-          } (socket: ${socket.id})`
-        );
-        socket.emit(
-          "admin-only-mode",
-          "Game access is restricted to administrators only."
-        );
-        socket.disconnect(true);
-        return;
-      }
-
-      console.log(
-        `✅ Admin user ${user.email} connected (socket: ${socket.id})`
-      );
-    } catch (error) {
-      console.error(
-        `❌ Error checking admin status for socket ${socket.id}:`,
-        error
-      );
-      socket.emit("admin-only-mode", "Server error during authentication.");
-      socket.disconnect(true);
-      return;
-    }
-  }
-
   // Send voyage start time to client for synchronization
   socket.emit("voyage-start-time", voyageStartTime);
   console.log(`⏰ Sent voyage start time to ${socket.id}: ${voyageStartTime}`);
@@ -782,7 +725,7 @@ io.on("connection", async (socket) => {
   socket.emit("game-user-count", gameClientCount);
   console.log(`📩 Sent assigned chat color to ${socket.id}`);
 
-  // Send existing passengers to new connections
+  // Send existing passengers to ALL new connections (public feature)
   User.find({}, "character")
     .then((users) => {
       const passengers = users.map((user) => user.character);
