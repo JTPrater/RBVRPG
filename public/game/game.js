@@ -5443,18 +5443,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (elapsedAtStart > 0) {
       // Ship has already been traveling - calculate appropriate speed
-      const elapsedSeconds = elapsedAtStart / 1000;
+      const elapsedSinceVoyageStart = elapsedAtStart / 1000;
+      // Calculate elapsed time since DEPARTURE (not voyage start)
+      const elapsedSinceDeparture = Math.max(0, elapsedSinceVoyageStart - 420);
 
-      if (elapsedSeconds < 630) {
-        // Less than 10.5 minutes (Southampton Water)
+      if (elapsedSinceDeparture < 210) {
+        // Less than 3.5 minutes since departure (Southampton Water)
         targetSpeed = 6;
-        currentSpeed = Math.min(6, elapsedSeconds * 0.05); // Gradual acceleration
-      } else if (elapsedSeconds < 4680) {
-        // Less than 1h 18m (Solent)
+        currentSpeed = Math.min(6, elapsedSinceDeparture * 0.05); // Gradual acceleration
+      } else if (elapsedSinceDeparture < 4260) {
+        // Less than 1h 11m since departure (Solent)
         targetSpeed = 12;
         currentSpeed = 12;
-      } else if (elapsedSeconds < 5160) {
-        // Less than 1h 26m (Near Isle of Wight)
+      } else if (elapsedSinceDeparture < 4740) {
+        // Less than 1h 19m since departure (Near Isle of Wight)
         targetSpeed = 18;
         currentSpeed = 18;
       } else {
@@ -5464,8 +5466,8 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       console.log(
-        `🚢 Syncing departure animation: elapsed=${Math.floor(
-          elapsedSeconds / 60
+        `🚢 Syncing departure animation: elapsed since departure=${Math.floor(
+          elapsedSinceDeparture / 60
         )}min, speed=${currentSpeed}kts`
       );
     }
@@ -5481,29 +5483,35 @@ document.addEventListener("DOMContentLoaded", function () {
     let isleOfWightPosition = 0;
 
     if (elapsedAtStart > 0) {
-      const elapsedSeconds = elapsedAtStart / 1000;
-      // Calculate how far Southampton should have moved based on time
+      const elapsedSinceVoyageStart = elapsedAtStart / 1000;
+      // Calculate elapsed time since DEPARTURE (not voyage start)
+      // Departure happens at 420 seconds (7 minutes)
+      const elapsedSinceDeparture = Math.max(0, elapsedSinceVoyageStart - 420);
+      
+      // Calculate how far Southampton should have moved based on time since departure
       // Average speed for first 20 minutes is roughly 6 knots
-      // After 20 minutes (1200s), Southampton should be off-screen
-      if (elapsedSeconds >= 1200) {
+      // After 20 minutes (1200s) FROM DEPARTURE, Southampton should be off-screen
+      if (elapsedSinceDeparture >= 1200) {
         // Southampton is completely off-screen
         departurePosition = window.innerWidth * 3; // Way off screen
-        wavesPosition = elapsedSeconds * 6; // Continue from current position
-        waterPosition = elapsedSeconds * 6;
-        swaterPosition = elapsedSeconds * 6;
-        landMiddlePosition = elapsedSeconds * 6;
-      } else {
+        wavesPosition = elapsedSinceDeparture * 6; // Continue from current position
+        waterPosition = elapsedSinceDeparture * 6;
+        swaterPosition = elapsedSinceDeparture * 6;
+        landMiddlePosition = elapsedSinceDeparture * 6;
+      } else if (elapsedSinceDeparture > 0) {
         // Southampton is still moving off-screen
-        departurePosition = elapsedSeconds * 6; // 6 pixels per second at 6 knots
-        wavesPosition = elapsedSeconds * 6;
-        waterPosition = elapsedSeconds * 6;
-        swaterPosition = elapsedSeconds * 6;
-        landMiddlePosition = elapsedSeconds * 6;
+        departurePosition = elapsedSinceDeparture * 6; // 6 pixels per second at 6 knots
+        wavesPosition = elapsedSinceDeparture * 6;
+        waterPosition = elapsedSinceDeparture * 6;
+        swaterPosition = elapsedSinceDeparture * 6;
+        landMiddlePosition = elapsedSinceDeparture * 6;
       }
       console.log(
         `🎬 Starting animation from position: ${departurePosition}px (${Math.floor(
-          elapsedSeconds / 60
-        )}min elapsed)`
+          elapsedSinceDeparture / 60
+        )}min since departure, ${Math.floor(
+          elapsedSinceVoyageStart / 60
+        )}min since voyage start)`
       );
     }
     // startTime already defined above - using server voyage time
