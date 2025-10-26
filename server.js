@@ -247,11 +247,9 @@ app.post(
       }
 
       const hashedPassword = await bcrypt.hash(req.body.password, 10);
-      const isAdminUser = req.body.email === process.env.ADMIN_EMAIL;
       const newUser = new User({
         email: req.body.email,
         password: hashedPassword,
-        isAdmin: isAdminUser, // Automatically set admin for admin email
         character: {
           avatar: req.file.path, // Cloudinary URL
           forename: req.body.forename,
@@ -269,7 +267,7 @@ app.post(
       console.log(
         `✅ New user registered: ${
           req.body.email
-        }, Cabin: ${cabinNumber}, Admin: ${isAdminUser}, Total registered: ${await User.countDocuments()}`
+        }, Cabin: ${cabinNumber}, Total registered: ${await User.countDocuments()}`
       );
       res.json({ success: true, passenger: newUser.character });
     } catch (error) {
@@ -289,23 +287,8 @@ app.post("/api/check-credentials", authLimiter, async (req, res) => {
       return res.json({ success: false });
     }
 
-    // Automatically grant admin privileges to admin email users
-    const isAdminUser = email === process.env.ADMIN_EMAIL;
-    console.log(
-      `🔍 Login check - Email: ${email}, ADMIN_EMAIL: ${process.env.ADMIN_EMAIL}, isAdminUser: ${isAdminUser}, Current user.isAdmin: ${user.isAdmin}`
-    );
-
-    if (isAdminUser && user.isAdmin !== true) {
-      console.log(`🔧 Setting isAdmin to true for ${email}`);
-      user.isAdmin = true;
-      const savedUser = await user.save();
-      console.log(
-        `👑 Admin privileges saved to database for: ${email}, Verified isAdmin: ${savedUser.isAdmin}`
-      );
-    }
-
     req.session.userId = user._id;
-    console.log(`✅ User logged in: ${email}, Admin: ${user.isAdmin}`);
+    console.log(`✅ User logged in: ${email}`);
     res.json({
       success: true,
       character: user.character, // Return the full character object
@@ -436,111 +419,14 @@ app.get("/", (req, res) => {
 app.get("/game", (req, res) => {
   console.log(`🎮 Game access attempt - Session userId: ${req.session.userId}`);
 
-  // Check admin-only mode
-  const adminOnlyMode = process.env.ADMIN_ONLY_MODE === "true";
-  console.log(
-    `🔒 Admin-only mode: ${adminOnlyMode}, Admin email: ${process.env.ADMIN_EMAIL}`
-  );
-
-  if (adminOnlyMode) {
-    // Check if user is logged in
-    if (!req.session.userId) {
-      console.log(
-        `🚫 Game access denied: No session userId, showing access restricted page`
-      );
-      return res.status(403).send(`
-        <html>
-          <head>
-            <title>Access Restricted</title>
-            <style>
-              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
-              .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-              h1 { color: #c41e3a; margin-bottom: 20px; }
-              p { color: #666; line-height: 1.6; }
-              .back-link { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
-              .back-link:hover { background: #0056b3; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <h1>� Access Restricted</h1>
-              <p>Game access is currently restricted to administrators only.</p>
-              <p>Please log in with administrator credentials to access the game.</p>
-              <a href="/" class="back-link">← Return to Login</a>
-            </div>
-          </body>
-        </html>
-      `);
-    }
-
-    // For simplicity, we'll check if the user's email matches the admin email
-    // In a production app, you'd want to store user ID in session and look up properly
-    const adminEmail = process.env.ADMIN_EMAIL;
-    if (!adminEmail) {
-      console.error("❌ ADMIN_EMAIL not set in environment variables");
-      return res.status(500).send("Server configuration error");
-    }
-
-    // Check if this user is the admin
-    User.findById(req.session.userId)
-      .select('+isAdmin') // Explicitly select isAdmin field
-      .then((user) => {
-        console.log(
-          `👤 Found user: ${user ? user.email : "null"}, isAdmin: ${
-            user ? user.isAdmin : "null"
-          }, Raw user data: ${user ? JSON.stringify({email: user.email, isAdmin: user.isAdmin}) : 'null'}`
-        );
-
-        // Double-check: if this is the admin email, force isAdmin to true
-        const isAdminEmail = user && user.email === adminEmail;
-        const userIsAdmin = user && (user.isAdmin === true || isAdminEmail);
-        
-        console.log(`🔍 Admin check - isAdminEmail: ${isAdminEmail}, userIsAdmin: ${userIsAdmin}`);
-
-        if (!user || !userIsAdmin) {
-          console.log(
-            `🚫 Game access denied: User ${
-              user ? user.email : "unknown"
-            } is not admin`
-          );
-          return res.status(403).send(`
-            <html>
-              <head>
-                <title>Access Restricted</title>
-                <style>
-                  body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
-                  .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                  h1 { color: #c41e3a; margin-bottom: 20px; }
-                  p { color: #666; line-height: 1.6; }
-                  .back-link { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
-                  .back-link:hover { background: #0056b3; }
-                </style>
-              </head>
-              <body>
-                <div class="container">
-                  <h1>🚫 Access Restricted</h1>
-                  <p>Game access is currently restricted to administrators only.</p>
-                  <p>Please log in with administrator credentials to access the game.</p>
-                  <a href="/" class="back-link">← Return to Login</a>
-                </div>
-              </body>
-            </html>
-          `);
-        } else {
-          console.log(
-            `✅ Game access granted: Admin user ${user.email} accessing game`
-          );
-          res.sendFile(path.join(__dirname, "public/game/game.html"));
-        }
-      })
-      .catch((error) => {
-        console.error("❌ Error checking admin status:", error);
-        res.status(500).send("Server error during authentication");
-      });
-  } else {
-    console.log(`✅ Game access granted: Admin-only mode disabled`);
-    res.sendFile(path.join(__dirname, "public/game/game.html"));
+  // Check if user is logged in
+  if (!req.session.userId) {
+    console.log(`🚫 Game access denied: No session userId, redirecting to login`);
+    return res.redirect("/");
   }
+
+  console.log(`✅ Game access granted: User ${req.session.userId} accessing game`);
+  res.sendFile(path.join(__dirname, "public/game/game.html"));
 });
 
 app.get("/list", (req, res) => {
@@ -757,56 +643,6 @@ io.on("connection", async (socket) => {
   socket.on("join-room", async (data) => {
     const { room, character } = data;
 
-    // Check admin-only mode
-    const adminOnlyMode = process.env.ADMIN_ONLY_MODE === "true";
-    if (adminOnlyMode) {
-      try {
-        // Get session from socket request
-        const session = socket.request.session;
-
-        if (!session || !session.userId) {
-          console.log(
-            `🚫 Socket join denied: No valid session for socket ${socket.id}`
-          );
-          socket.emit("join-error", {
-            message: "Authentication required. Please log in again.",
-          });
-          return;
-        }
-
-        // Find the user by their session userId
-        const currentUser = await User.findById(session.userId);
-        console.log(
-          `🔍 Socket join attempt - User: ${
-            currentUser ? currentUser.email : "unknown"
-          }, isAdmin: ${currentUser ? currentUser.isAdmin : "null"}`
-        );
-
-        if (!currentUser || !currentUser.isAdmin) {
-          console.log(
-            `🚫 Non-admin user ${
-              currentUser ? currentUser.email : "unknown"
-            } attempted to join game room: ${room}`
-          );
-          socket.emit("join-error", {
-            message:
-              "Game access is currently restricted to administrators only. Registration is open but gameplay is limited.",
-          });
-          return;
-        }
-
-        console.log(
-          `✅ Admin user ${currentUser.email} joining game room: ${room}`
-        );
-      } catch (error) {
-        console.error("❌ Error checking admin status for socket:", error);
-        socket.emit("join-error", {
-          message: "Server error during authentication",
-        });
-        return;
-      }
-    }
-
     if (!socket.isGameClient) {
       socket.isGameClient = true;
       gameClientCount++;
@@ -820,7 +656,7 @@ io.on("connection", async (socket) => {
         .to(room)
         .emit("user-joined", { character, socketId: socket.id, roomId: room });
       emitRoomCount(room);
-      console.log(`✅ Admin user joined room: ${room}`);
+      console.log(`✅ User joined room: ${room}`);
     }
   });
 
