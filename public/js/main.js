@@ -106,6 +106,7 @@ async function handleLogin(event) {
 
   if (result.success) {
     sessionStorage.setItem("character", JSON.stringify(result.character));
+    sessionStorage.setItem("userEmail", email); // Store email for chat color persistence
     // Redirect to the game or main page
     window.location.href = "/game";
   } else {

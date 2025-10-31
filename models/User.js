@@ -23,6 +23,19 @@ const userSchema = new mongoose.Schema({
     bio: String,
     avatar: String,
   },
+  stats: {
+    hunger: { type: Number, default: 100 },
+    thirst: { type: Number, default: 100 },
+    energy: { type: Number, default: 100 },
+    hygiene: { type: Number, default: 100 },
+    bladder: { type: Number, default: 100 },
+    intoxication: { type: Number, default: 0 },
+    lastUpdated: { type: Date, default: Date.now },
+  },
+  chatColor: {
+    type: String,
+    default: "#c0932b", // Default chat color
+  },
 });
 
 module.exports = mongoose.model("User", userSchema);

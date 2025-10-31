@@ -2378,7 +2378,7 @@ body {
 .food-grid[data-subcategory="mains"].active,
 .food-grid[data-subcategory="desserts"].active,
 .beverages-grid.active {
-  display: grid;
+  display: contents;
 }
 
 /* Room Players Popup Styling */

@@ -521,20 +521,120 @@ const allowedRooms = [
   "boarding_tower",
 ];
 
-// At the top of server.js, add a room tracking object
-const roomCounts = {};
-allowedRooms.forEach((room) => (roomCounts[room] = 0));
+// At the top of server.js, add a room message history storage
+const roomMessageHistory = {};
+const MAX_MESSAGES_PER_ROOM = 50;
+
+// Helper function to add message to room history
+function addMessageToRoomHistory(room, message) {
+  if (!roomMessageHistory[room]) {
+    roomMessageHistory[room] = [];
+  }
+
+  roomMessageHistory[room].push(message);
+
+  // Keep only the most recent messages
+  if (roomMessageHistory[room].length > MAX_MESSAGES_PER_ROOM) {
+    roomMessageHistory[room] = roomMessageHistory[room].slice(
+      -MAX_MESSAGES_PER_ROOM
+    );
+  }
+}
 
 // Add this function at the top level of server.js
 function emitRoomCount(roomId) {
   const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-  roomCounts[roomId] = roomSize;
   console.log(`📊 Room ${roomId} has ${roomSize} user(s)`);
   // Emit to all connected clients, not just room members
   io.emit("room-count", {
     roomId: roomId,
     count: roomSize,
   });
+}
+
+// Function to get current voyage state
+function getCurrentVoyageState() {
+  const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
+
+  let location = "Southampton";
+  let speed = "0 knots";
+  let speedValue = 0; // Actual current speed
+  let targetSpeed = 0; // Target speed for smooth acceleration
+
+  // Timeline milestones (in milliseconds from departure start)
+  const DEPARTURE_START = 0;
+  const SOUTHAMPTON_WATER_END = 1200000; // 20 minutes - 6 knots
+  const NEEDLES_PASS = 4650000; // 1h 17.5m - Isle of Wight passage - 12 knots
+  const NEEDLES_COMPLETE = 5130000; // ~8 minutes after Needles start (8 min passage)
+  const CHANNEL_COMPLETE = 18000000; // 5 hours - 19 knots cruising across English Channel
+  const APPROACH_COMPLETE = 18900000; // 15 more minutes - 12 knots approaching harbor
+  const BERTHING_COMPLETE = 19500000; // 10 more minutes - 6 knots → 0 (5h 25m total)
+
+  // Acceleration rate: 0.012 knots per second squared (matches client)
+  const ACCELERATION = 0.012;
+
+  // Departure happens at 420 seconds (7 minutes) into the voyage
+  const elapsedSinceDeparture = Math.max(0, elapsedSeconds - 420); // in seconds
+
+  if (elapsedSeconds < 420) {
+    // Before departure
+    location = "Southampton";
+    speed = "0 knots";
+    speedValue = 0;
+    targetSpeed = 0;
+  } else if (elapsedSinceDeparture * 1000 < SOUTHAMPTON_WATER_END) {
+    // Southampton Water - accelerating to 6 knots
+    location = "Southampton Water";
+    targetSpeed = 6;
+
+    // Calculate current speed based on acceleration from 0 to 6 knots
+    // Time to reach 6 knots: 6 / 0.012 = 500 seconds
+    const timeToReach6Knots = 6 / ACCELERATION;
+    if (elapsedSinceDeparture < timeToReach6Knots) {
+      speedValue = Math.min(6, elapsedSinceDeparture * ACCELERATION);
+    } else {
+      speedValue = 6;
+    }
+    speed = `${speedValue.toFixed(1)} knots`;
+  } else if (elapsedSinceDeparture * 1000 < NEEDLES_COMPLETE) {
+    // The Solent - 12 knots
+    location = "The Solent";
+    speed = "12 knots";
+    speedValue = 12;
+    targetSpeed = 12;
+  } else if (elapsedSinceDeparture * 1000 < CHANNEL_COMPLETE) {
+    // English Channel - 19 knots cruising
+    location = "English Channel";
+    speed = "19 knots";
+    speedValue = 19;
+    targetSpeed = 19;
+  } else if (elapsedSinceDeparture * 1000 < APPROACH_COMPLETE) {
+    // Approach to Cherbourg - 12 knots
+    location = "Approaching Cherbourg";
+    speed = "12 knots";
+    speedValue = 12;
+    targetSpeed = 12;
+  } else if (elapsedSinceDeparture * 1000 < BERTHING_COMPLETE) {
+    // Harbor entry - 6 knots
+    location = "Cherbourg Harbor";
+    speed = "6 knots";
+    speedValue = 6;
+    targetSpeed = 6;
+  } else {
+    // Berthed - full stop
+    location = "Cherbourg Harbor";
+    speed = "0 knots";
+    speedValue = 0;
+    targetSpeed = 0;
+  }
+
+  return {
+    location,
+    speed,
+    speedValue,
+    targetSpeed,
+    elapsedSeconds,
+  };
 }
 
 // Add cabin data
@@ -605,6 +705,89 @@ app.get("/api/get_available_cabins", (req, res) => {
   res.json(availableCabins);
 });
 
+// Stats API endpoints
+app.get("/api/get-stats", async (req, res) => {
+  try {
+    const userEmail = req.query.email;
+    if (!userEmail) {
+      return res.status(400).json({ error: "Email is required" });
+    }
+
+    const user = await User.findOne({ email: userEmail });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Calculate time-based stat decay since last update
+    const now = Date.now();
+    const timeDiff = (now - user.stats.lastUpdated) / 1000; // seconds
+    const decayIntervals = Math.floor(timeDiff);
+
+    let updatedStats = { ...user.stats };
+
+    // Apply decay for each interval
+    for (let i = 0; i < decayIntervals; i++) {
+      // Hunger decreases by 0.05 per second
+      updatedStats.hunger = Math.max(0, updatedStats.hunger - 0.05);
+      // Thirst decreases by 0.07 per second
+      updatedStats.thirst = Math.max(0, updatedStats.thirst - 0.07);
+      // Energy decreases by 0.03 per second
+      updatedStats.energy = Math.max(0, updatedStats.energy - 0.03);
+      // Hygiene decreases by 0.02 per second
+      updatedStats.hygiene = Math.max(0, updatedStats.hygiene - 0.02);
+      // Bladder decreases by 0.06 per second
+      updatedStats.bladder = Math.max(0, updatedStats.bladder - 0.06);
+      // Intoxication decreases by 0.1 per second (if above 0)
+      if (updatedStats.intoxication > 0) {
+        updatedStats.intoxication = Math.max(
+          0,
+          updatedStats.intoxication - 0.1
+        );
+      }
+    }
+
+    // Update lastUpdated timestamp
+    updatedStats.lastUpdated = now;
+
+    // Save updated stats to database
+    user.stats = updatedStats;
+    await user.save();
+
+    console.log(`📊 Loaded and updated stats for ${userEmail}`);
+    res.json(updatedStats);
+  } catch (error) {
+    console.error("❌ Error loading stats:", error);
+    res.status(500).json({ error: "Failed to load stats" });
+  }
+});
+
+app.post("/api/save-stats", async (req, res) => {
+  try {
+    const { email, stats } = req.body;
+    if (!email || !stats) {
+      return res.status(400).json({ error: "Email and stats are required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Update stats with current timestamp
+    user.stats = {
+      ...stats,
+      lastUpdated: Date.now(),
+    };
+
+    await user.save();
+    console.log(`💾 Saved stats for ${email}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("❌ Error saving stats:", error);
+    res.status(500).json({ error: "Failed to save stats" });
+  }
+});
+
 // Socket.IO Setup
 io.on("connection", async (socket) => {
   console.log(`🔌 New connection: ${socket.id}`);
@@ -618,13 +801,49 @@ io.on("connection", async (socket) => {
   socket.emit("voyage-start-time", voyageStartTime);
   console.log(`⏰ Sent voyage start time to ${socket.id}: ${voyageStartTime}`);
 
-  // Assign a default color or retrieve from a database
-  const defaultColor = "#ffffff"; // Default chat color
-  userChatColors[socket.id] = defaultColor;
-  console.log(`🎨 Assigned default color to ${socket.id}: ${defaultColor}`);
+  // Send current voyage state for immediate sync
+  const currentVoyageState = getCurrentVoyageState();
+  socket.emit("voyage-state", currentVoyageState);
+  console.log(
+    `🚢 Sent current voyage state to ${socket.id}:`,
+    currentVoyageState
+  );
+
+  // Get user's email from auth data
+  const userEmail = socket.handshake.auth?.email;
+  socket.userEmail = userEmail;
+
+  // Assign chat color - load from database if user is authenticated
+  let assignedColor = "#c0932b"; // Default chat color
+  if (userEmail) {
+    try {
+      const user = await User.findOne({ email: userEmail });
+      if (user && user.chatColor) {
+        assignedColor = user.chatColor;
+        console.log(
+          `🎨 Loaded saved chat color for ${userEmail}: ${assignedColor}`
+        );
+      } else {
+        console.log(
+          `🎨 Using default chat color for ${userEmail}: ${assignedColor}`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `❌ Error loading chat color for ${userEmail}: ${error.message}`
+      );
+    }
+  } else {
+    console.log(
+      `🎨 Anonymous user connected, using default color: ${assignedColor}`
+    );
+  }
+
+  userChatColors[socket.id] = assignedColor;
+  console.log(`🎨 Assigned color to ${socket.id}: ${assignedColor}`);
 
   // Send the assigned color to the connected client
-  socket.emit("assign-chat-color", defaultColor);
+  socket.emit("assign-chat-color", assignedColor);
   socket.emit("game-user-count", gameClientCount);
   console.log(`📩 Sent assigned chat color to ${socket.id}`);
 
@@ -660,6 +879,16 @@ io.on("connection", async (socket) => {
         .to(room)
         .emit("user-joined", { character, socketId: socket.id, roomId: room });
       emitRoomCount(room);
+
+      // Send recent message history for this room
+      const roomHistory = roomMessageHistory[room] || [];
+      if (roomHistory.length > 0) {
+        socket.emit("room-message-history", { room, messages: roomHistory });
+        console.log(
+          `📚 Sent ${roomHistory.length} messages from history for room: ${room}`
+        );
+      }
+
       console.log(`✅ User joined room: ${room}`);
     }
   });
@@ -673,6 +902,9 @@ io.on("connection", async (socket) => {
         return;
       }
 
+      // Add message to room history
+      addMessageToRoomHistory(data.room, data);
+
       // Broadcast the message to all clients globally
       io.emit("chat-message", data);
       console.log(
@@ -680,6 +912,32 @@ io.on("connection", async (socket) => {
       );
     } else {
       console.warn("⚠️ Received chat message without character data:", data);
+    }
+  });
+
+  // Handle 'change-chat-color' event
+  socket.on("change-chat-color", async (color) => {
+    try {
+      // Find user by email (assuming we have email stored on socket)
+      if (socket.userEmail) {
+        const user = await User.findOne({ email: socket.userEmail });
+        if (user) {
+          user.chatColor = color;
+          await user.save();
+          console.log(
+            `🎨 Updated chat color for ${socket.userEmail}: ${color}`
+          );
+
+          // Update in-memory color
+          userChatColors[socket.id] = color;
+
+          // Broadcast color change to all clients
+          io.emit("update-chat-color", { userId: socket.id, color });
+          console.log(`📤 Broadcasted color change for ${socket.id}`);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error updating chat color: ${error.message}`);
     }
   });
 
@@ -749,6 +1007,87 @@ io.on("connection", async (socket) => {
       }
     }
   });
+
+  socket.on("load-stats", async () => {
+    try {
+      if (!socket.email) {
+        console.error("❌ No email found for stats loading");
+        return;
+      }
+
+      const user = await User.findOne({ email: socket.email });
+      if (!user || !user.stats) {
+        console.log(
+          `📊 No stats found for user ${socket.email}, sending defaults`
+        );
+        socket.emit("stats-loaded", {
+          hunger: 100,
+          thirst: 100,
+          energy: 100,
+          hygiene: 100,
+          bladder: 100,
+          intoxication: 0,
+        });
+        return;
+      }
+
+      // Calculate time-based decay since last update
+      const now = Date.now();
+      const timeDiffSeconds = (now - user.stats.lastUpdated) / 1000;
+
+      // Apply decay rates
+      const hungerDecay = Math.min(100, timeDiffSeconds * 0.05); // 0.05 per second
+      const thirstDecay = Math.min(100, timeDiffSeconds * 0.07); // 0.07 per second
+      const energyDecay = Math.min(100, timeDiffSeconds * 0.03); // 0.03 per second
+      const hygieneDecay = Math.min(100, timeDiffSeconds * 0.02); // 0.02 per second
+      const bladderDecay = Math.min(100, timeDiffSeconds * 0.06); // 0.06 per second
+      const intoxicationDecay = Math.max(0, timeDiffSeconds * 0.1); // 0.1 per second (only decreases)
+
+      const currentStats = {
+        hunger: Math.max(0, user.stats.hunger - hungerDecay),
+        thirst: Math.max(0, user.stats.thirst - thirstDecay),
+        energy: Math.max(0, user.stats.energy - energyDecay),
+        hygiene: Math.max(0, user.stats.hygiene - hygieneDecay),
+        bladder: Math.max(0, user.stats.bladder - bladderDecay),
+        intoxication: Math.max(0, user.stats.intoxication - intoxicationDecay),
+      };
+
+      console.log(`📊 Loaded stats for ${socket.email}:`, currentStats);
+      socket.emit("stats-loaded", currentStats);
+    } catch (error) {
+      console.error(`❌ Error loading stats: ${error.message}`);
+    }
+  });
+
+  socket.on("save-stats", async (statsData) => {
+    try {
+      if (!socket.email) {
+        console.error("❌ No email found for stats saving");
+        return;
+      }
+
+      await User.findOneAndUpdate(
+        { email: socket.email },
+        {
+          stats: {
+            hunger: statsData.hunger,
+            thirst: statsData.thirst,
+            energy: statsData.energy,
+            hygiene: statsData.hygiene,
+            bladder: statsData.bladder,
+            intoxication: statsData.intoxication,
+            lastUpdated: Date.now(),
+          },
+        },
+        { upsert: true }
+      );
+
+      console.log(`💾 Saved stats for ${socket.email}:`, statsData);
+    } catch (error) {
+      console.error(`❌ Error saving stats: ${error.message}`);
+    }
+  });
+
   socket.on("disconnect", () => {
     console.log(`👤 User disconnected: ${socket.id}`);
     try {

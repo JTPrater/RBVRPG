@@ -1,4 +1,8 @@
-const socket = io();
+const socket = io({
+  auth: {
+    email: sessionStorage.getItem("userEmail"),
+  },
+});
 let currentRoom = { name: null, id: null };
 const chatHistory = {
   rooms: {},
@@ -35,7 +39,177 @@ socket.on("voyage-start-time", (serverStartTime) => {
     updateSkyImage();
     console.log("🌤️ Updated sky with server-synced time");
   }
+
+  // Load stats from server now that we're connected
+  loadStatsFromServer();
+
+  // Handle automatic room joining for reconnections
+  handleReconnectionRoomJoin();
 });
+
+// Listen for current voyage state from server (for immediate sync on refresh)
+socket.on("voyage-state", (currentVoyageState) => {
+  console.log(
+    "🚢 Received current voyage state from server:",
+    currentVoyageState
+  );
+
+  // Update info bar elements immediately
+  document.getElementById(
+    "location"
+  ).textContent = `Location: ${currentVoyageState.location}`;
+  document.getElementById(
+    "speed"
+  ).textContent = `Speed: ${currentVoyageState.speed}`;
+
+  // Set window.currentSpeed for visual effects (smoke, wind)
+  window.currentSpeed = currentVoyageState.speedValue;
+  // Set target speed for smooth acceleration/deceleration
+  window.targetSpeed = currentVoyageState.targetSpeed;
+  console.log(
+    `💨 Set window.currentSpeed to ${window.currentSpeed} and targetSpeed to ${window.targetSpeed} for visual effects`
+  );
+
+  // Sync narrative immediately on refresh
+  if (narrativeSystem.startTime && currentVoyageState.elapsedSeconds) {
+    const elapsed = currentVoyageState.elapsedSeconds;
+    const storyTextElement = document.getElementById("story-text");
+
+    if (storyTextElement) {
+      // Find the appropriate narrative event for current elapsed time
+      let currentEventIndex = 0;
+      for (let i = 0; i < narrativeSystem.events.length; i++) {
+        if (elapsed >= narrativeSystem.events[i].time) {
+          currentEventIndex = i;
+        } else {
+          break;
+        }
+      }
+
+      // Update narrative immediately without fade effect
+      const currentEvent = narrativeSystem.events[currentEventIndex];
+      if (currentEvent) {
+        storyTextElement.textContent = currentEvent.text;
+        storyTextElement.style.opacity = "1"; // Ensure it's visible
+        narrativeSystem.currentEventIndex = currentEventIndex + 1; // Set to next event
+
+        // Save current event index to sessionStorage
+        sessionStorage.setItem(
+          "narrativeEventIndex",
+          narrativeSystem.currentEventIndex.toString()
+        );
+
+        console.log(`📖 Synced narrative immediately: ${currentEvent.text}`);
+      }
+    }
+  }
+
+  console.log(
+    "🔄 Updated info bar, visual effects, and narrative with server voyage state"
+  );
+});
+
+// Listen for stats from server (for loading persisted stats on connect)
+socket.on("stats-loaded", (statsData) => {
+  console.log("📊 Received stats from server:", statsData);
+
+  // Update statusBars with server data
+  if (statsData.hunger !== undefined)
+    statusBars.hunger.value = statsData.hunger;
+  if (statsData.thirst !== undefined)
+    statusBars.thirst.value = statsData.thirst;
+  if (statsData.energy !== undefined)
+    statusBars.energy.value = statsData.energy;
+  if (statsData.hygiene !== undefined)
+    statusBars.hygiene.value = statsData.hygiene;
+  if (statsData.bladder !== undefined)
+    statusBars.bladder.value = statsData.bladder;
+  if (statsData.intoxication !== undefined)
+    statusBars.intoxication.value = statsData.intoxication;
+
+  // Update visual bars immediately
+  Object.entries(statusBars).forEach(([key, status]) => {
+    const bar = document.querySelector(`.bar.${key}`);
+    if (bar) {
+      bar.style.width = `${status.value}%`;
+
+      // Calculate hue based on value
+      let hue;
+      if (key === "intoxication") {
+        hue = 120 - (status.value / 100) * 120; // Green (0%) to Red (100%)
+      } else {
+        hue = (status.value / 100) * 120; // Red (0%) to Green (100%)
+      }
+      bar.style.setProperty(`--${key}-hue`, hue);
+
+      if (status.value < 20 && key !== "intoxication") {
+        bar.style.animation = "pulse 2s infinite";
+      } else {
+        bar.style.animation = "none";
+      }
+    }
+  });
+
+  console.log("📊 Stats loaded and visual bars updated");
+});
+
+// Handle automatic room joining for reconnections
+function handleReconnectionRoomJoin() {
+  // Only auto-join if not already in a room
+  if (currentRoom.name) {
+    console.log(`🔄 Already in room ${currentRoom.name}, skipping auto-join`);
+    return;
+  }
+
+  const characterData = JSON.parse(sessionStorage.getItem("character"));
+  if (!characterData) {
+    console.log("⚠️ No character data found, cannot auto-join room");
+    return;
+  }
+
+  const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
+
+  if (elapsedSeconds >= 420) {
+    // Voyage has departed - spawn on ship
+    console.log(
+      `🚢 Voyage already departed (${Math.floor(
+        elapsedSeconds / 60
+      )} min elapsed) - auto-joining ship`
+    );
+
+    // Try to find player's cabin first, otherwise default to promenade
+    const cabinRoom = findPlayerCabin();
+    const defaultShipRoom =
+      (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
+        (r) => r.id === "port_promenade_bd"
+      ) || deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd");
+
+    const spawnRoom = cabinRoom || defaultShipRoom;
+    if (spawnRoom) {
+      enterRoom(spawnRoom);
+      console.log(`🚪 Auto-joined ship room: ${spawnRoom.name}`);
+    } else {
+      console.error("❌ Could not find ship spawn location for reconnection");
+    }
+  } else {
+    // Voyage hasn't departed yet - spawn at Southampton
+    console.log(
+      `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - auto-joining Southampton`
+    );
+
+    const initialRoom = deckRooms.southampton.find(
+      (r) => r.name === "Berth 44 Forward Docks"
+    );
+    if (initialRoom) {
+      enterRoom(initialRoom);
+      console.log(`🚪 Auto-joined Southampton room: ${initialRoom.name}`);
+    } else {
+      console.error(
+        "❌ Could not find Southampton spawn location for reconnection"
+      );
+    }
+  }
+}
 
 // Narrative System
 const narrativeSystem = {
@@ -98,6 +272,12 @@ const narrativeSystem = {
   ],
 
   init() {
+    // Load current event index from sessionStorage to prevent replaying on reconnect
+    const savedIndex = sessionStorage.getItem("narrativeEventIndex");
+    if (savedIndex !== null) {
+      this.currentEventIndex = parseInt(savedIndex, 10);
+    }
+
     // startTime will be set by server via socket event
     // Don't set it here anymore
     this.updateNarrative();
@@ -128,6 +308,13 @@ const narrativeSystem = {
         storyTextElement.textContent = nextEvent.text;
         storyTextElement.style.opacity = "1";
         this.currentEventIndex++;
+
+        // Save current event index to sessionStorage to prevent replaying on reconnect
+        sessionStorage.setItem(
+          "narrativeEventIndex",
+          this.currentEventIndex.toString()
+        );
+
         console.log(`📖 Narrative event: ${nextEvent.text}`);
       }, 500);
     }
@@ -1619,6 +1806,27 @@ function updateStatusBars() {
 // Update status bars every minute
 setInterval(updateStatusBars, 1000);
 
+// Function to save current stats to server
+function saveStatsToServer() {
+  const statsData = {
+    hunger: statusBars.hunger.value,
+    thirst: statusBars.thirst.value,
+    energy: statusBars.energy.value,
+    hygiene: statusBars.hygiene.value,
+    bladder: statusBars.bladder.value,
+    intoxication: statusBars.intoxication.value,
+  };
+
+  console.log("💾 Saving stats to server:", statsData);
+  socket.emit("save-stats", statsData);
+}
+
+// Function to load stats from server
+function loadStatsFromServer() {
+  console.log("📊 Requesting stats from server");
+  socket.emit("load-stats");
+}
+
 // Single DOMContentLoaded event listener
 document.addEventListener("DOMContentLoaded", function () {
   console.log("📄 DOMContentLoaded event triggered.");
@@ -1685,25 +1893,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   } else {
     console.log("⚠️ No character data found.");
-  }
-
-  // Helper function to find player's cabin room
-  function findPlayerCabin() {
-    const characterData = JSON.parse(sessionStorage.getItem("character"));
-    if (!characterData || !characterData.cabin_number) return null;
-
-    const cabinNumber = characterData.cabin_number;
-    const cabinId = `cabin_${cabinNumber.toLowerCase()}`;
-
-    // Try to find cabin in a_deck
-    const cabinRoom = deckRooms.a_deck?.find((r) => r.id === cabinId);
-    if (cabinRoom) {
-      console.log(`🏠 Found player's cabin: ${cabinRoom.name}`);
-      return cabinRoom;
-    }
-
-    console.log(`⚠️ Could not find cabin ${cabinNumber}`);
-    return null;
   }
 
   // Add event listeners for chat functionality
@@ -1792,22 +1981,30 @@ document.addEventListener("DOMContentLoaded", function () {
         // First 7 minutes
         location = "Southampton";
         speed = "0 knots";
-      } else if (elapsedSeconds < 630) {
-        // 7-10.5 minutes - departing
+      } else if (elapsedSeconds < 1020) {
+        // 7-17 minutes - Southampton Water
         location = "Southampton Water";
-        speed = "5 knots";
-      } else if (elapsedSeconds < 4080) {
-        // Up to 1h 8m
-        location = "The Solent";
-        speed = "18 knots";
+        speed = "6 knots";
       } else if (elapsedSeconds < 5160) {
-        // Up to 1h 26m
-        location = "Near Isle of Wight";
-        speed = "18 knots";
-      } else {
-        // After 1h 26m
+        // 17 minutes - 1h 26m - The Solent
+        location = "The Solent";
+        speed = "12 knots";
+      } else if (elapsedSeconds < 18000) {
+        // 1h 26m - 5h - English Channel cruising
         location = "English Channel";
-        speed = "21 knots";
+        speed = "19 knots";
+      } else if (elapsedSeconds < 18900) {
+        // 5h - 5h 15m - Approaching Cherbourg
+        location = "Approaching Cherbourg";
+        speed = "12 knots";
+      } else if (elapsedSeconds < 19500) {
+        // 5h 15m - 5h 25m - Cherbourg Harbor
+        location = "Cherbourg Harbor";
+        speed = "6 knots";
+      } else {
+        // After 5h 25m - Berthed
+        location = "Cherbourg";
+        speed = "0 knots";
       }
     }
 
@@ -2204,11 +2401,29 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // If ship has already departed (past 7 minutes), spawn on ship
         if (elapsedSeconds >= 420) {
-          console.log(
-            `🚢 Voyage already departed (${Math.floor(
-              elapsedSeconds / 60
-            )} min elapsed) - spawning on ship`
-          );
+          // Check if player was in a room before refresh
+          const lastRoomName = localStorage.getItem("lastRoom");
+          if (lastRoomName) {
+            // Try to find the room by name across all decks
+            let lastRoom = null;
+            for (const deck in deckRooms) {
+              if (deckRooms[deck]) {
+                lastRoom = deckRooms[deck].find((r) => r.name === lastRoomName);
+                if (lastRoom) break;
+              }
+            }
+
+            if (lastRoom) {
+              console.log(`🔄 Restoring player to last room: ${lastRoom.name}`);
+              enterRoom(lastRoom);
+              return; // Don't do the spawn logic below
+            } else {
+              console.log(
+                `⚠️ Last room "${lastRoomName}" not found, proceeding with spawn logic`
+              );
+              localStorage.removeItem("lastRoom"); // Clean up invalid data
+            }
+          }
 
           // Try to find player's cabin first, otherwise default to promenade
           const cabinRoom = findPlayerCabin();
@@ -2376,6 +2591,7 @@ document.addEventListener("DOMContentLoaded", function () {
           statusBars.hygiene.value = 100;
           const hygieneBar = document.querySelector(".bar.hygiene");
           if (hygieneBar) hygieneBar.style.width = "100%";
+          saveStatsToServer();
         };
 
         // Toilet button
@@ -2394,6 +2610,7 @@ document.addEventListener("DOMContentLoaded", function () {
           statusBars.bladder.value = 100;
           const bladderBar = document.querySelector(".bar.bladder");
           if (bladderBar) bladderBar.style.width = "100%";
+          saveStatsToServer();
         };
 
         // Sleep button
@@ -2412,6 +2629,7 @@ document.addEventListener("DOMContentLoaded", function () {
           statusBars.energy.value = 100;
           const energyBar = document.querySelector(".bar.energy");
           if (energyBar) energyBar.style.width = "100%";
+          saveStatsToServer();
         };
 
         actionDiv.appendChild(showerBtn);
@@ -2536,6 +2754,13 @@ document.addEventListener("DOMContentLoaded", function () {
         "gymnasium",
         "playroom",
         "bridge",
+        "lounge",
+        "smoking-room",
+        "dining-room",
+        "reception-room",
+        "cabin",
+        "corridor",
+        "reading-writing-room",
       ];
 
       if (interiorTypes.includes(room.type)) {
@@ -2637,7 +2862,8 @@ document.addEventListener("DOMContentLoaded", function () {
       chatMessages.appendChild(messageDiv);
     });
 
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    // Only scroll to bottom if explicitly requested (not automatic on mode switch)
+    // This prevents jarring scroll behavior when switching between local/global chat
     console.log(
       `✅ Updated chat display with ${messagesToShow.length} messages`
     );
@@ -2659,6 +2885,12 @@ document.addEventListener("DOMContentLoaded", function () {
       timestamp: Date.now(),
     };
     addChatMessage(systemMessage);
+
+    // Scroll to bottom after mode switch to show latest messages
+    const chatMessages = document.getElementById("chat-messages");
+    setTimeout(() => {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }, 10); // Small delay to ensure DOM updates are complete
   }
 
   // Helper function to get room name by ID
@@ -2707,6 +2939,19 @@ document.addEventListener("DOMContentLoaded", function () {
     alert(data.message || "Game access is restricted to administrators only.");
     // Redirect to registration page
     window.location.href = "/";
+  });
+
+  // Handle room message history when joining a room
+  socket.on("room-message-history", (data) => {
+    const { room, messages } = data;
+    console.log(
+      `📚 Received ${messages.length} messages from room history for: ${room}`
+    );
+
+    // Add each historical message to chat
+    messages.forEach((message) => {
+      addChatMessage(message);
+    });
   });
 
   socket.on("user-joined", (data) => {
@@ -2809,6 +3054,12 @@ document.addEventListener("DOMContentLoaded", function () {
   document
     .querySelector(".panel1-buttons button:first-child")
     .addEventListener("click", () => {
+      // Close deckplans popup if it's open
+      const deckplansPopup = document.getElementById("deckplans-popup");
+      if (deckplansPopup && deckplansPopup.style.display === "block") {
+        deckplansPopup.style.display = "none";
+        openMapSound.pause();
+      }
       document.getElementById("settings-popup").style.display = "block";
     });
 
@@ -2824,80 +3075,103 @@ document.addEventListener("DOMContentLoaded", function () {
   const cancelReport = document.getElementById("cancel-report");
   const reportForm = document.getElementById("report-form");
 
-  reportBtn.addEventListener("click", () => {
-    reportModal.style.display = "block";
-    console.log("🚨 Report modal opened");
-  });
+  if (
+    !reportBtn ||
+    !reportModal ||
+    !closeReportModal ||
+    !cancelReport ||
+    !reportForm
+  ) {
+    console.error("❌ Report system elements not found:", {
+      reportBtn: !!reportBtn,
+      reportModal: !!reportModal,
+      closeReportModal: !!closeReportModal,
+      cancelReport: !!cancelReport,
+      reportForm: !!reportForm,
+    });
+  } else {
+    console.log("✅ Report system elements found");
 
-  closeReportModal.addEventListener("click", () => {
-    reportModal.style.display = "none";
-    reportForm.reset();
-  });
+    reportBtn.addEventListener("click", () => {
+      reportModal.style.display = "block";
+      console.log("🚨 Report modal opened");
+    });
 
-  cancelReport.addEventListener("click", () => {
-    reportModal.style.display = "none";
-    reportForm.reset();
-  });
-
-  window.addEventListener("click", (event) => {
-    if (event.target === reportModal) {
+    closeReportModal.addEventListener("click", () => {
       reportModal.style.display = "none";
       reportForm.reset();
-    }
-  });
+    });
 
-  // Handle report form submission
-  reportForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
+    cancelReport.addEventListener("click", () => {
+      reportModal.style.display = "none";
+      reportForm.reset();
+    });
 
-    const formData = new FormData(reportForm);
-    const reportData = {
-      type: formData.get("report-type"),
-      description: formData.get("report-description"),
-      reportedUser: formData.get("reported-user") || null,
-      reporterName: sessionStorage.getItem("character")
-        ? JSON.parse(sessionStorage.getItem("character")).forename +
-          " " +
-          JSON.parse(sessionStorage.getItem("character")).surname
-        : "Anonymous",
-      room: currentRoom ? currentRoom.name : "Unknown",
-    };
-
-    try {
-      const response = await fetch("/api/report", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(reportData),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        alert(
-          "✅ Report submitted successfully! Thank you for helping keep the game safe."
-        );
+    window.addEventListener("click", (event) => {
+      if (event.target === reportModal) {
         reportModal.style.display = "none";
         reportForm.reset();
-        console.log("✅ Report submitted successfully");
-      } else {
-        alert("❌ Failed to submit report. Please try again.");
-        console.error("❌ Report submission failed:", result.error);
       }
-    } catch (error) {
-      alert(
-        "❌ Error submitting report. Please check your connection and try again."
-      );
-      console.error("❌ Report submission error:", error);
-    }
-  });
+    });
+
+    // Handle report form submission
+    reportForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const formData = new FormData(reportForm);
+      const reportData = {
+        type: formData.get("report-type"),
+        description: formData.get("report-description"),
+        reportedUser: formData.get("reported-user") || null,
+        reporterName: sessionStorage.getItem("character")
+          ? JSON.parse(sessionStorage.getItem("character")).forename +
+            " " +
+            JSON.parse(sessionStorage.getItem("character")).surname
+          : "Anonymous",
+        room: currentRoom ? currentRoom.name : "Unknown",
+      };
+
+      try {
+        const response = await fetch("/api/report", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(reportData),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert(
+            "✅ Report submitted successfully! Thank you for helping keep the game safe."
+          );
+          reportModal.style.display = "none";
+          reportForm.reset();
+          console.log("✅ Report submitted successfully");
+        } else {
+          alert("❌ Failed to submit report. Please try again.");
+          console.error("❌ Report submission failed:", result.error);
+        }
+      } catch (error) {
+        alert(
+          "❌ Error submitting report. Please check your connection and try again."
+        );
+        console.error("❌ Report submission error:", error);
+      }
+    });
+  }
 
   // Add Deckplans button functionality
   const deckplansBtn = document.getElementById("deckplans-btn");
   const closeDeckplansBtn = document.querySelector(".close-deckplans");
 
   deckplansBtn.addEventListener("click", () => {
+    // Close settings popup if it's open
+    const settingsPopup = document.getElementById("settings-popup");
+    if (settingsPopup && settingsPopup.style.display === "block") {
+      settingsPopup.style.display = "none";
+    }
     deckplansPopup.style.display = "block";
     openMapSound.currentTime = 0; // Reset to start
     openMapSound.play();
@@ -3498,8 +3772,19 @@ document.addEventListener("DOMContentLoaded", function () {
       button.style.display = "inline-block";
     });
 
-    // Default to boat deck
-    document.querySelector('[data-deck="boat_deck"]').click();
+    // Auto-switch to the deck containing the player's current room
+    let currentDeck = "boat_deck"; // Default fallback
+    for (const [deckName, rooms] of Object.entries(deckRooms)) {
+      if (
+        rooms.some(
+          (room) => room.location && room.location.chatRoom === currentRoom.name
+        )
+      ) {
+        currentDeck = deckName;
+        break;
+      }
+    }
+    document.querySelector(`[data-deck="${currentDeck}"]`).click();
 
     // After SVG overlays are created, set title attribute for all room markers
     setTimeout(() => {
@@ -5073,6 +5358,8 @@ document.addEventListener("DOMContentLoaded", function () {
       const hue = (statusBars.hunger.value / 100) * 120;
       hungerBar.style.setProperty("--hunger-hue", hue);
     }
+
+    saveStatsToServer();
   }
 
   // Function to handle drinking specific beverages
@@ -5099,6 +5386,8 @@ document.addEventListener("DOMContentLoaded", function () {
       const hue = (statusBars.thirst.value / 100) * 120;
       thirstBar.style.setProperty("--thirst-hue", hue);
     }
+
+    saveStatsToServer();
   }
 
   // Function to handle eating
@@ -5437,39 +5726,20 @@ document.addEventListener("DOMContentLoaded", function () {
     const startTime = voyageStartTime || Date.now(); // Use server time if available
     const elapsedAtStart = voyageStartTime ? Date.now() - voyageStartTime : 0; // How much time has already passed
 
-    // Calculate initial speed based on voyage progress
-    let targetSpeed = 6; // Default target
-    let currentSpeed = 0; // Default to stopped
+    // Calculate initial speed and positions from SERVER STATE, not local calculations
+    let currentSpeed = 0; // Will be set by server or calculated below
+    let targetSpeed = 6; // Will be set by server or calculated below
 
-    if (elapsedAtStart > 0) {
-      // Ship has already been traveling - calculate appropriate speed
-      const elapsedSinceVoyageStart = elapsedAtStart / 1000;
-      // Calculate elapsed time since DEPARTURE (not voyage start)
-      const elapsedSinceDeparture = Math.max(0, elapsedSinceVoyageStart - 420);
-
-      if (elapsedSinceDeparture < 210) {
-        // Less than 3.5 minutes since departure (Southampton Water)
-        targetSpeed = 6;
-        currentSpeed = Math.min(6, elapsedSinceDeparture * 0.05); // Gradual acceleration
-      } else if (elapsedSinceDeparture < 4260) {
-        // Less than 1h 11m since departure (Solent)
-        targetSpeed = 12;
-        currentSpeed = 12;
-      } else if (elapsedSinceDeparture < 4740) {
-        // Less than 1h 19m since departure (Near Isle of Wight)
-        targetSpeed = 18;
-        currentSpeed = 18;
-      } else {
-        // English Channel
-        targetSpeed = 21;
-        currentSpeed = 21;
-      }
-
+    // If we have server-provided speed, use it immediately
+    if (typeof window.currentSpeed === "number") {
+      currentSpeed = window.currentSpeed;
       console.log(
-        `🚢 Syncing departure animation: elapsed since departure=${Math.floor(
-          elapsedSinceDeparture / 60
-        )}min, speed=${currentSpeed}kts`
+        `🔄 Using server-provided currentSpeed: ${currentSpeed} knots`
       );
+    }
+    if (typeof window.targetSpeed === "number") {
+      targetSpeed = window.targetSpeed;
+      console.log(`🎯 Using server-provided targetSpeed: ${targetSpeed} knots`);
     }
 
     // Calculate initial positions based on elapsed time (for late joiners)
@@ -5487,31 +5757,50 @@ document.addEventListener("DOMContentLoaded", function () {
       // Calculate elapsed time since DEPARTURE (not voyage start)
       // Departure happens at 420 seconds (7 minutes)
       const elapsedSinceDeparture = Math.max(0, elapsedSinceVoyageStart - 420);
-      
-      // Calculate how far Southampton should have moved based on time since departure
-      // Average speed for first 20 minutes is roughly 6 knots
-      // After 20 minutes (1200s) FROM DEPARTURE, Southampton should be off-screen
-      if (elapsedSinceDeparture >= 1200) {
-        // Southampton is completely off-screen
+
+      // Calculate position based on actual speed profile, not average speed
+      // During acceleration (0-500s): position = 0.5 * acceleration * t^2
+      // During constant speed: position = previous_position + speed * t
+
+      const acceleration = 0.012; // knots per second
+      const timeToReach6Knots = 6 / acceleration; // ~500 seconds
+
+      if (elapsedSinceDeparture <= timeToReach6Knots) {
+        // Still accelerating from 0 to 6 knots - use kinematic equation
+        // position = 0.5 * a * t^2
+        departurePosition =
+          0.5 * acceleration * Math.pow(elapsedSinceDeparture, 2);
+        wavesPosition = departurePosition;
+        waterPosition = departurePosition;
+        swaterPosition = departurePosition;
+        landMiddlePosition = departurePosition;
+      } else if (elapsedSinceDeparture < 1200) {
+        // Reached 6 knots, now moving at constant speed
+        // Position during acceleration: 0.5 * 0.012 * 500^2 = 1500
+        const positionAtEndOfAcceleration =
+          0.5 * acceleration * Math.pow(timeToReach6Knots, 2);
+        const timeAtConstantSpeed = elapsedSinceDeparture - timeToReach6Knots;
+        departurePosition =
+          positionAtEndOfAcceleration + 6 * timeAtConstantSpeed;
+        wavesPosition = departurePosition;
+        waterPosition = departurePosition;
+        swaterPosition = departurePosition;
+        landMiddlePosition = departurePosition;
+      } else {
+        // Southampton is completely off-screen (after 20 minutes from departure)
         departurePosition = window.innerWidth * 3; // Way off screen
-        wavesPosition = elapsedSinceDeparture * 6; // Continue from current position
-        waterPosition = elapsedSinceDeparture * 6;
-        swaterPosition = elapsedSinceDeparture * 6;
-        landMiddlePosition = elapsedSinceDeparture * 6;
-      } else if (elapsedSinceDeparture > 0) {
-        // Southampton is still moving off-screen
-        departurePosition = elapsedSinceDeparture * 6; // 6 pixels per second at 6 knots
         wavesPosition = elapsedSinceDeparture * 6;
         waterPosition = elapsedSinceDeparture * 6;
         swaterPosition = elapsedSinceDeparture * 6;
         landMiddlePosition = elapsedSinceDeparture * 6;
       }
+
       console.log(
-        `🎬 Starting animation from position: ${departurePosition}px (${Math.floor(
+        `🎬 Starting animation from position: ${departurePosition.toFixed(
+          1
+        )}px (${Math.floor(
           elapsedSinceDeparture / 60
-        )}min since departure, ${Math.floor(
-          elapsedSinceVoyageStart / 60
-        )}min since voyage start)`
+        )}min since departure, speed=${currentSpeed.toFixed(1)}kts)`
       );
     }
     // startTime already defined above - using server voyage time
@@ -5584,21 +5873,33 @@ document.addEventListener("DOMContentLoaded", function () {
       const elapsedTime = now - startTime; // milliseconds since departure
       lastTimestamp = now;
 
-      // Determine target speed based on journey phase
-      if (elapsedTime < SOUTHAMPTON_WATER_END) {
-        targetSpeed = 6; // Southampton Water - 6 knots
-      } else if (elapsedTime < CHANNEL_COMPLETE) {
-        targetSpeed = 12; // Solent and early Channel - 12 knots
-        // Transition to 19 knots after passing Needles
-        if (elapsedTime > NEEDLES_COMPLETE) {
-          targetSpeed = 19; // Open Channel cruising speed
+      // Determine target speed based on journey phase (only if not already set by server)
+      if (typeof window.targetSpeed !== "number") {
+        if (elapsedTime < SOUTHAMPTON_WATER_END) {
+          targetSpeed = 6; // Southampton Water - 6 knots
+        } else if (elapsedTime < CHANNEL_COMPLETE) {
+          targetSpeed = 12; // Solent and early Channel - 12 knots
+          // Transition to 19 knots after passing Needles
+          if (elapsedTime > NEEDLES_COMPLETE) {
+            targetSpeed = 19; // Open Channel cruising speed
+          }
+        } else if (elapsedTime < APPROACH_COMPLETE) {
+          targetSpeed = 12; // Approach to Cherbourg - 12 knots
+        } else if (elapsedTime < BERTHING_COMPLETE) {
+          targetSpeed = 6; // Harbor entry - 6 knots
+        } else {
+          targetSpeed = 0; // Berthed - full stop
         }
-      } else if (elapsedTime < APPROACH_COMPLETE) {
-        targetSpeed = 12; // Approach to Cherbourg - 12 knots
-      } else if (elapsedTime < BERTHING_COMPLETE) {
-        targetSpeed = 6; // Harbor entry - 6 knots
-      } else {
-        targetSpeed = 0; // Berthed - full stop
+      }
+
+      // Sync with server-provided speeds (always respect server state)
+      if (typeof window.currentSpeed === "number") {
+        currentSpeed = window.currentSpeed;
+        window.currentSpeed = undefined; // Clear flag so we only sync once
+      }
+      if (typeof window.targetSpeed === "number") {
+        targetSpeed = window.targetSpeed;
+        window.targetSpeed = undefined; // Clear flag so we only sync once
       }
 
       // Smoothly adjust speed toward target
