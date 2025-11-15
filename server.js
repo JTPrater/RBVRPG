@@ -263,7 +263,7 @@ app.use(sessionMiddleware);
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 1000, // limit each IP to 1000 requests per windowMs (increased for production load)
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
@@ -411,7 +411,11 @@ app.post("/api/admin/reset-password", authLimiter, async (req, res) => {
     if (!user) return res.status(404).json({ error: "User not found" });
 
     // Generate a secure temporary password
-    const tempPass = crypto.randomBytes(10).toString("base64").replace(/[^a-zA-Z0-9]/g, '').slice(0, 12);
+    const tempPass = crypto
+      .randomBytes(10)
+      .toString("base64")
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .slice(0, 12);
 
     // Hash and save the temporary password
     const hashed = await bcrypt.hash(tempPass, 10);
@@ -425,7 +429,10 @@ app.post("/api/admin/reset-password", authLimiter, async (req, res) => {
 
     // (Optional) Here you could send an email with nodemailer — omitted for brevity.
 
-    res.json({ success: true, message: "Temporary password generated and saved" });
+    res.json({
+      success: true,
+      message: "Temporary password generated and saved",
+    });
   } catch (error) {
     console.error("❌ Admin reset-password error:", error);
     res.status(500).json({ success: false, error: "Internal server error" });
@@ -1095,34 +1102,60 @@ io.on("connection", async (socket) => {
     currentVoyageState
   );
 
-  // Get user's email from auth data
-  const userEmail = socket.handshake.auth?.email;
-  socket.userEmail = userEmail;
+  // Identify authenticated user by server session (safer than trusting client handshake)
+  const sessionUserId = socket.request?.session?.userId;
+  let assignedColor = "#c0932b"; // default chat color
+  let sessionEmail = null;
 
-  // Assign chat color - load from database if user is authenticated
-  let assignedColor = "#c0932b"; // Default chat color
-  if (userEmail) {
+  if (sessionUserId) {
     try {
-      const user = await User.findOne({ email: userEmail });
-      if (user && user.chatColor) {
-        assignedColor = user.chatColor;
-        console.log(
-          `🎨 Loaded saved chat color for ${userEmail}: ${assignedColor}`
-        );
+      const dbUser = await User.findById(sessionUserId).select(
+        "email chatColor"
+      );
+      if (dbUser) {
+        sessionEmail = dbUser.email;
+        socket.userEmail = dbUser.email;
+        if (dbUser.chatColor) {
+          assignedColor = dbUser.chatColor;
+          console.log(
+            `🎨 Loaded saved chat color for ${sessionEmail}: ${assignedColor}`
+          );
+        }
       } else {
-        console.log(
-          `🎨 Using default chat color for ${userEmail}: ${assignedColor}`
-        );
+        console.log(`🎨 Session user ${sessionUserId} not found in DB`);
       }
-    } catch (error) {
+    } catch (err) {
       console.error(
-        `❌ Error loading chat color for ${userEmail}: ${error.message}`
+        `❌ Error loading chat color for userId ${sessionUserId}:`,
+        err.message
       );
     }
   } else {
-    console.log(
-      `🎨 Anonymous user connected, using default color: ${assignedColor}`
-    );
+    // No authenticated session — fall back to any email provided in handshake, but do not persist
+    const handshakeEmail = socket.handshake.auth?.email;
+    socket.userEmail = handshakeEmail || null;
+    if (handshakeEmail) {
+      try {
+        const tmpUser = await User.findOne({ email: handshakeEmail }).select(
+          "chatColor"
+        );
+        if (tmpUser && tmpUser.chatColor) {
+          assignedColor = tmpUser.chatColor;
+          console.log(
+            `🎨 Loaded saved chat color for ${handshakeEmail}: ${assignedColor}`
+          );
+        }
+      } catch (err) {
+        console.error(
+          `❌ Error loading chat color for handshake email ${handshakeEmail}:`,
+          err.message
+        );
+      }
+    } else {
+      console.log(
+        `🎨 Anonymous user connected, using default color: ${assignedColor}`
+      );
+    }
   }
 
   userChatColors[socket.id] = assignedColor;
@@ -1217,24 +1250,33 @@ io.on("connection", async (socket) => {
   // Handle 'change-chat-color' event
   socket.on("change-chat-color", async (color) => {
     try {
-      // Find user by email (assuming we have email stored on socket)
-      if (socket.userEmail) {
-        const user = await User.findOne({ email: socket.userEmail });
-        if (user) {
-          user.chatColor = color;
-          await user.save();
-          console.log(
-            `🎨 Updated chat color for ${socket.userEmail}: ${color}`
-          );
-
-          // Update in-memory color
-          userChatColors[socket.id] = color;
-
-          // Broadcast color change to all clients
-          io.emit("update-chat-color", { userId: socket.id, color });
-          console.log(`📤 Broadcasted color change for ${socket.id}`);
-        }
+      // Prefer server-side session for authentication — do not accept client-supplied email
+      const sessionUserId = socket.request?.session?.userId;
+      if (!sessionUserId) {
+        console.warn("⚠️ Unauthenticated attempt to change chat color");
+        return;
       }
+
+      const user = await User.findById(sessionUserId);
+      if (!user) {
+        console.warn(`⚠️ No user found for session ${sessionUserId}`);
+        return;
+      }
+
+      user.chatColor = color;
+      await user.save();
+      console.log(`🎨 Updated chat color for ${user.email}: ${color}`);
+
+      // Update in-memory color for this socket
+      userChatColors[socket.id] = color;
+
+      // Broadcast color change to all clients (send both socket id and the user's id)
+      io.emit("update-chat-color", {
+        socketId: socket.id,
+        userId: user._id,
+        color,
+      });
+      console.log(`📤 Broadcasted color change for ${socket.id}`);
     } catch (error) {
       console.error(`❌ Error updating chat color: ${error.message}`);
     }
