@@ -720,7 +720,7 @@ const deckRooms = {
     },
     {
       id: "cabin_b83",
-      name: "Cabin B-81",
+      name: "Cabin B-83",
       type: "cabin",
       isSVG: true,
       location: {
@@ -730,7 +730,7 @@ const deckRooms = {
     },
     {
       id: "cabin_b81",
-      name: "Cabin B-83",
+      name: "Cabin B-81",
       type: "cabin",
       isSVG: true,
       location: {

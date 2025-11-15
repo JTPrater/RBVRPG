@@ -392,6 +392,10 @@ body {
   z-index: 2;
 }
 
+.location.cherbourg {
+  display: none;
+}
+
 .britannic {
   position: fixed;
   display: flex;
@@ -804,6 +808,7 @@ body {
 #volume-slider {
   width: 80%;
   height: calc(5px * var(--scale));
+  appearance: none;
   -webkit-appearance: none;
   background: #333;
   border-radius: calc(5px * var(--scale));
@@ -811,6 +816,7 @@ body {
 }
 
 #volume-slider::-webkit-slider-thumb {
+  appearance: none;
   -webkit-appearance: none;
   width: calc(15px * var(--scale));
   height: calc(15px * var(--scale));
