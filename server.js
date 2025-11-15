@@ -10,6 +10,7 @@ const fs = require("fs").promises;
 const fsSync = require("fs");
 const bodyParser = require("body-parser");
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const session = require("express-session");
 const mongoose = require("mongoose");
 const rateLimit = require("express-rate-limit");
@@ -173,22 +174,28 @@ const initMongoDB = async () => {
   }
 };
 
-// User Schema
-const UserSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  character: {
-    forename: { type: String, required: true },
-    surname: { type: String, required: true },
-    birthdate: { type: Date, required: true },
-    cabin: { type: String, required: true },
-    cabin_number: { type: String, required: true }, // Add this line
-    bio: String,
-    avatar: String,
-  },
-});
+// Prefer the shared User model so admin flags, helpers, and migrations stay consistent
+const User = require("./models/User");
+// If you're testing locally and don't yet have the model file available, fall back
+// to an inline schema (but production should use ./models/User.js)
+if (!User) {
+  const FallbackSchema = new mongoose.Schema({
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    character: {
+      forename: { type: String, required: true },
+      surname: { type: String, required: true },
+      birthdate: { type: Date, required: true },
+      cabin: { type: String, required: true },
+      cabin_number: { type: String, required: true },
+      bio: String,
+      avatar: String,
+    },
+    isAdmin: { type: Boolean, default: false },
+  });
 
-const User = mongoose.model("User", UserSchema);
+  module.exports = mongoose.model("User", FallbackSchema);
+}
 
 // Multer Configuration with Cloudinary
 const storage = new CloudinaryStorage({
@@ -378,6 +385,50 @@ app.post("/api/check-credentials", authLimiter, async (req, res) => {
   } catch (error) {
     console.error("❌ Login error:", error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin-only: reset a user's password to a server-generated temporary password.
+// This endpoint does NOT reveal existing plaintext passwords (they are hashed),
+// but it does allow an admin to reset a user's password and log the temporary
+// password to the server console for administrative purposes (only recommended
+// if you understand the security risk of server logs).
+app.post("/api/admin/reset-password", authLimiter, async (req, res) => {
+  try {
+    // Ensure requester is authenticated
+    const requesterId = req.session.userId;
+    if (!requesterId) return res.status(403).json({ error: "Not authorized" });
+
+    const requester = await User.findById(requesterId);
+    if (!requester || !requester.isAdmin) {
+      return res.status(403).json({ error: "Admin privileges required" });
+    }
+
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Generate a secure temporary password
+    const tempPass = crypto.randomBytes(10).toString("base64").replace(/[^a-zA-Z0-9]/g, '').slice(0, 12);
+
+    // Hash and save the temporary password
+    const hashed = await bcrypt.hash(tempPass, 10);
+    user.password = hashed;
+    await user.save();
+
+    // Log to server console for the admin to copy and communicate securely.
+    // NOTE: This is sensitive — logs can be read by others. Prefer emailing a
+    // reset link or sending the temporary password via an admin-only channel.
+    console.log(`🔐 [ADMIN] Temporary password for ${email}: ${tempPass}`);
+
+    // (Optional) Here you could send an email with nodemailer — omitted for brevity.
+
+    res.json({ success: true, message: "Temporary password generated and saved" });
+  } catch (error) {
+    console.error("❌ Admin reset-password error:", error);
+    res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
 
