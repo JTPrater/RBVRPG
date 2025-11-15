@@ -719,16 +719,6 @@ const deckRooms = {
       },
     },
     {
-      id: "cabin_b83",
-      name: "Cabin B-83",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "b83.png",
-        chatRoom: "cabin_b83",
-      },
-    },
-    {
       id: "cabin_b81",
       name: "Cabin B-81",
       type: "cabin",
@@ -736,6 +726,16 @@ const deckRooms = {
       location: {
         image: "b81.png",
         chatRoom: "cabin_b81",
+      },
+    },
+    {
+      id: "cabin_b83",
+      name: "Cabin B-83",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b83.png",
+        chatRoom: "cabin_b83",
       },
     },
     {
@@ -4967,14 +4967,14 @@ document.addEventListener("DOMContentLoaded", function () {
               <polygon class="image-mapper-shape" points="397,22,454,21,454,140,397,140,397,95,405,95,405,66,397,66"></polygon>
             </g>
           </a>
-          <!-- Cabin B-83 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b83">
+          <!-- Cabin B-81 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b81">
             <g>
               <polygon class="image-mapper-shape" points="538,112,552,112,552,140,538,140"></polygon>
             </g>
           </a>
-          <!-- Cabin B-81 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b81">
+          <!-- Cabin B-83 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b83">
             <g>
               <polygon class="image-mapper-shape" points="537,99,548,99,548,111,538,111,537,111"></polygon>
             </g>
