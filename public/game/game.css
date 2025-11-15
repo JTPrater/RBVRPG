@@ -83,6 +83,7 @@ body {
 
 :root {
   --scale: 1; /* Default value, will be overridden by JavaScript */
+  --bottom-bar-height: calc(130px * var(--scale));
 }
 
 /* game.css */
@@ -232,7 +233,7 @@ body {
 
 .bottom-bar {
   width: 100%;
-  height: calc(130px * var(--scale));
+  height: var(--bottom-bar-height);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -550,23 +551,111 @@ body {
 
 .sky {
   width: 100%;
-  height: 100vh; /* Change from 75% to 100% */
-  position: absolute; /* Change from -100px to 0 */
+  height: 100vh;
+  position: absolute;
   left: 0;
+  top: 0;
   z-index: 0;
   opacity: 0;
   transition: opacity 5s ease-in-out;
-  object-fit: cover; /* Ensure sky images cover the full container */
 }
 
-.day,
-.ms-5,
-.ms-4,
-.ms-3,
-.ms-2,
-.ms-1,
-.ms-0,
-.night {
+/* Day sky - clear blue gradient matching reference */
+.sky.day {
+  background: linear-gradient(
+    to bottom,
+    #4a90c8 0%,
+    /* Deep blue at top */ #6ba8d8 30%,
+    /* Medium blue */ #8fc5e8 60%,
+    /* Light blue */ #b8d9f0 85%,
+    /* Very light blue near horizon */ #d4e8f5 100% /* Pale blue at horizon */
+  );
+  z-index: 0;
+}
+
+/* Sunset/sunrise gradients with orange-yellow-blue transitions */
+.sky.ms-5 {
+  background: linear-gradient(
+    to bottom,
+    #1a3a52 0%,
+    /* Dark blue-gray at top */ #4a6b8a 25%,
+    /* Blue-gray */ #e8a050 70%,
+    /* Warm orange */ #f5c878 85%,
+    /* Golden yellow */ #fae5b8 100% /* Pale yellow at horizon */
+  );
+  z-index: 0;
+}
+
+.sky.ms-4 {
+  background: linear-gradient(
+    to bottom,
+    #2d5470 0%,
+    /* Medium-dark blue */ #5a7a95 30%,
+    /* Blue-gray */ #e89550 65%,
+    /* Orange */ #f5be70 80%,
+    /* Golden */ #fde0a8 100% /* Light yellow at horizon */
+  );
+  z-index: 0;
+}
+
+.sky.ms-3 {
+  background: linear-gradient(
+    to bottom,
+    #3a6080 0%,
+    /* Medium blue */ #6a8aa8 35%,
+    /* Blue-gray */ #ea9858 60%,
+    /* Orange-yellow */ #f5b868 75%,
+    /* Golden */ #fcd890 100% /* Warm yellow at horizon */
+  );
+  z-index: 0;
+}
+
+.sky.ms-2 {
+  background: linear-gradient(
+    to bottom,
+    #487090 0%,
+    /* Blue */ #7a9ab8 40%,
+    /* Light blue-gray */ #ec9e60 55%,
+    /* Warm orange */ #f5b060 70%,
+    /* Orange-gold */ #fad080 100% /* Yellow at horizon */
+  );
+  z-index: 0;
+}
+
+.sky.ms-1 {
+  background: linear-gradient(
+    to bottom,
+    #5680a0 0%,
+    /* Light blue */ #8aaac8 45%,
+    /* Pale blue */ #eea868 50%,
+    /* Orange */ #f5a858 65%,
+    /* Orange-gold */ #f8c870 100% /* Golden yellow at horizon */
+  );
+  z-index: 0;
+}
+
+.sky.ms-0 {
+  background: linear-gradient(
+    to bottom,
+    #6890b0 0%,
+    /* Pale blue */ #98b8d8 50%,
+    /* Very light blue */ #f0b070 50%,
+    /* Bright orange */ #f5a050 60%,
+    /* Deep orange */ #f5c060 100% /* Gold at horizon */
+  );
+  z-index: 0;
+}
+
+/* Night sky - deep dark blue gradient */
+.sky.night {
+  background: linear-gradient(
+    to bottom,
+    #0a0e1a 0%,
+    /* Very dark blue-black at top */ #1a2030 30%,
+    /* Dark blue */ #283048 60%,
+    /* Deep blue */ #364560 85%,
+    /* Blue-gray */ #445570 100% /* Medium blue at horizon */
+  );
   z-index: 0;
 }
 
@@ -955,14 +1044,16 @@ body {
 .chat-container {
   display: none;
   position: absolute;
-  bottom: calc(132px * var(--scale));
+  /* Align to sit just above the bottom bar. Use a small offset for breathing room. */
+  /* Sit flush with the bottom bar; no gap */
+  bottom: var(--bottom-bar-height);
   left: 0;
   width: calc(100vw - ((16 / 9) * 40vh)); /* Updated width */
   height: 40vh;
   max-height: 40vh;
   background-color: rgba(26, 26, 26, 0.95);
   border: calc(2px * var(--scale)) solid #c0932b;
-  z-index: 9;
+  z-index: 11; /* Place above bottom bar */
   overflow: hidden;
   padding: calc(10px * var(--scale));
 }
@@ -970,13 +1061,14 @@ body {
 .location-display {
   display: none;
   position: absolute;
-  bottom: calc(132px * var(--scale));
+  /* Sit flush with the bottom bar; no gap */
+  bottom: var(--bottom-bar-height);
   right: 0;
   width: calc((16 / 9) * 40vh); /* Updated width */
   height: 40vh;
   background-color: rgba(26, 26, 26, 0.95);
   border: calc(2px * var(--scale)) solid #c0932b;
-  z-index: 9;
+  z-index: 11; /* Place above bottom bar */
   overflow: hidden;
 }
 
@@ -1685,6 +1777,25 @@ body {
   stroke-opacity: 0.6;
 }
 
+/* Third-class color for 3rd class rooms */
+.room-marker.third-class-smoking-room .image-mapper-shape,
+.room-marker.poop-deck .image-mapper-shape {
+  fill: #ff8c00; /* Orange */
+  fill-opacity: 0.7;
+  stroke: #ff8c00;
+  stroke-width: 2px;
+  stroke-opacity: 0.7;
+}
+
+.room-marker.third-class-smoking-room:hover .image-mapper-shape,
+.room-marker.poop-deck:hover .image-mapper-shape {
+  fill: #c0932b; /* Gold on hover */
+  fill-opacity: 0.6;
+  stroke: #ff8c00;
+  stroke-width: 2px;
+  stroke-opacity: 0.6;
+}
+
 /* Ensure all elements use border-box sizing */
 *,
 *::before,
@@ -2172,118 +2283,89 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: linear-gradient(135deg, #d4b896, #c8a882);
-  border: 2px solid #8b4513;
-  border-radius: 4px;
-  padding: 0;
-  z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-  width: 600px;
-  height: 360px;
+  width: 560px;
+  min-height: 200px;
+  max-height: 310px;
+  height: 310px;
+  background: linear-gradient(180deg, #fdf1dc 0%, #f3d4a2 100%);
+  border: 2px solid #b4834f;
+  border-radius: 12px;
+  box-shadow: 0 18px 30px rgba(0, 0, 0, 0.45);
   font-family: "Times New Roman", serif;
   display: flex;
+  flex-direction: column;
+  padding: 0;
   overflow: hidden;
+  z-index: 1000;
 }
 
 .eat-drink-popup::before {
   content: "";
   position: absolute;
-  top: 6px;
-  left: 6px;
-  right: 6px;
-  bottom: 6px;
-  border: 1px solid rgba(139, 69, 19, 0.2);
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  border: 1px solid rgba(191, 141, 81, 0.3);
   pointer-events: none;
 }
 
 .eat-drink-popup::after {
-  content: "DINING MENU";
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: #5d2f0e;
-  font-size: 11px;
-  font-weight: bold;
-  letter-spacing: 2px;
-  text-transform: uppercase;
+  content: "";
 }
 
 /* Sidebar Categories */
 .eat-drink-sidebar {
-  width: 140px;
-  background: #654321;
-  border-right: 1px solid #5d2f0e;
   display: flex;
-  flex-direction: column;
-  padding: 32px 8px 12px 8px;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 16px 10px;
+  background: #dfc392;
+  border-bottom: 1px solid #b4834f;
 }
 
 .category-btn {
-  background: #8b4513;
-  color: #f4e4bc;
-  padding: 10px 12px;
-  margin: 2px 4px;
-  border-radius: 2px;
-  cursor: pointer;
+  flex: 1;
+  margin: 0;
+  padding: 8px 0;
+  font-size: 15px;
   font-weight: 600;
-  font-size: 11px;
-  text-align: center;
-  border: 1px solid #5d2f0e;
-  transition: background 0.2s ease;
+  letter-spacing: 1px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-family: "Julius Sans One", serif;
+  background: linear-gradient(180deg, #fff3de 0%, #f2d4a7 100%);
+  border: 1px solid #c88f56;
+  border-radius: 8px;
+  color: #2e1608;
+  cursor: pointer;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.1);
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .category-btn:hover {
-  background: #a0522d;
+  background: #ffeecc;
+  border-color: #d29b5a;
 }
 
 .category-btn.active {
-  background: #b8860b;
-  color: #2f1b14;
-  border-color: #8b7355;
-}
-
-/* Subcategory Buttons */
-.subcategory-container {
-  margin-top: 12px;
-  padding: 0 4px;
-  border-top: 1px solid rgba(93, 47, 14, 0.5);
-  padding-top: 8px;
-}
-
-.subcategory-btn {
-  background: #5d2f0e;
-  color: #d4b896;
-  padding: 8px 10px;
-  margin: 2px 0;
-  border-radius: 2px;
-  cursor: pointer;
-  font-size: 10px;
-  text-align: center;
-  border: none;
-  transition: background 0.2s ease;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.subcategory-btn:hover {
-  background: #8b7355;
-}
-
-.subcategory-btn.active {
-  background: #a0522d;
-  color: #2f1b14;
-  font-weight: 600;
+  background: #fff8ea;
+  border-color: #d09448;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.15);
+  transform: translateY(1px);
 }
 
 /* Content Area */
 .eat-drink-content {
   flex: 1;
-  background: #e6d7b8;
-  padding: 32px 16px 16px 16px;
+  background: #fdfaf1;
+  padding: 16px 18px 18px;
   overflow-y: auto;
+  border-radius: 0 0 10px 10px;
+  max-height: calc(310px - 68px);
 }
 
 .eat-drink-content::-webkit-scrollbar {
@@ -2291,94 +2373,65 @@ body {
 }
 
 .eat-drink-content::-webkit-scrollbar-track {
-  background: rgba(139, 69, 19, 0.1);
+  background: rgba(191, 141, 81, 0.2);
 }
 
 .eat-drink-content::-webkit-scrollbar-thumb {
-  background: #8b4513;
-  border-radius: 3px;
+  background: #b58a56;
+  border-radius: 4px;
 }
 
 .eat-drink-content::-webkit-scrollbar-thumb:hover {
-  background: #a0522d;
+  background: #cf9f64;
 }
 
 /* Items Grid */
 .items-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(45px, 1fr));
-  gap: 8px;
-  height: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: 10px;
+  align-content: start;
 }
 
 /* Menu Items */
 .menu-item {
-  width: 44px;
-  height: 44px;
-  background: #d2b48c;
-  border: 1px solid #8b7355;
-  border-radius: 3px;
-  cursor: pointer;
+  width: 70px;
+  height: 70px;
+  background: #fef6e6;
+  border: 1px solid #cda46c;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  transition: all 0.15s ease;
+  font-size: 32px;
+  box-shadow: 0 6px 10px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
   position: relative;
-}
-
-.menu-item::after {
-  content: attr(title);
-  position: absolute;
-  bottom: -32px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(43, 24, 16, 0.95);
-  color: #f4e4bc;
-  padding: 4px 8px;
-  border-radius: 2px;
-  font-size: 10px;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-  font-family: "Times New Roman", serif;
-  z-index: 10;
-}
-
-.menu-item:hover::after {
-  opacity: 1;
+  transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
 .menu-item:hover {
-  background: #e0c9a4;
-  border-color: #a0522d;
+  transform: translateY(-2px);
+  border-color: #e3b87a;
 }
 
 .menu-item:active {
-  background: #c8b48c;
+  transform: translateY(0);
 }
 
 /* Food and Beverage Grids */
 .food-grid,
-.beverages-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(45px, 1fr));
-  gap: 8px;
-}
-
-.food-grid[data-subcategory="appetizers"],
-.food-grid[data-subcategory="mains"],
-.food-grid[data-subcategory="desserts"],
-.beverages-grid {
+.drinks-grid,
+.alcohol-grid {
   display: none;
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: 10px;
 }
 
-.food-grid[data-subcategory="appetizers"].active,
-.food-grid[data-subcategory="mains"].active,
-.food-grid[data-subcategory="desserts"].active,
-.beverages-grid.active {
-  display: contents;
+.food-grid.active,
+.drinks-grid.active,
+.alcohol-grid.active {
+  display: grid;
 }
 
 /* Room Players Popup Styling */

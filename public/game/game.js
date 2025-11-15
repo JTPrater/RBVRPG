@@ -13,38 +13,27 @@ console.log("✅ Initialized socket connection and global variables.");
 // Global voyage start time (will be set by server)
 let voyageStartTime = null;
 
+// Store pending sync data until functions are ready
+let pendingVoyageState = null;
+let pendingVoyageStartTime = null;
+
 // Listen for voyage start time from server
 socket.on("voyage-start-time", (serverStartTime) => {
   voyageStartTime = serverStartTime;
+  pendingVoyageStartTime = serverStartTime;
   console.log(
     `⏰ Received voyage start time from server: ${new Date(
       voyageStartTime
     ).toISOString()}`
   );
 
-  // Initialize narrative system now that we have the start time
-  if (narrativeSystem) {
-    narrativeSystem.startTime = voyageStartTime;
-    console.log("✅ Narrative system synchronized with server time");
+  // Try to sync immediately if functions are available
+  if (
+    typeof updateInfoBar === "function" &&
+    typeof updateSkyImage === "function"
+  ) {
+    performInitialSync();
   }
-
-  // Update info bar immediately with server time
-  if (typeof updateInfoBar === "function") {
-    updateInfoBar();
-    console.log("🔄 Updated info bar with server-synced time");
-  }
-
-  // Update sky immediately
-  if (typeof updateSkyImage === "function") {
-    updateSkyImage();
-    console.log("🌤️ Updated sky with server-synced time");
-  }
-
-  // Load stats from server now that we're connected
-  loadStatsFromServer();
-
-  // Handle automatic room joining for reconnections
-  handleReconnectionRoomJoin();
 });
 
 // Listen for current voyage state from server (for immediate sync on refresh)
@@ -53,6 +42,9 @@ socket.on("voyage-state", (currentVoyageState) => {
     "🚢 Received current voyage state from server:",
     currentVoyageState
   );
+
+  // Store for later if functions aren't ready yet
+  pendingVoyageState = currentVoyageState;
 
   // Update info bar elements immediately
   document.getElementById(
@@ -70,43 +62,62 @@ socket.on("voyage-state", (currentVoyageState) => {
     `💨 Set window.currentSpeed to ${window.currentSpeed} and targetSpeed to ${window.targetSpeed} for visual effects`
   );
 
-  // Sync narrative immediately on refresh
-  if (narrativeSystem.startTime && currentVoyageState.elapsedSeconds) {
-    const elapsed = currentVoyageState.elapsedSeconds;
-    const storyTextElement = document.getElementById("story-text");
+  // Update sky immediately with server-synced time if function is available
+  if (typeof updateSkyImage === "function") {
+    updateSkyImage();
+    console.log("🌤️ Updated sky with server voyage state");
+  }
 
-    if (storyTextElement) {
-      // Find the appropriate narrative event for current elapsed time
-      let currentEventIndex = 0;
-      for (let i = 0; i < narrativeSystem.events.length; i++) {
-        if (elapsed >= narrativeSystem.events[i].time) {
-          currentEventIndex = i;
-        } else {
-          break;
-        }
+  // Also listen for server narrative events — server will broadcast narrative events
+  socket.on("narrative-event", (data) => {
+    try {
+      console.log("📣 Received narrative-event from server:", data);
+      const storyTextElement = document.getElementById("story-text");
+      if (storyTextElement) {
+        storyTextElement.style.opacity = "0";
+        setTimeout(() => {
+          storyTextElement.textContent = data.text;
+          storyTextElement.style.opacity = "1";
+        }, 500);
       }
 
-      // Update narrative immediately without fade effect
-      const currentEvent = narrativeSystem.events[currentEventIndex];
-      if (currentEvent) {
-        storyTextElement.textContent = currentEvent.text;
-        storyTextElement.style.opacity = "1"; // Ensure it's visible
-        narrativeSystem.currentEventIndex = currentEventIndex + 1; // Set to next event
-
-        // Save current event index to sessionStorage
+      // Advance client's narrative index to avoid replaying
+      if (narrativeSystem) {
+        narrativeSystem.currentEventIndex = data.index + 1;
         sessionStorage.setItem(
           "narrativeEventIndex",
           narrativeSystem.currentEventIndex.toString()
         );
-
-        console.log(`📖 Synced narrative immediately: ${currentEvent.text}`);
       }
+    } catch (err) {
+      console.error("❌ Failed to process narrative-event:", err);
     }
-  }
+  });
 
-  console.log(
-    "🔄 Updated info bar, visual effects, and narrative with server voyage state"
-  );
+  // Receive the current narrative index for this connection from the server
+  socket.on("narrative-current", (data) => {
+    console.log("📣 Received narrative-current from server:", data);
+    const storyTextElement = document.getElementById("story-text");
+    if (storyTextElement && data && data.text) {
+      storyTextElement.textContent = data.text;
+      storyTextElement.style.opacity = "1";
+    }
+    if (narrativeSystem && data && typeof data.index === "number") {
+      narrativeSystem.currentEventIndex = data.index + 1;
+      sessionStorage.setItem(
+        "narrativeEventIndex",
+        narrativeSystem.currentEventIndex.toString()
+      );
+    }
+  });
+
+  // Try to perform full sync if functions are available
+  if (
+    typeof updateInfoBar === "function" &&
+    typeof updateSkyImage === "function"
+  ) {
+    performInitialSync();
+  }
 });
 
 // Listen for stats from server (for loading persisted stats on connect)
@@ -595,6 +606,296 @@ const deckRooms = {
           "1C B overlook prom6.jpg",
         ],
         chatRoom: "first_class_b_forward_overlooking_promenade",
+      },
+    },
+    {
+      id: "first_class_port_b_enclosed_promenade",
+      name: "1st Class Port B-Deck Enclosed Promenade",
+      type: "promenade",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "first_class_port_b_enclosed_promenade",
+      },
+    },
+    {
+      id: "first_class_starboard_b_enclosed_promenade",
+      name: "1st Class Starboard B-Deck Enclosed Promenade",
+      type: "promenade",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "first_class_starboard_b_enclosed_promenade",
+      },
+    },
+    {
+      id: "poop_deck",
+      name: "Poop Deck",
+      type: "poop-deck",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "poop_deck",
+      },
+    },
+    {
+      id: "grand_staircase_b",
+      name: "Grand Staircase",
+      type: "grand-staircase",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "grand_staircase_b",
+      },
+    },
+    {
+      id: "third_class_smoke_room_b",
+      name: "3rd Class Smoke Room",
+      type: "third-class-smoking-room",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "third_class_smoke_room_b",
+      },
+    },
+    {
+      id: "second_class_smoke_room_b",
+      name: "2nd Class Smoke Room",
+      type: "second-class",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "second_class_smoke_room_b",
+      },
+    },
+    {
+      id: "second_class_starboard_promenade_b",
+      name: "2nd Class Starboard Promenade",
+      type: "second-class",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "second_class_starboard_promenade_b",
+      },
+    },
+    {
+      id: "second_class_port_promenade_b",
+      name: "2nd Class Port Promenade",
+      type: "second-class",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "second_class_port_promenade_b",
+      },
+    },
+    {
+      id: "b_deck_aft_staircase",
+      name: "B-Deck Aft Staircase",
+      type: "first-class",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "b_deck_aft_staircase",
+      },
+    },
+    {
+      id: "restaurant_reception_room",
+      name: "Restaurant Reception Room",
+      type: "first-class",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "restaurant_reception_room",
+      },
+    },
+    {
+      id: "a_la_carte_restaurant",
+      name: "À La Carte Restaurant",
+      type: "first-class",
+      isSVG: true,
+      location: {
+        image: "placeholder.jpg",
+        chatRoom: "a_la_carte_restaurant",
+      },
+    },
+    {
+      id: "cabin_b83",
+      name: "Cabin B-81",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b83.png",
+        chatRoom: "cabin_b83",
+      },
+    },
+    {
+      id: "cabin_b81",
+      name: "Cabin B-83",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b81.png",
+        chatRoom: "cabin_b81",
+      },
+    },
+    {
+      id: "cabin_b79",
+      name: "Cabin B-79",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b79.png",
+        chatRoom: "cabin_b79",
+      },
+    },
+    {
+      id: "cabin_b77",
+      name: "Cabin B-77",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b77.png",
+        chatRoom: "cabin_b77",
+      },
+    },
+    {
+      id: "cabin_b75",
+      name: "Cabin B-75",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b75.png",
+        chatRoom: "cabin_b75",
+      },
+    },
+    {
+      id: "cabin_b73",
+      name: "Cabin B-73",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b73.png",
+        chatRoom: "cabin_b73",
+      },
+    },
+    {
+      id: "cabin_b71",
+      name: "Cabin B-71",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b71.png",
+        chatRoom: "cabin_b71",
+      },
+    },
+    {
+      id: "cabin_b69",
+      name: "Cabin B-69",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b69.png",
+        chatRoom: "cabin_b69",
+      },
+    },
+    {
+      id: "cabin_b67",
+      name: "Cabin B-67",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b67.png",
+        chatRoom: "cabin_b67",
+      },
+    },
+    {
+      id: "cabin_b63",
+      name: "Cabin B-63",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b63.png",
+        chatRoom: "cabin_b63",
+      },
+    },
+    {
+      id: "cabin_b65",
+      name: "Cabin B-65",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b65.png",
+        chatRoom: "cabin_b65",
+      },
+    },
+    {
+      id: "cabin_b61",
+      name: "Cabin B-61",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b61.png",
+        chatRoom: "cabin_b61",
+      },
+    },
+    {
+      id: "cabin_b57",
+      name: "Cabin B-57",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b57.png",
+        chatRoom: "cabin_b57",
+      },
+    },
+    {
+      id: "cabin_b59",
+      name: "Cabin B-59",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b59.png",
+        chatRoom: "cabin_b59",
+      },
+    },
+    {
+      id: "cabin_b55",
+      name: "Cabin B-55",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b55.png",
+        chatRoom: "cabin_b55",
+      },
+    },
+    {
+      id: "cabin_b53",
+      name: "Cabin B-53",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b53.png",
+        chatRoom: "cabin_b53",
+      },
+    },
+    {
+      id: "cabin_b51",
+      name: "Cabin B-51",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b51.png",
+        chatRoom: "cabin_b51",
+      },
+    },
+    {
+      id: "cabin_b49",
+      name: "Cabin B-49",
+      type: "cabin",
+      isSVG: true,
+      location: {
+        image: "b49.png",
+        chatRoom: "cabin_b49",
       },
     },
   ],
@@ -1446,6 +1747,18 @@ roomImages.second_class_staircase_a = {
   currentIndex: 0,
 };
 
+roomImages.first_class_b_forward_overlooking_promenade = {
+  images: [
+    "1C B overlook prom1.jpg",
+    "1C B overlook prom2.jpg",
+    "1C B overlook prom3.jpg",
+    "1C B overlook prom4.jpg",
+    "1C B overlook prom5.jpg",
+    "1C B overlook prom6.jpg",
+  ],
+  currentIndex: 0,
+};
+
 roomImages.wheelhouse_bd = {
   images: [
     "wheelhouse1.jpg",
@@ -1513,6 +1826,141 @@ roomImages.forecastle_b = {
     "forecastle2.jpg",
     "forecastle3.jpg",
     "forecastle4.jpg",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.first_class_port_b_enclosed_promenade = {
+  images: [
+    "1st B port enclosed prom1.jpg",
+    "1st B port enclosed prom2.jpg",
+    "1st B port enclosed prom3.jpg",
+    "1st B port enclosed prom4.jpg",
+    "1st B port enclosed prom5.jpg",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.first_class_starboard_b_enclosed_promenade = {
+  images: [
+    "1st B starb enclosed prom1.jpg",
+    "1st B starb enclosed prom2.jpg",
+    "1st B starb enclosed prom3.jpg",
+    "1st B starb enclosed prom4.jpg",
+    "1st B starb enclosed prom5.jpg",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.poop_deck = {
+  images: [
+    "poop1.jpg",
+    "poop2.jpg",
+    "poop3.jpg",
+    "poop4.jpg",
+    "poop5.jpg",
+    "poop6.jpg",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.grand_staircase_b = {
+  images: [
+    "B deck gd2.jpg",
+    "B deck gd3.jpg",
+    "B deck gd4.jpg",
+    "B deck gd5.jpg",
+    "B deck gd6.jpg",
+    "B deck gd7.jpg",
+    "B deck gd8.jpg",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.third_class_smoke_room_b = {
+  images: [
+    "3rd class SR1.jpg",
+    "3rd class SR2.jpg",
+    "3rd class SR3.jpg",
+    "3rd class SR4.jpg",
+    "3rd class SR5.jpg",
+    "3rd class SR6.jpg",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.second_class_smoke_room_b = {
+  images: [
+    "2nd smoke1.png",
+    "2nd smoke2.png",
+    "2nd smoke3.png",
+    "2nd smoke4.png",
+    "2nd smoke5.png",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.second_class_starboard_promenade_b = {
+  images: [
+    "2nd class b starb prom1.jpg",
+    "2nd class b starb prom2.jpg",
+    "2nd class b starb prom3.jpg",
+    "2nd class b starb prom4.jpg",
+    "2nd class b starb prom5.jpg",
+    "2nd class b starb prom6.jpg",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.second_class_port_promenade_b = {
+  images: [
+    "2nd class b prom1.jpg",
+    "2nd class b prom2.jpg",
+    "2nd class b prom3.jpg",
+    "2nd class b prom4.jpg",
+    "2nd class b prom5.jpg",
+    "2nd class b prom6.jpg",
+    "2nd class b prom7.jpg",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.b_deck_aft_staircase = {
+  images: [
+    "b aft staircase1.jpg",
+    "b aft staircase2.jpg",
+    "b aft staircase3.jpg",
+    "b aft staircase4.jpg",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.restaurant_reception_room = {
+  images: [
+    "reception room1.jpg",
+    "reception room2.jpg",
+    "reception room3.jpg",
+    "reception room4.jpg",
+    "reception room5.jpg",
+  ],
+  currentIndex: 0,
+};
+
+roomImages.a_la_carte_restaurant = {
+  images: [
+    "carte1.jpg",
+    "carte2.jpg",
+    "carte3.jpg",
+    "carte4.jpg",
+    "carte5.jpg",
+    "carte6.jpg",
+    "carte7.jpg",
+    "carte8.jpg",
+    "carte9.jpg",
+    "carte10.jpg",
+    "carte11.jpg",
+    "carte12.jpg",
+    "carte13.jpg",
   ],
   currentIndex: 0,
 };
@@ -1882,8 +2330,11 @@ document.addEventListener("DOMContentLoaded", function () {
     // Make cabin clickable
     cabinElement.addEventListener("click", (e) => {
       e.preventDefault();
+      // Create cabin id (e.g., "cabin_a3", "cabin_b49") and search across all decks
       const cabinId = `cabin_${cabinNumber.toLowerCase()}`; // e.g., "cabin_a3"
-      const cabinRoom = deckRooms.a_deck.find((r) => r.id === cabinId);
+      const cabinRoom = Object.values(deckRooms)
+        .flat()
+        .find((r) => r.id === cabinId);
       if (cabinRoom) {
         enterRoom(cabinRoom);
         console.log(`🚪 Navigated to ${cabinRoom.name}`);
@@ -1958,11 +2409,36 @@ document.addEventListener("DOMContentLoaded", function () {
       (interval) => hours >= interval.start && hours <= interval.end
     );
     if (interval) {
-      const image = document.querySelector(`.${interval.className}`);
+      // Restrict to sky elements to avoid picking clouds or other day-tagged elements
+      const image = document.querySelector(`.sky.${interval.className}`);
       if (image) {
         image.style.opacity = 1; // Show the appropriate image
         console.log(`🌅 Displaying sky image: ${interval.className}`);
       }
+    }
+
+    // Also update Britannic image (day / md / night)
+    try {
+      const britDay = document.querySelector(".britannic-day");
+      const britMd = document.querySelector(".britannic-md");
+      const britNight = document.querySelector(".britannic-night");
+
+      // Hide all Britannic variants first
+      [britDay, britMd, britNight].forEach((el) => {
+        if (el) el.style.opacity = 0;
+      });
+
+      if (interval && interval.className === "day") {
+        if (britDay) britDay.style.opacity = 1;
+      } else if (interval && interval.className.startsWith("ms")) {
+        // ms-* are the morning/sunset transition frames — show the md (mid/dusk)Britannic
+        if (britMd) britMd.style.opacity = 1;
+      } else {
+        // Default to night for early and late hours
+        if (britNight) britNight.style.opacity = 1;
+      }
+    } catch (err) {
+      console.warn("⚠️ Failed to update Britannic image:", err);
     }
   }
 
@@ -2022,8 +2498,77 @@ document.addEventListener("DOMContentLoaded", function () {
     console.log("🗓️ Updated info bar:", { location, speed, date });
   }
 
+  // Function to perform initial sync with server data
+  function performInitialSync() {
+    console.log("🔄 Performing initial sync with server data...");
+
+    // Initialize narrative system with server time
+    if (narrativeSystem && pendingVoyageStartTime) {
+      narrativeSystem.startTime = pendingVoyageStartTime;
+      console.log("✅ Narrative system synchronized with server time");
+    }
+
+    // Sync narrative with elapsed time if available
+    if (
+      pendingVoyageState &&
+      pendingVoyageState.elapsedSeconds &&
+      narrativeSystem.startTime
+    ) {
+      const elapsed = pendingVoyageState.elapsedSeconds;
+      const storyTextElement = document.getElementById("story-text");
+
+      if (storyTextElement) {
+        // Find the appropriate narrative event for current elapsed time
+        let currentEventIndex = 0;
+        for (let i = 0; i < narrativeSystem.events.length; i++) {
+          if (elapsed >= narrativeSystem.events[i].time) {
+            currentEventIndex = i;
+          } else {
+            break;
+          }
+        }
+
+        // Update narrative immediately without fade effect
+        const currentEvent = narrativeSystem.events[currentEventIndex];
+        if (currentEvent) {
+          storyTextElement.textContent = currentEvent.text;
+          storyTextElement.style.opacity = "1";
+          narrativeSystem.currentEventIndex = currentEventIndex + 1;
+
+          sessionStorage.setItem(
+            "narrativeEventIndex",
+            narrativeSystem.currentEventIndex.toString()
+          );
+
+          console.log(`📖 Synced narrative: ${currentEvent.text}`);
+        }
+      }
+    }
+
+    // Update sky and info bar
+    updateSkyImage();
+    updateInfoBar();
+    console.log("✅ Initial sync complete");
+
+    // Load stats from server
+    if (typeof loadStatsFromServer === "function") {
+      loadStatsFromServer();
+    }
+
+    // Handle automatic room joining
+    if (typeof handleReconnectionRoomJoin === "function") {
+      handleReconnectionRoomJoin();
+    }
+  }
+
   updateSkyImage(); // Initial update
   updateInfoBar(); // Initial update
+
+  // Perform initial sync if we have pending data
+  if (pendingVoyageStartTime || pendingVoyageState) {
+    performInitialSync();
+  }
+
   setInterval(updateSkyImage, 60000); // Update every minute
   setInterval(updateInfoBar, 5000); // Update every 5 seconds for better sync
 
@@ -2739,7 +3284,10 @@ document.addEventListener("DOMContentLoaded", function () {
       // Show eat/drink button in dining room
       const eatDrinkBtn = document.getElementById("eat-drink-btn");
       if (eatDrinkBtn) {
-        if (room.id === "first_class_dining_room_d") {
+        if (
+          room.id === "first_class_dining_room_d" ||
+          room.id === "a_la_carte_restaurant"
+        ) {
           eatDrinkBtn.style.display = "block";
         } else {
           eatDrinkBtn.style.display = "none";
@@ -4353,6 +4901,180 @@ document.addEventListener("DOMContentLoaded", function () {
               <polygon class="image-mapper-shape" points="966,18,968,23,968,34,993,34,994,34,995,120,968,120,968,131,965,136,1007,135,1006,18"></polygon>
             </g>
           </a>
+          <!-- 1st Class Port B-Deck Enclosed Promenade -->
+          <a xlink:href="#" class="room-marker promenade" data-room-id="first_class_port_b_enclosed_promenade">
+            <g>
+              <polygon class="image-mapper-shape" points="794,17 888,17 965,18 966,24 967,34 836,34 836,40 794,40"></polygon>
+            </g>
+          </a>
+          <!-- 1st Class Starboard B-Deck Enclosed Promenade -->
+          <a xlink:href="#" class="room-marker promenade" data-room-id="first_class_starboard_b_enclosed_promenade">
+            <g>
+              <polygon class="image-mapper-shape" points="797,114 837,114 838,121 967,120 967,129 963,136 871,137 798,138"></polygon>
+            </g>
+          </a>
+          <!-- Poop Deck -->
+          <a xlink:href="#" class="room-marker poop-deck" data-room-id="poop_deck">
+            <g>
+              <polygon class="image-mapper-shape" points="204,101 205,100 205,135 184,133 143,127 117,120 102,113 93,100 90,92 90,74 94,62 104,52 118,45 146,39 170,35 204,30 204,62 192,62 192,60 146,61 145,78 153,78 153,87 146,87 146,104 192,104 192,101"></polygon>
+            </g>
+          </a>
+          <!-- Grand Staircase -->
+          <a xlink:href="#" class="room-marker grand-staircase" data-room-id="grand_staircase_b">
+            <g>
+              <polygon class="image-mapper-shape" points="794,42,836,42,836,53,852,53,852,58,869,58,869,96,853,96,853,101,837,101,837,113,795,113"></polygon>
+            </g>
+          </a>
+          <!-- 3rd Class Smoke Room -->
+          <a xlink:href="#" class="room-marker third-class-smoking-room" data-room-id="third_class_smoke_room_b">
+            <g>
+              <polygon class="image-mapper-shape" points="155,62,191,62,191,83,197,83,197,93,191,93,191,103,155,103"></polygon>
+            </g>
+          </a>
+          <!-- 2nd Class Smoke Room -->
+          <a xlink:href="#" class="room-marker second-class smoking-room" data-room-id="second_class_smoke_room_b">
+            <g>
+              <polygon class="image-mapper-shape" points="334,41,371,41,371,122,334,121,334,100,331,100,331,63,334,63"></polygon>
+            </g>
+          </a>
+          <!-- 2nd Class Starboard Promenade -->
+          <a xlink:href="#" class="room-marker second-class" data-room-id="second_class_starboard_promenade_b">
+            <g>
+              <polygon class="image-mapper-shape" points="395,118,395,140,331,139,242,137,243,82,266,82,266,94,282,94,282,95,329,95,329,99,329,100,317,100,316,123,372,123,372,118"></polygon>
+            </g>
+          </a>
+          <!-- 2nd Class Port Promenade -->
+          <a xlink:href="#" class="room-marker second-class" data-room-id="second_class_port_promenade_b">
+            <g>
+              <polygon class="image-mapper-shape" points="395,22,395,44,372,44,372,40,316,40,316,63,329,63,329,68,266,69,266,81,243,81,243,27,299,24,339,23"></polygon>
+            </g>
+          </a>
+          <!-- B-Deck Aft Staircase -->
+          <a xlink:href="#" class="room-marker first-class" data-room-id="b_deck_aft_staircase">
+            <g>
+              <polygon class="image-mapper-shape" points="498,60,532,60,532,100,512,100,512,105,498,105,498,102,495,102,495,98,498,98"></polygon>
+            </g>
+          </a>
+          <!-- Restaurant Reception Room -->
+          <a xlink:href="#" class="room-marker first-class" data-room-id="restaurant_reception_room">
+            <g>
+              <polygon class="image-mapper-shape" points="456,95,493,95,493,140,456,140"></polygon>
+            </g>
+          </a>
+          <!-- À La Carte Restaurant -->
+          <a xlink:href="#" class="room-marker first-class" data-room-id="a_la_carte_restaurant">
+            <g>
+              <polygon class="image-mapper-shape" points="397,22,454,21,454,140,397,140,397,95,405,95,405,66,397,66"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-83 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b83">
+            <g>
+              <polygon class="image-mapper-shape" points="538,112,552,112,552,140,538,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-81 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b81">
+            <g>
+              <polygon class="image-mapper-shape" points="537,99,548,99,548,111,538,111,537,111"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-79 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b79">
+            <g>
+              <polygon class="image-mapper-shape" points="552,99,565,99,565,140,552,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-77 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b77">
+            <g>
+              <polygon class="image-mapper-shape" points="566,99,576,99,576,111,566,111"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-75 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b75">
+            <g>
+              <polygon class="image-mapper-shape" points="566,112,578,112,579,112,579,140,566,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-73 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b73">
+            <g>
+              <polygon class="image-mapper-shape" points="579,98,592,98,592,140,579,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-71 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b71">
+            <g>
+              <polygon class="image-mapper-shape" points="593,99,604,99,604,111,593,111"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-69 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b69">
+            <g>
+              <polygon class="image-mapper-shape" points="592,112,606,112,606,140,592,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-67 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b67">
+            <g>
+              <polygon class="image-mapper-shape" points="607,98,619,98,619,140,606,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-63 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b63">
+            <g>
+              <polygon class="image-mapper-shape" points="620,99,630,99,630,111,620,111"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-65 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b65">
+            <g>
+              <polygon class="image-mapper-shape" points="620,112,633,112,633,140,620,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-61 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b61">
+            <g>
+              <polygon class="image-mapper-shape" points="634,99,646,99,646,140,634,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-57 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b57">
+            <g>
+              <polygon class="image-mapper-shape" points="646,99,658,99,658,110,646,110"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-59 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b59">
+            <g>
+              <polygon class="image-mapper-shape" points="646,111,660,111,661,140,646,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-55 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b55">
+            <g>
+              <polygon class="image-mapper-shape" points="661,98,674,98,674,140,662,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-53 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b53">
+            <g>
+              <polygon class="image-mapper-shape" points="675,99,685,99,685,110,675,110"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-51 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b51">
+            <g>
+              <polygon class="image-mapper-shape" points="675,111,688,111,688,140,675,140"></polygon>
+            </g>
+          </a>
+          <!-- Cabin B-49 -->
+          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b49">
+            <g>
+              <polygon class="image-mapper-shape" points="689,98,704,98,704,139,689,139"></polygon>
+            </g>
+          </a>
         </svg>
         `;
         document.querySelector(".deckplan-display").appendChild(svgOverlay);
@@ -5138,40 +5860,27 @@ document.addEventListener("DOMContentLoaded", function () {
       <!-- Left Sidebar with Categories -->
       <div class="eat-drink-sidebar">
         <div class="category-btn active" data-category="food">
-          ▶ FOOD
+          Food
         </div>
-
-        <div class="category-btn" data-category="beverages">
-          ■ BEVERAGES
+        <div class="category-btn" data-category="drinks">
+          Drinks
         </div>
-
-        <div class="subcategory-container">
-          <div class="subcategory-btn active" data-subcategory="appetizers">
-            Appetizers
-          </div>
-          <div class="subcategory-btn" data-subcategory="mains">
-            Main Courses
-          </div>
-          <div class="subcategory-btn" data-subcategory="desserts">
-            Desserts
-          </div>
+        <div class="category-btn" data-category="alcohol">
+          Alcohol
         </div>
       </div>
 
       <!-- Right Content Area with Grid -->
       <div class="eat-drink-content">
         <div id="items-grid" class="items-grid">
-          <!-- Food Items Grid -->
-          <div class="food-grid" data-category="food" data-subcategory="appetizers">
+          <!-- Food Items Grid (all food items in one grid) -->
+          <div class="food-grid active" data-category="food">
             <div class="menu-item" data-type="food" data-hunger="15" title="Oysters Rockefeller">🦪</div>
             <div class="menu-item" data-type="food" data-hunger="12" title="Caviar & Crackers">�</div>
             <div class="menu-item" data-type="food" data-hunger="18" title="Shrimp Cocktail">🍤</div>
             <div class="menu-item" data-type="food" data-hunger="16" title="Pâté de Foie Gras">�</div>
             <div class="menu-item" data-type="food" data-hunger="14" title="Consommé">🍲</div>
             <div class="menu-item" data-type="food" data-hunger="20" title="Smoked Salmon">🐟</div>
-          </div>
-
-          <div class="food-grid" data-category="food" data-subcategory="mains">
             <div class="menu-item" data-type="food" data-hunger="35" title="Roast Beef Wellington">🥩</div>
             <div class="menu-item" data-type="food" data-hunger="40" title="Poached Salmon">🐟</div>
             <div class="menu-item" data-type="food" data-hunger="38" title="Roasted Duck">🦆</div>
@@ -5180,9 +5889,6 @@ document.addEventListener("DOMContentLoaded", function () {
             <div class="menu-item" data-type="food" data-hunger="34" title="Chicken à la King">🍗</div>
             <div class="menu-item" data-type="food" data-hunger="42" title="Lobster Thermidor">🦞</div>
             <div class="menu-item" data-type="food" data-hunger="30" title="Veal Cutlet">🥩</div>
-          </div>
-
-          <div class="food-grid" data-category="food" data-subcategory="desserts">
             <div class="menu-item" data-type="food" data-hunger="20" title="Charlotte Russe">🍰</div>
             <div class="menu-item" data-type="food" data-hunger="18" title="Peaches in Chartreuse Jelly">🧁</div>
             <div class="menu-item" data-type="food" data-hunger="22" title="Ice Cream">🍨</div>
@@ -5191,16 +5897,20 @@ document.addEventListener("DOMContentLoaded", function () {
             <div class="menu-item" data-type="food" data-hunger="19" title="Fruit Tart">🥧</div>
           </div>
 
-          <!-- Beverages Grid (hidden by default) -->
-          <div class="beverages-grid" data-category="beverages">
+          <!-- Drinks Grid (hidden by default) -->
+          <div class="drinks-grid" data-category="drinks">
+            <div class="menu-item" data-type="drink" data-thirst="15" title="Mineral Water">🥤</div>
             <div class="menu-item" data-type="drink" data-thirst="25" title="Coffee">☕</div>
             <div class="menu-item" data-type="drink" data-thirst="20" title="Earl Grey Tea">🫖</div>
-            <div class="menu-item" data-type="drink" data-thirst="30" title="Bordeaux Wine">🍷</div>
-            <div class="menu-item" data-type="drink" data-thirst="15" title="Mineral Water">🥤</div>
-            <div class="menu-item" data-type="drink" data-thirst="35" title="Fine Whiskey">🥃</div>
-            <div class="menu-item" data-type="drink" data-thirst="28" title="Champagne">🍾</div>
             <div class="menu-item" data-type="drink" data-thirst="22" title="Hot Chocolate">☕</div>
             <div class="menu-item" data-type="drink" data-thirst="18" title="Lemonade">🍋</div>
+          </div>
+
+          <!-- Alcohol Grid (hidden by default) -->
+          <div class="alcohol-grid" data-category="alcohol">
+            <div class="menu-item" data-type="drink" data-thirst="30" title="Bordeaux Wine">🍷</div>
+            <div class="menu-item" data-type="drink" data-thirst="35" title="Fine Whiskey">🥃</div>
+            <div class="menu-item" data-type="drink" data-thirst="28" title="Champagne">🍾</div>
             <div class="menu-item" data-type="drink" data-thirst="32" title="Port Wine">🍷</div>
             <div class="menu-item" data-type="drink" data-thirst="26" title="Sherry">�</div>
           </div>
@@ -5218,19 +5928,12 @@ document.addEventListener("DOMContentLoaded", function () {
     const locationDisplay = document.querySelector(".location-display");
     locationDisplay.appendChild(popup);
 
-    // Initialize default state - show appetizers
-    const defaultFoodGrid = popup.querySelector(
-      '.food-grid[data-subcategory="appetizers"]'
-    );
-    if (defaultFoodGrid) {
-      defaultFoodGrid.classList.add("active");
-    }
-
     // Handle category switching
     const categoryBtns = popup.querySelectorAll(".category-btn");
-    const subcategoryBtns = popup.querySelectorAll(".subcategory-btn");
-    const foodGrids = popup.querySelectorAll(".food-grid");
-    const beveragesGrid = popup.querySelector(".beverages-grid");
+    const gridsContainer = popup.querySelector(".items-grid");
+    const allGrids = popup.querySelectorAll(
+      ".food-grid, .drinks-grid, .alcohol-grid"
+    );
 
     categoryBtns.forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -5241,46 +5944,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const category = btn.getAttribute("data-category");
 
-        if (category === "food") {
-          // Show food grids and subcategories
-          foodGrids.forEach((grid) => grid.classList.remove("active"));
-          beveragesGrid.classList.remove("active");
-          subcategoryBtns.forEach((sub) => (sub.style.display = "block"));
+        // Hide all grids
+        allGrids.forEach((grid) => grid.classList.remove("active"));
 
-          // Show first subcategory by default
-          const activeSubcat = popup.querySelector(".subcategory-btn.active");
-          if (activeSubcat) {
-            const subcategory = activeSubcat.getAttribute("data-subcategory");
-            const targetGrid = popup.querySelector(
-              `[data-subcategory="${subcategory}"]`
-            );
-            if (targetGrid) targetGrid.classList.add("active");
-          }
-        } else if (category === "beverages") {
-          // Show beverages grid and hide subcategories
-          foodGrids.forEach((grid) => grid.classList.remove("active"));
-          beveragesGrid.classList.add("active");
-          subcategoryBtns.forEach((sub) => (sub.style.display = "none"));
-        }
-      });
-    });
-
-    // Handle subcategory switching
-    subcategoryBtns.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        // Remove active state from all subcategory buttons
-        subcategoryBtns.forEach((b) => b.classList.remove("active"));
-        // Set active state
-        btn.classList.add("active");
-
-        const subcategory = btn.getAttribute("data-subcategory");
-
-        // Hide all food grids
-        foodGrids.forEach((grid) => grid.classList.remove("active"));
-
-        // Show selected subcategory grid
-        const targetGrid = popup.querySelector(
-          `[data-subcategory="${subcategory}"]`
+        // Show selected category grid
+        const targetGrid = gridsContainer?.querySelector(
+          `[data-category="${category}"]`
         );
         if (targetGrid) {
           targetGrid.classList.add("active");
@@ -5318,6 +5987,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         popup.remove();
+        if (eatDrinkBtn) {
+          eatDrinkBtn.textContent = "Eat & Drink";
+        }
       });
     });
 
@@ -5343,14 +6015,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     console.log(`🍽️ Ate ${itemName}, hunger increased by ${hungerIncrease}`);
 
-    // Add chat message with specific item
-    addChatMessage({
-      type: "system",
-      message: `You savor the exquisite ${itemName} in the elegant dining saloon. The fine cuisine satisfies your hunger beautifully.`,
-      room: currentRoom.name,
-      timestamp: Date.now(),
-    });
-
     // Update the hunger bar immediately
     const hungerBar = document.querySelector(".bar.hunger");
     if (hungerBar) {
@@ -5370,14 +6034,6 @@ document.addEventListener("DOMContentLoaded", function () {
     );
 
     console.log(`🥤 Drank ${itemName}, thirst decreased by ${thirstDecrease}`);
-
-    // Add chat message with specific beverage
-    addChatMessage({
-      type: "system",
-      message: `You enjoy a refined ${itemName} served in the finest crystal. The elegant beverage perfectly quenches your thirst.`,
-      room: currentRoom.name,
-      timestamp: Date.now(),
-    });
 
     // Update the thirst bar immediately
     const thirstBar = document.querySelector(".bar.thirst");
@@ -5402,15 +6058,6 @@ document.addEventListener("DOMContentLoaded", function () {
       `🍽️ Ate food, hunger increased by ${hungerIncrease.toFixed(1)}`
     );
 
-    // Add chat message
-    addChatMessage({
-      type: "system",
-      message:
-        "You enjoy a delicious meal in the elegant dining room. Your hunger is satisfied.",
-      room: currentRoom.name,
-      timestamp: Date.now(),
-    });
-
     // Update the hunger bar immediately
     const hungerBar = document.querySelector(".bar.hunger");
     if (hungerBar) {
@@ -5431,15 +6078,6 @@ document.addEventListener("DOMContentLoaded", function () {
     console.log(
       `🥤 Drank beverage, thirst decreased by ${thirstDecrease.toFixed(1)}`
     );
-
-    // Add chat message
-    addChatMessage({
-      type: "system",
-      message:
-        "You sip a refreshing beverage, quenching your thirst perfectly.",
-      room: currentRoom.name,
-      timestamp: Date.now(),
-    });
 
     // Update the thirst bar immediately
     const thirstBar = document.querySelector(".bar.thirst");
@@ -5517,7 +6155,9 @@ document.addEventListener("DOMContentLoaded", function () {
         isCurrentPlayer ? " (You)" : ""
       }</div>
           <div class="player-class">Passenger</div>
-          <div class="player-cabin">${player.cabin || "No cabin assigned"}</div>
+          <div class="player-cabin">${
+            player.cabin_number || player.cabin || "No cabin assigned"
+          }</div>
         </div>
       `);
 

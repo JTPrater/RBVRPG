@@ -20,7 +20,9 @@ document.addEventListener("DOMContentLoaded", function () {
       `<i class="fas fa-calendar-alt"></i> Born: ${birthDate}`
     );
     document.getElementById("modalCabin").innerHTML = DOMPurify.sanitize(
-      `<i class="fas fa-key"></i> Cabin: ${passenger.cabin}`
+      `<i class="fas fa-key"></i> Cabin: ${
+        passenger.cabin_number || passenger.cabin
+      }`
     );
     document.getElementById("modalBio").innerHTML = DOMPurify.sanitize(
       `<p>${passenger.bio || "No biography provided."}</p>`
@@ -59,12 +61,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
     card.innerHTML = DOMPurify.sanitize(`
       <div class="avatar">
-        <img src="${passenger.avatar}" alt="${passenger.forename} ${passenger.surname}">
+        <img src="${passenger.avatar}" alt="${passenger.forename} ${
+      passenger.surname
+    }">
       </div>
       <div class="info">
         <h2>${passenger.forename} ${passenger.surname}</h2>
         <p class="dob"><i class="fas fa-calendar-alt"></i> Born: ${birthDate}</p>
-        <p class="cabin"><i class="fas fa-key"></i> Cabin: ${passenger.cabin}</p>
+        <p class="cabin"><i class="fas fa-key"></i> Cabin: ${
+          passenger.cabin_number || passenger.cabin
+        }</p>
       </div>
     `);
 

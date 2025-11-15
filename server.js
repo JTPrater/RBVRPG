@@ -6,6 +6,8 @@ const socketIo = require("socket.io");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs").promises;
+// Synchronous fs used for initial startup parsing of client assets
+const fsSync = require("fs");
 const bodyParser = require("body-parser");
 const bcrypt = require("bcrypt");
 const session = require("express-session");
@@ -40,7 +42,87 @@ io.use((socket, next) => {
 });
 
 // Global voyage start time (set when server starts)
+// Voyage starts now at Southampton
 const voyageStartTime = Date.now();
+
+// Narrative events for server-side synchronization (times are seconds)
+const narrativeEvents = [
+  { time: 0, text: "Final preparations are being made for departure..." },
+  {
+    time: 420,
+    text: "The ship's horn echoes across Southampton Water. The moorings are cast off, and Britannic slowly pulls away from the dock.",
+  },
+  {
+    time: 630,
+    text: "We depart Southampton Water and enter the Solent, increasing to cruising speed.",
+  },
+  {
+    time: 2430,
+    text: "The Solent stretches ahead as we make our way toward the open sea.",
+  },
+  {
+    time: 4080,
+    text: "The Isle of Wight coastline becomes visible on the starboard side.",
+  },
+  {
+    time: 4680,
+    text: "We are now passing the Nab Tower, a few miles East of us.",
+  },
+  {
+    time: 5160,
+    text: "The Isle of Wight fades astern as we enter the English Channel proper.",
+  },
+  {
+    time: 6030,
+    text: "The engines settle into their steady rhythm for the channel crossing.",
+  },
+  {
+    time: 10830,
+    text: "The English coast has disappeared from view. Only open water surrounds us now.",
+  },
+  {
+    time: 14430,
+    text: "We are now deep in the English Channel, making steady progress toward France.",
+  },
+  {
+    time: 18030,
+    text: "The French coast appears on the horizon as we approach Cherbourg.",
+  },
+];
+
+let serverNarrativeIndex = 0;
+
+// Initialize serverNarrativeIndex based on current elapsed time
+{
+  const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
+  let idx = 0;
+  for (let i = 0; i < narrativeEvents.length; i++) {
+    if (elapsedSeconds >= narrativeEvents[i].time) idx = i + 1;
+    else break;
+  }
+  serverNarrativeIndex = idx;
+  if (serverNarrativeIndex > 0) {
+    console.log(`🔁 Server narrative synced to index ${serverNarrativeIndex}`);
+  }
+}
+
+// Periodically check for narrative events (every 5 seconds) and broadcast them
+setInterval(() => {
+  const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
+  if (serverNarrativeIndex < narrativeEvents.length) {
+    const next = narrativeEvents[serverNarrativeIndex];
+    if (elapsedSeconds >= next.time) {
+      // Broadcast narrative event to all clients
+      io.emit("narrative-event", {
+        index: serverNarrativeIndex,
+        text: next.text,
+        time: next.time,
+      });
+      console.log(`📢 Broadcast narrative event: ${next.text}`);
+      serverNarrativeIndex += 1;
+    }
+  }
+}, 5000);
 
 // Environment variable validation
 function validateEnvironment() {
@@ -521,6 +603,39 @@ const allowedRooms = [
   "boarding_tower",
 ];
 
+// Auto-add any room ids found in the game client that are not already allowed.
+// This avoids accidentally leaving new rooms unlisted and simplifies maintenance.
+try {
+  const gameJsPath = path.join(__dirname, "public", "game", "game.js");
+  const gameJsContents = fsSync.readFileSync(gameJsPath, "utf8");
+  const idRegex = /id:\s*"([a-z0-9_\-]+)"/gi;
+  let match;
+  const parsedIds = new Set();
+  while ((match = idRegex.exec(gameJsContents)) !== null) {
+    parsedIds.add(match[1]);
+  }
+
+  const newlyAdded = [];
+  parsedIds.forEach((rid) => {
+    if (!allowedRooms.includes(rid)) {
+      allowedRooms.push(rid);
+      newlyAdded.push(rid);
+    }
+  });
+  if (newlyAdded.length) {
+    console.log(
+      `✅ Auto-added ${
+        newlyAdded.length
+      } room(s) to allowedRooms: ${newlyAdded.join(", ")}`
+    );
+  }
+} catch (err) {
+  console.error(
+    "❌ Failed to auto-extend allowedRooms from game.js:",
+    err.message
+  );
+}
+
 // At the top of server.js, add a room message history storage
 const roomMessageHistory = {};
 const MAX_MESSAGES_PER_ROOM = 50;
@@ -597,29 +712,90 @@ function getCurrentVoyageState() {
     }
     speed = `${speedValue.toFixed(1)} knots`;
   } else if (elapsedSinceDeparture * 1000 < NEEDLES_COMPLETE) {
-    // The Solent - 12 knots
+    // The Solent - accelerating from 6 to 12 knots
     location = "The Solent";
-    speed = "12 knots";
-    speedValue = 12;
     targetSpeed = 12;
+
+    // Calculate time elapsed since entering The Solent
+    const elapsedInSolent =
+      elapsedSinceDeparture - SOUTHAMPTON_WATER_END / 1000;
+
+    // Time to accelerate from 6 to 12 knots: (12 - 6) / 0.012 = 500 seconds
+    const timeToReach12Knots = (12 - 6) / ACCELERATION;
+
+    if (elapsedInSolent < timeToReach12Knots) {
+      // Still accelerating from 6 to 12
+      speedValue = Math.min(12, 6 + elapsedInSolent * ACCELERATION);
+    } else {
+      // Reached 12 knots
+      speedValue = 12;
+    }
+    speed = `${speedValue.toFixed(1)} knots`;
   } else if (elapsedSinceDeparture * 1000 < CHANNEL_COMPLETE) {
-    // English Channel - 19 knots cruising
+    // English Channel - accelerating from 12 to 19 knots, then cruising
     location = "English Channel";
-    speed = "19 knots";
-    speedValue = 19;
     targetSpeed = 19;
+
+    // Calculate time elapsed since entering English Channel
+    const elapsedInChannel = elapsedSinceDeparture - NEEDLES_COMPLETE / 1000;
+
+    // Time to accelerate from 12 to 19 knots: (19 - 12) / 0.012 = 583.33 seconds
+    const timeToReach19Knots = (19 - 12) / ACCELERATION;
+
+    if (elapsedInChannel < timeToReach19Knots) {
+      // Still accelerating from 12 to 19
+      speedValue = Math.min(19, 12 + elapsedInChannel * ACCELERATION);
+    } else {
+      // Reached 19 knots, cruising
+      speedValue = 19;
+    }
+    speed = `${speedValue.toFixed(1)} knots`;
   } else if (elapsedSinceDeparture * 1000 < APPROACH_COMPLETE) {
-    // Approach to Cherbourg - 12 knots
+    // Approach to Cherbourg - decelerating from 19 to 12 knots
     location = "Approaching Cherbourg";
-    speed = "12 knots";
-    speedValue = 12;
     targetSpeed = 12;
+
+    // Calculate time elapsed since starting approach
+    const elapsedInApproach = elapsedSinceDeparture - CHANNEL_COMPLETE / 1000;
+
+    // Time to decelerate from 19 to 12 knots: (19 - 12) / 0.012 = 583.33 seconds
+    const timeToDecel12Knots = (19 - 12) / ACCELERATION;
+
+    if (elapsedInApproach < timeToDecel12Knots) {
+      // Still decelerating from 19 to 12
+      speedValue = Math.max(12, 19 - elapsedInApproach * ACCELERATION);
+    } else {
+      // Reached 12 knots
+      speedValue = 12;
+    }
+    speed = `${speedValue.toFixed(1)} knots`;
   } else if (elapsedSinceDeparture * 1000 < BERTHING_COMPLETE) {
-    // Harbor entry - 6 knots
+    // Harbor entry - decelerating from 12 to 6 knots then to 0
     location = "Cherbourg Harbor";
-    speed = "6 knots";
-    speedValue = 6;
-    targetSpeed = 6;
+
+    // Calculate time elapsed since entering harbor
+    const elapsedInHarbor = elapsedSinceDeparture - APPROACH_COMPLETE / 1000;
+
+    // Time to decelerate from 12 to 6 knots: (12 - 6) / 0.012 = 500 seconds
+    const timeToDecel6Knots = (12 - 6) / ACCELERATION;
+    // Time to decelerate from 6 to 0 knots: 6 / 0.012 = 500 seconds
+    const timeToStop = 6 / ACCELERATION;
+
+    if (elapsedInHarbor < timeToDecel6Knots) {
+      // Decelerating from 12 to 6
+      speedValue = Math.max(6, 12 - elapsedInHarbor * ACCELERATION);
+      targetSpeed = 6;
+    } else {
+      // Decelerating from 6 to 0
+      const elapsedDecelToStop = elapsedInHarbor - timeToDecel6Knots;
+      if (elapsedDecelToStop < timeToStop) {
+        speedValue = Math.max(0, 6 - elapsedDecelToStop * ACCELERATION);
+      } else {
+        speedValue = 0;
+      }
+      targetSpeed = 0;
+    }
+    speed = `${speedValue.toFixed(1)} knots`;
   } else {
     // Berthed - full stop
     location = "Cherbourg Harbor";
@@ -666,11 +842,64 @@ const cabins = {
     A32: { capacity: 2, occupied: 0 },
     A34: { capacity: 2, occupied: 0 },
     A36: { capacity: 1, occupied: 0 },
+    // B-Deck first class cabins (added by assistant)
+    B49: { capacity: 2, occupied: 0 },
+    B51: { capacity: 2, occupied: 0 },
+    B53: { capacity: 1, occupied: 0 },
+    B55: { capacity: 2, occupied: 0 },
+    B57: { capacity: 1, occupied: 0 },
+    B59: { capacity: 2, occupied: 0 },
+    B61: { capacity: 2, occupied: 0 },
+    B63: { capacity: 1, occupied: 0 },
+    B65: { capacity: 2, occupied: 0 },
+    B67: { capacity: 2, occupied: 0 },
+    B69: { capacity: 2, occupied: 0 },
+    B71: { capacity: 1, occupied: 0 },
+    B73: { capacity: 2, occupied: 0 },
+    B75: { capacity: 2, occupied: 0 },
+    B77: { capacity: 1, occupied: 0 },
+    B79: { capacity: 2, occupied: 0 },
+    B81: { capacity: 2, occupied: 0 },
+    B83: { capacity: 1, occupied: 0 },
   },
   "2nd_class_cabins": {},
   "3rd_class_cabins": {},
   crew_berths: {},
 };
+
+// Synchronize cabin occupancy from the database at startup
+async function syncCabinOccupancyFromDB() {
+  try {
+    // Reset current occupancy counts to zero
+    for (const type of Object.keys(cabins)) {
+      Object.keys(cabins[type]).forEach((num) => {
+        cabins[type][num].occupied = 0;
+      });
+    }
+
+    // Count existing registered users per cabin
+    const users = await User.find(
+      {},
+      "character.cabin character.cabin_number"
+    ).lean();
+    for (const u of users) {
+      const cabinType = u?.character?.cabin;
+      const cabinNumber = u?.character?.cabin_number;
+      if (
+        cabinType &&
+        cabinNumber &&
+        cabins[cabinType] &&
+        cabins[cabinType][cabinNumber]
+      ) {
+        cabins[cabinType][cabinNumber].occupied += 1;
+      }
+    }
+
+    console.log("✅ Synchronized cabin occupancy from DB");
+  } catch (err) {
+    console.error("❌ Failed to sync cabin occupancy from DB:", err.message);
+  }
+}
 
 app.get("/api/get_available_cabins", (req, res) => {
   const cabinType = req.query.cabin_type;
@@ -693,9 +922,15 @@ app.get("/api/get_available_cabins", (req, res) => {
   const cabinEntries = Object.entries(cabins[cabinType]);
   console.log(`📊 Found ${cabinEntries.length} cabins in ${cabinType}`);
 
+  // Return detailed cabin availability so the client can show capacities
   const availableCabins = cabinEntries
     .filter(([_, cabin]) => cabin.occupied < cabin.capacity)
-    .map(([cabinNumber]) => cabinNumber);
+    .map(([cabinNumber, cabin]) => ({
+      number: cabinNumber,
+      capacity: cabin.capacity,
+      occupied: cabin.occupied,
+      available: cabin.capacity - cabin.occupied,
+    }));
 
   console.log(
     `✅ Returning ${
@@ -853,6 +1088,19 @@ io.on("connection", async (socket) => {
       const passengers = users.map((user) => user.character);
       console.log("🗂️ Sending initial passengers:", passengers);
       socket.emit("initial-passengers", passengers);
+      // If there is a last narrative event, tell this client where server is currently
+      if (
+        serverNarrativeIndex > 0 &&
+        narrativeEvents[serverNarrativeIndex - 1]
+      ) {
+        const idx = serverNarrativeIndex - 1;
+        socket.emit("narrative-current", {
+          index: idx,
+          text: narrativeEvents[idx].text,
+          time: narrativeEvents[idx].time,
+        });
+        console.log(`📣 Sent current narrative index ${idx} to ${socket.id}`);
+      }
     })
     .catch((err) => {
       console.error("❌ Error fetching passengers:", err);
@@ -996,7 +1244,9 @@ io.on("connection", async (socket) => {
                   id: socketId,
                   name: `${userSocket.character.forename} ${userSocket.character.surname}`,
                   avatar: userSocket.character.avatar,
+                  // Provide both cabin type and cabin number to client
                   cabin: userSocket.character.cabin,
+                  cabin_number: userSocket.character.cabin_number,
                 }
               : null;
           })
@@ -1149,6 +1399,8 @@ const startServer = async () => {
   validateEnvironment();
   console.log("🚀 Initializing MongoDB...");
   await initMongoDB();
+  console.log("🔁 Syncing cabin occupancy from DB...");
+  await syncCabinOccupancyFromDB();
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);

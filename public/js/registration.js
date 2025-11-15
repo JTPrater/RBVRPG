@@ -109,7 +109,14 @@ document.addEventListener("DOMContentLoaded", function () {
         );
       }
 
-      const availableCabins = await response.json();
+      const rawCabins = await response.json();
+      // Server now returns objects: { number, capacity, occupied, available }
+      const availableCabins =
+        Array.isArray(rawCabins) &&
+        rawCabins.length &&
+        typeof rawCabins[0] === "object"
+          ? rawCabins
+          : rawCabins; // Backwards compatible if server returns strings
       console.log(
         `✅ Received ${availableCabins.length} available cabins:`,
         availableCabins
@@ -121,14 +128,58 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Populate dropdown with available cabins
       if (availableCabins.length > 0) {
+        // Clear capacity info
+        document.getElementById("cabin-capacity-info").style.display = "none";
         availableCabins.forEach((cabin) => {
           const option = document.createElement("option");
-          option.value = cabin;
-          option.textContent = cabin;
+          if (typeof cabin === "string") {
+            option.value = cabin;
+            option.textContent = cabin;
+            option.dataset.capacity = "";
+            option.dataset.occupied = "";
+          } else {
+            option.value = cabin.number;
+            // Show occupied/total (e.g., 1/2) to make it clear how many are taken
+            option.textContent = `${cabin.number} (${cabin.occupied}/${cabin.capacity})`;
+            option.dataset.capacity = cabin.capacity;
+            option.dataset.occupied = cabin.occupied;
+            option.dataset.available = cabin.available;
+          }
           cabinNumberSelect.appendChild(option);
         });
+        // If only one cabin is available, pre-select it and refresh capacity info
+        if (cabinNumberSelect.options.length === 2) {
+          cabinNumberSelect.selectedIndex = 1;
+          cabinNumberSelect.dispatchEvent(new Event("change"));
+        }
         cabinNumberSelect.disabled = false;
-      } else {
+      }
+      // else handled below
+
+      // Listen for cabin selection and show capacity info
+      if (!cabinNumberSelect.dataset.capacityListener) {
+        cabinNumberSelect.addEventListener("change", function () {
+          const selected = this.options[this.selectedIndex];
+          const capInfo = document.getElementById("cabin-capacity-info");
+          const total = selected?.dataset?.capacity;
+          const occupied = selected?.dataset?.occupied;
+          const left = selected?.dataset?.available;
+          if (total && left !== undefined) {
+            // Display occupied/total and seats left
+            const occ = selected?.dataset?.occupied ?? 0;
+            document.getElementById(
+              "capacity-total"
+            ).textContent = `${occ}/${total}`;
+            document.getElementById("capacity-left").textContent = left;
+            capInfo.style.display = "block";
+          } else {
+            capInfo.style.display = "none";
+          }
+        });
+        cabinNumberSelect.dataset.capacityListener = "true";
+      }
+
+      if (availableCabins.length === 0) {
         cabinNumberSelect.innerHTML =
           '<option value="">-- No cabins available --</option>';
         alert("No cabins are currently available for this cabin type.");

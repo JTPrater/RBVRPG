@@ -64,6 +64,19 @@
           <select id="cabin_number" name="cabin_number" required>
             <option value="">-- Select a cabin type first --</option>
           </select>
+          <div
+            id="cabin-capacity-info"
+            class="capacity-info"
+            style="
+              display: none;
+              margin-top: 8px;
+              font-size: 0.9em;
+              color: #333;
+            "
+          >
+            Seats: <span id="capacity-total"></span> — Seats left:
+            <span id="capacity-left"></span>
+          </div>
         </div>
 
         <div class="form-group">
