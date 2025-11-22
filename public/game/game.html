@@ -64,19 +64,19 @@
           </div>
 
           <div class="sprite-container">
-            <div class="sky-container">
-              <!-- Sky backgrounds - replaced image tags with divs for gradient testing -->
-              <div class="sky day" aria-hidden="true"></div>
-              <div class="sky ms-5" aria-hidden="true"></div>
-              <div class="sky ms-4" aria-hidden="true"></div>
-              <div class="sky ms-3" aria-hidden="true"></div>
-              <div class="sky ms-2" aria-hidden="true"></div>
-              <div class="sky ms-1" aria-hidden="true"></div>
-              <div class="sky ms-0" aria-hidden="true"></div>
-              <div class="sky night" aria-hidden="true"></div>
-            </div>
+            <div class="scene-layer">
+              <div class="sky-container">
+                <!-- Sky backgrounds - replaced image tags with divs for gradient testing -->
+                <div class="sky day" aria-hidden="true"></div>
+                <div class="sky ms-5" aria-hidden="true"></div>
+                <div class="sky ms-4" aria-hidden="true"></div>
+                <div class="sky ms-3" aria-hidden="true"></div>
+                <div class="sky ms-2" aria-hidden="true"></div>
+                <div class="sky ms-1" aria-hidden="true"></div>
+                <div class="sky ms-0" aria-hidden="true"></div>
+                <div class="sky night" aria-hidden="true"></div>
+              </div>
 
-            <div class="cloud-container">
               <img
                 src="../images/animations/clouds/day.png"
                 alt="Day Clouds"
@@ -92,9 +92,7 @@
                 alt="Night Clouds"
                 class="clouds night"
               />
-            </div>
 
-            <div class="water-container">
               <div class="water"></div>
               <img
                 src="../images/animations/locations/isle of wight/day.png"
@@ -112,9 +110,9 @@
                 class="location dock"
               />
               <img
-                src="../images/animations/locations/cherbourg/Cherbourg.png"
-                alt="Cherbourg"
-                class="location cherbourg"
+                src="../images/animations/locations/cherbourg/cherbourg_night.png"
+                alt="Cherbourg Night"
+                class="location cherbourg cherbourg-night"
               />
               <img
                 src="../images/animations/britannic/britannic.png"
@@ -139,25 +137,31 @@
               <!-- Land formations now use CSS background-image for scrolling effects -->
               <div class="land-middle"></div>
               <div class="land-end"></div>
-              <div class="yacht-container yacht-1-container">
+              <div class="yacht-1-container">
                 <img
                   src="../images/animations/locations/southampton/southampton_yacht_1.png"
                   alt="Southampton Yacht 1"
                   class="southampton-yacht yacht-1"
+                  width="193"
+                  height="68"
                 />
               </div>
-              <div class="yacht-container yacht-2-container">
+              <div class="yacht-2-container">
                 <img
                   src="../images/animations/locations/southampton/southampton_yacht_2.png"
                   alt="Southampton Yacht 2"
                   class="southampton-yacht yacht-2"
+                  width="110"
+                  height="29"
                 />
               </div>
-              <div class="yacht-container yacht-3-container">
+              <div class="yacht-3-container">
                 <img
                   src="../images/animations/locations/southampton/southampton_yacht_3.png"
                   alt="Southampton Yacht 3"
                   class="southampton-yacht yacht-3"
+                  width="131"
+                  height="51"
                 />
               </div>
             </div>
@@ -222,17 +226,17 @@
               <button class="panel-btn" id="money-btn">Money</button>
               <button class="panel-btn" id="report-btn">Report</button>
             </div>
-          </div>
-        </div>
 
-        <div class="character-display">
-          <div class="avatar-frame">
-            <img id="character-avatar" alt="Character Avatar" />
-          </div>
-          <div class="character-info">
-            <div id="character-name"></div>
-            <div id="character-class"></div>
-            <a id="character-cabin" href="#"></a>
+            <div class="character-display">
+              <div class="avatar-frame">
+                <img id="character-avatar" alt="Character Avatar" />
+              </div>
+              <div class="character-info">
+                <div id="character-name"></div>
+                <div id="character-class"></div>
+                <a id="character-cabin" href="#"></a>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -400,11 +404,12 @@
         </div>
 
         <div class="location-display">
-          <img
-            class="location-image"
-            src="../images/animations/locations/britannic/Grand Staircase.jpg"
-            alt="Current Location"
-          />
+          <canvas
+            class="location-canvas"
+            width="960"
+            height="540"
+            aria-label="Current Location"
+          ></canvas>
           <button id="refresh-location-btn" class="location-control-btn">
             <span class="material-icons">refresh</span>
           </button>

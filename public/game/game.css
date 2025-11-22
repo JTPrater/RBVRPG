@@ -35,7 +35,6 @@
   background: linear-gradient(145deg, #1a4d2e, #2d6a4f);
   border: 3px solid #c0932b;
   border-radius: 8px;
-  color: #f5f5dc;
   font-family: "Julius Sans One", serif;
   font-size: 18px;
   font-weight: bold;
@@ -79,11 +78,68 @@ body {
   height: 100%;
   width: 100%;
   overflow: hidden;
+  min-width: 1280px;
+  min-height: 720px;
 }
 
 :root {
   --scale: 1; /* Default value, will be overridden by JavaScript */
+  --scene-width: 1920;
+  --scene-height: 1080;
+  --scene-manual-offset: 0px;
+  --scene-bottom-offset: 0px;
+  --ship-bottom: 693px;
+  --water-bottom: 150px;
+  /* Shared baseline for all yachts. Anchor to ship bottom (waterline) so they
+     stay seated on the surface no matter the viewport scaling. Adjust with
+     --yacht-offset if art needs a small nudge. */
+  /* Keep yachts referenced to the global waterline instead of Britannic */
+  /* Vertical adjust — increase this to raise yachts further above the water.
+      This is position-only (not z-index). */
+  /* Use a computed offset so the yacht baseline sits at 578px by default
+      (calculates 578px - water bottom). Override with setYachtOffset in DevTools
+      to test different values. */
+  /* Raise yachts by 30px to improve visibility above waves */
+  --yacht-offset: calc(578px - var(--water-bottom, 150px) + 145px);
+  /* Per-yacht vertical offsets (added on top of --yacht-baseline). Use
+      negative to push down or positive to raise further. */
+  /* Offsets computed from measured bottom positions in the screenshot:
+      yacht1: 723px => 0px offset, yacht2: 728px => +5px offset, yacht3: 725px => +2px offset */
+  --yacht-offset-1: 0px;
+  --yacht-offset-2: 5px;
+  --yacht-offset-3: 2px;
+  /* Set yachts exactly to user-requested waterline (723px) so the bottoms
+      are pinned to the water. This is intentionally an absolute pixel value
+      requested by the user (see attachments). If you later want the waterline
+      anchoring behavior restored, revert to the calc(...) expression. */
+  --yacht-baseline: 723px;
+  /* Per-yacht horizontal positions in absolute pixels. These map to the
+      user-supplied coordinates (left: 1536px, 1152px, 768px). You can tweak
+      these values here or via DevTools at runtime. */
+  --yacht-left-1: 1536px;
+  --yacht-left-2: 1152px;
+  --yacht-left-3: 768px;
   --bottom-bar-height: calc(130px * var(--scale));
+  --hud-panel-height: clamp(220px, 40vh, 360px);
+  --location-panel-width: clamp(
+    360px,
+    calc((16 / 9) * var(--hud-panel-height)),
+    720px
+  );
+  --player-row-width: clamp(240px, 25vw, 420px);
+  --smoke-offset: -90px; /* Negative = move smoke down; adjust as needed */
+  /* Yacht scale variables — slightly larger so they read better at distance */
+  --yacht-scale-1: 1; /* forward yacht */
+  --yacht-scale-2: 1; /* mid yacht */
+  --yacht-scale-3: 1; /* aft yacht */
+  /* Cherbourg sprite placement (same system as other sprites) */
+  --cherbourg-left: 50%; /* Defaults to 50% from left (around Britannic position) - tuned for Cherbourg */
+  --cherbourg-bottom: 68%; /* Default vertical offset percentage */
+  --cherbourg-width: 105%; /* Default width for Cherbourg sprite - user prefers 85% of scene */
+  /* Cherbourg night sprite tuning */
+  --cherbourg-brightness: 1.35; /* multiplier: 1 = unchanged */
+  --cherbourg-saturation: 1.2;
+  --cherbourg-contrast: 1.05;
 }
 
 /* game.css */
@@ -92,11 +148,9 @@ body {
   margin: 0;
   font-family: "Julius Sans One", serif;
   background: url("../images/game/background.jpg") no-repeat center center fixed;
-  background-size: cover;
+  background-attachment: fixed;
+  background-size: 100% 100%;
   color: #fff;
-  display: flex;
-  justify-content: center;
-  align-items: center;
   background-color: #1a1a1a;
   overflow: hidden;
 }
@@ -108,7 +162,7 @@ body {
   width: 100%;
   height: 100%;
   background: url("../images/game/loading screen.jpg") no-repeat center center;
-  background-size: cover;
+  background-size: 100% 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -197,7 +251,19 @@ body {
 }
 
 .ui-wrapper {
-  transform-origin: center;
+  /* Anchor scaling & transforms to the bottom of the container to prevent
+      vertical jitter when the page scales or the scene is resized. */
+  transform-origin: center bottom;
+  width: 100%;
+  height: 100%;
+}
+
+.game-wrapper {
+  width: 100%;
+  height: 100%;
+  min-width: 1280px;
+  min-height: 720px;
+  position: relative;
 }
 
 .game-container {
@@ -205,26 +271,40 @@ body {
   transform-origin: center;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  width: 100vw;
+  width: 100%;
+  height: 100%;
+  min-width: 1280px;
+  min-height: 720px;
   overflow: hidden;
 }
 
 .sprite-container {
   position: fixed;
+  inset: 0;
   width: 100vw;
   height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.scene-layer {
+  position: absolute;
+  bottom: var(--scene-bottom-offset, 0px);
+  left: 50%;
+  width: calc(var(--scene-width) * 1px);
+  height: calc(var(--scene-height) * 1px);
+  overflow: hidden;
+  pointer-events: none;
+  transform-origin: center bottom;
+  transform: translateX(-50%) scale(var(--scale));
 }
 
 .top-bar {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
+  width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -251,7 +331,8 @@ body {
 .water-container {
   position: relative;
   width: 100%;
-  height: 538px;
+  height: 100%;
+  min-height: 538px;
   display: flex;
   justify-content: center;
   align-items: flex-end;
@@ -261,31 +342,33 @@ body {
 .water {
   width: 100%;
   height: 54.25%;
-  position: fixed;
-  bottom: var(--water-bottom, 13.8%);
+  position: absolute;
+  bottom: var(--water-bottom, 150px);
+  left: 0;
   z-index: 1;
   background-image: url("../images/animations/water.png");
   background-repeat: repeat-x;
-  background-size: auto 100%;
+  background-size: 100% 100%;
   background-position: 0 0;
 }
 
 .swater {
   width: 100%;
   height: 54.25%;
-  position: fixed;
-  bottom: var(--water-bottom, 13.8%);
-  z-index: 4;
+  position: absolute;
+  bottom: var(--water-bottom, 150px);
+  left: 0;
+  z-index: 5; /* Highest water layer so foam overlays yachts */
   background-image: url("../images/animations/swater.png");
   background-repeat: repeat-x;
-  background-size: auto 100%;
+  background-size: 100% 100%;
   background-position: 0 0;
 }
 
 .land-middle {
-  position: fixed;
+  position: absolute;
   bottom: 68%;
-  right: 0%;
+  left: 0;
   width: 100%;
   height: auto;
   min-height: 200px; /* Ensure div has height for background to show */
@@ -294,14 +377,14 @@ body {
   opacity: 1; /* Visible from the start */
   background-image: url("../images/animations/locations/southampton/Land_middle.png");
   background-repeat: repeat-x;
-  background-size: auto 100%;
+  background-size: 100% 100%;
   background-position: 0 0;
 }
 
 .land-end {
-  position: fixed;
+  position: absolute;
   bottom: 68%;
-  right: 0%;
+  left: 0;
   width: auto;
   height: auto;
   min-height: 200px; /* Ensure div has height for background to show */
@@ -309,47 +392,118 @@ body {
   pointer-events: none;
   opacity: 1; /* Visible from the start */
 }
+.southampton-yacht {
+  position: relative;
+  display: block;
+  width: auto;
+  height: auto;
+  pointer-events: none;
+  opacity: 1; /* Image visible; container controls show/hide */
+  transition: opacity 1s ease;
+}
+
+/* Containers hold the yachts and are translated horizontally by JS. */
+.yacht-1-container,
+.yacht-2-container,
+.yacht-3-container {
+  position: absolute;
+  /* Act as positioning context so the yacht image can hug the bottom line */
+  display: block;
+  /* Place yachts between Britannic and the foam overlay: Britannic (z=3),
+      yachts (z=4), surface water `.swater` (z=5). This makes yachts appear
+      behind foam but above the ship hull. */
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1s ease;
+  transform-origin: center;
+  /* Ensure container gets a layout box even if the child is not yet fully
+     loaded (helps debugging zero-width containers). The containers are
+     positioned absolutely but should measure child size; this guards against
+     oddcases where the image hasn't loaded and returns width 0. */
+  min-width: 24px;
+  min-height: 8px;
+  width: auto;
+  height: auto;
+}
 
 .yacht-1-container {
-  position: fixed;
-  bottom: 66.5vmin;
-  right: 10%;
-  z-index: 3;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 1s ease;
+  /* Allow per-yacht nudging above the shared baseline */
+  bottom: calc(var(--yacht-baseline) + var(--yacht-offset-1, 0px));
+  /* Use pixel-based left positions so the container aligns exactly with
+     the coordinates from the provided screenshot */
+  left: var(--yacht-left-1);
 }
-
-.yacht-1-container.visible {
-  opacity: 1;
-}
-
 .yacht-2-container {
-  position: fixed;
-  bottom: 67.25vmin;
-  right: 30%;
-  z-index: 3;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 1s ease;
+  bottom: calc(var(--yacht-baseline) + var(--yacht-offset-2, 0px));
+  left: var(--yacht-left-2);
 }
-
-.yacht-2-container.visible {
-  opacity: 1;
-}
-
 .yacht-3-container {
-  position: fixed;
-  bottom: 67vmin;
-  right: 50%;
-  z-index: 3;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 1s ease;
+  bottom: calc(var(--yacht-baseline) + var(--yacht-offset-3, 0px));
+  left: var(--yacht-left-3);
 }
 
+/* Center the yacht image inside the container and apply scale per yacht */
+.yacht-1-container > .southampton-yacht,
+.yacht-2-container > .southampton-yacht,
+.yacht-3-container > .southampton-yacht {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  display: block;
+  transform-origin: center bottom;
+  max-width: none;
+  width: auto;
+  height: auto;
+}
+
+.yacht-1-container > .southampton-yacht {
+  transform: translateX(-50%) scale(var(--yacht-scale-1));
+}
+.yacht-2-container > .southampton-yacht {
+  transform: translateX(-50%) scale(var(--yacht-scale-2));
+}
+.yacht-3-container > .southampton-yacht {
+  transform: translateX(-50%) scale(var(--yacht-scale-3));
+}
+
+/* Make containers visible when JS toggles the class */
+.yacht-1-container.visible,
+.yacht-2-container.visible,
 .yacht-3-container.visible {
   opacity: 1;
+}
+
+/* Debug outlines to visually locate yachts during testing */
+.yacht-1-container.visible {
+  outline: 2px dashed rgba(255, 255, 0, 0.85);
+}
+.yacht-2-container.visible {
+  outline: 2px dashed rgba(255, 0, 255, 0.6);
+}
+.yacht-3-container.visible {
+  outline: 2px dashed rgba(0, 255, 255, 0.6);
+}
+
+/* When container becomes visible ensure the yacht image is also shown */
+.yacht-1-container.visible > .southampton-yacht,
+.yacht-2-container.visible > .southampton-yacht,
+.yacht-3-container.visible > .southampton-yacht {
+  opacity: 1;
+}
+
+.southampton-yacht.visible {
+  opacity: 1;
+}
+
+.southampton-yacht.yacht-2 {
+  /* Bottom/left are now handled by the container so the images don't
+     override the shared baseline. Keep transform only for centering/scale. */
+  transform: translate(-50%, 0) scale(var(--yacht-scale-2));
+}
+
+.southampton-yacht.yacht-3 {
+  transform: translate(-50%, 0) scale(var(--yacht-scale-3));
 }
 
 .sky-container {
@@ -362,69 +516,84 @@ body {
   align-items: center;
 }
 
+.cloud-layer,
 .cloud-container {
   position: absolute;
-  top: 0%;
+  top: 0;
+  left: 0;
   width: 100%;
-  height: 10%;
+  height: 30%;
   z-index: 1;
-  overflow: visible;
   pointer-events: none;
+  overflow: visible;
 }
 
 .smoke-container {
-  position: fixed;
-  bottom: 64%;
-  right: 50%;
-  width: 50vw;
-  height: 50vw;
+  position: absolute;
+  /* Anchor to ship bottom then apply adjustable offset */
+  bottom: calc(var(--ship-bottom, 100px) + 95px + var(--smoke-offset));
+  right: 75.25%;
+  width: 960px;
+  height: 960px;
   z-index: 2;
   overflow: visible;
   pointer-events: none;
+  transform: translateX(50%);
 }
 
 .location {
-  position: fixed;
-  display: flex;
+  position: absolute;
   bottom: 68%;
   right: 50%;
   width: 50%;
   z-index: 2;
 }
 
-.location.cherbourg {
-  display: none;
+.cherbourg-night {
+  left: 200%; /* Start far off-screen by default */
+  /* Cherbourg should be instantly visible when it starts moving; no opacity transition */
+  right: auto;
+  bottom: var(--cherbourg-bottom, 68%);
+  width: var(--cherbourg-width, 85%); /* Default is 85% of scene width */
+  z-index: 2;
+  opacity: 0; /* Hidden by default; JS will reveal during approach */
+  transform-origin: center bottom;
+  transform: translateX(-50%);
+  transition: filter 260ms ease;
+  filter: brightness(var(--cherbourg-brightness))
+    saturate(var(--cherbourg-saturation)) contrast(var(--cherbourg-contrast));
+  pointer-events: none;
 }
 
 .britannic {
-  position: fixed;
-  display: flex;
-  bottom: var(--britannic-bottom, 64vmin);
+  position: absolute;
+  bottom: var(--ship-bottom, 690px);
   right: 50%;
   width: 50%;
   z-index: 3;
 }
 
+.britannic-day,
+.britannic-md,
+.britannic-night {
+  transition: opacity 5s ease-in-out;
+}
+
 .waves {
-  position: fixed;
+  position: absolute;
   display: block;
-  bottom: calc(var(--britannic-bottom, 64vmin) + 2.21vw);
+  bottom: calc(var(--ship-bottom, 690px) + 42px);
   right: 50.67%;
   width: 50%;
-  height: 0.85vw;
-  z-index: 3;
+  height: 16px; /* Fixed height relative to scene (approx 0.85% of 1920) */
+  z-index: 4;
   pointer-events: none;
   opacity: 0;
   background-image: url("../images/animations/waves.png");
   background-repeat: repeat-x;
-  background-size: auto 100%;
+  background-size: 100% 100%;
   background-position: 0 0;
-  transition: opacity 600s ease;
   overflow: hidden;
-}
-
-.waves.departing {
-  opacity: 1;
 }
 
 .top-text-border {
@@ -546,33 +715,34 @@ body {
 
 .clouds {
   position: absolute;
-  top: 50px; /* Add some spacing from top */
-  width: 100%; /* Make wider to ensure continuous cloud coverage */
-  height: auto; /* Changed from 50% to maintain aspect ratio */
-  opacity: 0; /* Changed from 0 to make clouds visible */
+  top: 5%;
+  left: 0;
+  width: 100%;
+  height: auto;
+  opacity: 0;
   will-change: transform;
 }
 
 .sky {
   width: 100%;
-  height: 100vh;
+  height: 40%; /* Extend height so gradient can shift upward */
   position: absolute;
   left: 0;
-  top: 0;
+  top: -5vh; /* Raise gradient layer slightly above the scene */
   z-index: 0;
   opacity: 0;
-  transition: opacity 5s ease-in-out;
+  transition: opacity 5s ease-in-out, background 6s linear;
 }
 
 /* Day sky - clear blue gradient matching reference */
 .sky.day {
   background: linear-gradient(
     to bottom,
-    #4a90c8 0%,
-    /* Deep blue at top */ #6ba8d8 30%,
-    /* Medium blue */ #8fc5e8 60%,
-    /* Light blue */ #b8d9f0 85%,
-    /* Very light blue near horizon */ #d4e8f5 100% /* Pale blue at horizon */
+    #0ea5e9 0%,
+    #38bdf8 30%,
+    #7dd3fc 60%,
+    #bae6fd 85%,
+    #e0f2fe 100%
   );
   z-index: 0;
 }
@@ -581,11 +751,11 @@ body {
 .sky.ms-5 {
   background: linear-gradient(
     to bottom,
-    #1a3a52 0%,
-    /* Dark blue-gray at top */ #4a6b8a 25%,
-    /* Blue-gray */ #e8a050 70%,
-    /* Warm orange */ #f5c878 85%,
-    /* Golden yellow */ #fae5b8 100% /* Pale yellow at horizon */
+    #0f172a 0%,
+    #1e293b 25%,
+    #334155 70%,
+    #475569 85%,
+    #64748b 100%
   );
   z-index: 0;
 }
@@ -593,11 +763,11 @@ body {
 .sky.ms-4 {
   background: linear-gradient(
     to bottom,
-    #2d5470 0%,
-    /* Medium-dark blue */ #5a7a95 30%,
-    /* Blue-gray */ #e89550 65%,
-    /* Orange */ #f5be70 80%,
-    /* Golden */ #fde0a8 100% /* Light yellow at horizon */
+    #1e293b 0%,
+    #334155 30%,
+    #475569 65%,
+    #64748b 80%,
+    #94a3b8 100%
   );
   z-index: 0;
 }
@@ -605,11 +775,11 @@ body {
 .sky.ms-3 {
   background: linear-gradient(
     to bottom,
-    #3a6080 0%,
-    /* Medium blue */ #6a8aa8 35%,
-    /* Blue-gray */ #ea9858 60%,
-    /* Orange-yellow */ #f5b868 75%,
-    /* Golden */ #fcd890 100% /* Warm yellow at horizon */
+    #0f172a 0%,
+    #1e293b 35%,
+    #334155 60%,
+    #ea580c 75%,
+    #f59e0b 100%
   );
   z-index: 0;
 }
@@ -617,11 +787,11 @@ body {
 .sky.ms-2 {
   background: linear-gradient(
     to bottom,
-    #487090 0%,
-    /* Blue */ #7a9ab8 40%,
-    /* Light blue-gray */ #ec9e60 55%,
-    /* Warm orange */ #f5b060 70%,
-    /* Orange-gold */ #fad080 100% /* Yellow at horizon */
+    #1e293b 0%,
+    #334155 40%,
+    #64748b 55%,
+    #fb923c 70%,
+    #f59e0b 100%
   );
   z-index: 0;
 }
@@ -629,11 +799,11 @@ body {
 .sky.ms-1 {
   background: linear-gradient(
     to bottom,
-    #5680a0 0%,
-    /* Light blue */ #8aaac8 45%,
-    /* Pale blue */ #eea868 50%,
-    /* Orange */ #f5a858 65%,
-    /* Orange-gold */ #f8c870 100% /* Golden yellow at horizon */
+    #334155 0%,
+    #64748b 45%,
+    #94a3b8 50%,
+    #fed7aa 65%,
+    #fdbcb4 100%
   );
   z-index: 0;
 }
@@ -641,11 +811,11 @@ body {
 .sky.ms-0 {
   background: linear-gradient(
     to bottom,
-    #6890b0 0%,
-    /* Pale blue */ #98b8d8 50%,
-    /* Very light blue */ #f0b070 50%,
-    /* Bright orange */ #f5a050 60%,
-    /* Deep orange */ #f5c060 100% /* Gold at horizon */
+    #475569 0%,
+    #94a3b8 50%,
+    #cbd5e1 50%,
+    #fef3c7 60%,
+    #fed7aa 100%
   );
   z-index: 0;
 }
@@ -654,11 +824,11 @@ body {
 .sky.night {
   background: linear-gradient(
     to bottom,
-    #0a0e1a 0%,
-    /* Very dark blue-black at top */ #1a2030 30%,
-    /* Dark blue */ #283048 60%,
-    /* Deep blue */ #364560 85%,
-    /* Blue-gray */ #445570 100% /* Medium blue at horizon */
+    #0f1419 0%,
+    #1a2332 30%,
+    #2d3748 60%,
+    #4a5568 85%,
+    #718096 100%
   );
   z-index: 0;
 }
@@ -740,7 +910,8 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background-color: rgba(26, 26, 26, 0.95);
+  /* Use solid background so chat panel does not show the game underneath */
+  background-color: #1a1a1a; /* previously rgba(26,26,26,0.95) */
   border: calc(2px * var(--scale)) solid #c0932b;
   padding: calc(20px * var(--scale));
   z-index: 1000;
@@ -832,11 +1003,12 @@ body {
 
 .character-display {
   position: absolute;
-  bottom: calc(15px * var(--scale));
-  left: calc(20px * var(--scale));
+  bottom: calc(20px * var(--scale));
+  left: clamp(20px, 2vw, 60px);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: calc(10px * var(--scale));
+  max-width: clamp(240px, 20vw, 360px);
   z-index: 12;
 }
 
@@ -844,6 +1016,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  width: 100%;
 }
 
 #character-name,
@@ -853,6 +1026,10 @@ body {
   color: #fff;
   text-shadow: calc(2px * var(--scale)) calc(2px * var(--scale))
     calc(2px * var(--scale)) rgba(0, 0, 0, 0.5);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #character-name {
@@ -876,6 +1053,7 @@ body {
   border: calc(2px * var(--scale)) solid #c0932b;
   background-color: rgba(0, 0, 0, 0.5);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 #character-avatar {
@@ -898,7 +1076,8 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background-color: rgba(26, 26, 26, 0.95);
+  /* Use solid background so chat panel does not show the game underneath */
+  background-color: #1a1a1a; /* previously rgba(26,26,26,0.95) */
   border: calc(2px * var(--scale)) solid #c0932b;
   padding: calc(15px * var(--scale));
   z-index: 1000;
@@ -1049,15 +1228,13 @@ body {
 
 .chat-container {
   display: none;
-  position: absolute;
-  /* Align to sit just above the bottom bar. Use a small offset for breathing room. */
-  /* Sit flush with the bottom bar; no gap */
+  position: fixed;
   bottom: var(--bottom-bar-height);
   left: 0;
-  width: calc(100vw - ((16 / 9) * 40vh)); /* Updated width */
-  height: 40vh;
-  max-height: 40vh;
-  background-color: rgba(26, 26, 26, 0.95);
+  right: var(--location-panel-width);
+  width: auto;
+  height: var(--hud-panel-height);
+  background-color: #1a1a1a;
   border: calc(2px * var(--scale)) solid #c0932b;
   z-index: 11; /* Place above bottom bar */
   overflow: hidden;
@@ -1066,19 +1243,22 @@ body {
 
 .location-display {
   display: none;
-  position: absolute;
-  /* Sit flush with the bottom bar; no gap */
+  position: fixed;
   bottom: var(--bottom-bar-height);
   right: 0;
-  width: calc((16 / 9) * 40vh); /* Updated width */
-  height: 40vh;
+  width: var(--location-panel-width);
+  height: var(--hud-panel-height);
   background-color: rgba(26, 26, 26, 0.95);
   border: calc(2px * var(--scale)) solid #c0932b;
   z-index: 11; /* Place above bottom bar */
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
-.location-image {
+.location-canvas {
   width: 100%;
   height: 100%;
   display: block;
@@ -1107,7 +1287,8 @@ body {
   flex-grow: 1;
   padding: calc(5px * var(--scale)); /* Scaled padding */
   border: calc(1px * var(--scale)) solid #c0932b; /* Scaled border */
-  background-color: rgba(255, 255, 255, 0.1);
+  /* Make input background solid for legibility */
+  background-color: #222; /* previously translucent white */
   color: #fff;
   font-size: calc(15px * var(--scale)); /* Scaled font size */
 }
@@ -1135,24 +1316,6 @@ body {
 
 .chat-message.system {
   color: #ffcc00; /* System messages retain their color */
-}
-
-@media (max-width: 1366px) {
-  .chat-container,
-  .location-display {
-    width: 35%;
-    height: 40%;
-  }
-}
-
-@media (max-width: 1024px) {
-  .chat-container,
-  .location-display {
-    width: 90vw;
-    left: 5vw;
-    right: 5vw;
-    bottom: 200px;
-  }
 }
 
 .deckplans-content {
@@ -2246,10 +2409,9 @@ body {
 /* Southampton city sprite */
 /* Isle of Wight sprite */
 .isle-of-wight {
-  position: fixed;
-  display: flex;
+  position: absolute;
   bottom: 68%;
-  right: 0%;
+  right: 0;
   width: 100%;
   z-index: 1;
   pointer-events: none;
@@ -2259,10 +2421,10 @@ body {
 }
 
 .southampton-city {
-  position: fixed;
-  display: flex;
+  position: absolute;
+  display: block;
   bottom: var(--southampton-bottom, 68%);
-  right: 0%;
+  right: 0;
   width: 100%;
   z-index: 1;
   pointer-events: none;

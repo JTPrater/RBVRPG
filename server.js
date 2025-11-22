@@ -22,6 +22,20 @@ const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const app = express();
 const server = http.createServer(app);
 
+// Timeline constants (milliseconds from departure)
+const TIMELINE_MS = {
+  DEPARTURE_DELAY: 7 * 60 * 1000, // 7 minutes between prep and actual departure
+  SOUTHAMPTON_WATER_END: 20 * 60 * 1000, // 20 minutes - 6 knots
+  NEEDLES_PASS: 4_650_000, // 1h 17.5m - Isle of Wight passage start
+  NEEDLES_COMPLETE: 5_130_000, // ~8 minutes after Needles start
+  CHANNEL_COMPLETE: 5 * 60 * 60 * 1000, // 5 hours - English Channel complete
+  APPROACH_COMPLETE: 18_900_000, // 15 minutes of Cherbourg approach (12 knots)
+  BERTHING_COMPLETE: 19_500_000, // 10 minutes harbor entry to stop
+};
+
+const CHERBOURG_DECEL_RATE =
+  19 / ((TIMELINE_MS.BERTHING_COMPLETE - TIMELINE_MS.CHANNEL_COMPLETE) / 1000); // knots per second needed to reach 0 by berthing
+
 // Socket.IO configuration for production
 const io = socketIo(server, {
   cors: {
@@ -43,8 +57,9 @@ io.use((socket, next) => {
 });
 
 // Global voyage start time (set when server starts)
-// Voyage starts now at Southampton
-const voyageStartTime = Date.now();
+// Begin from Southampton (real-time progression)
+const voyageStartTime = Date.now(); // Start at Southampton (12:00 PM)
+console.debug("⏰ Voyage start time initialized at Southampton (BST 12:00).");
 
 // Narrative events for server-side synchronization (times are seconds)
 const narrativeEvents = [
@@ -103,7 +118,9 @@ let serverNarrativeIndex = 0;
   }
   serverNarrativeIndex = idx;
   if (serverNarrativeIndex > 0) {
-    console.log(`🔁 Server narrative synced to index ${serverNarrativeIndex}`);
+    console.debug(
+      `🔁 Server narrative synced to index ${serverNarrativeIndex}`
+    );
   }
 }
 
@@ -119,11 +136,24 @@ setInterval(() => {
         text: next.text,
         time: next.time,
       });
-      console.log(`📢 Broadcast narrative event: ${next.text}`);
+      console.debug(`📢 Broadcast narrative event: ${next.text}`);
       serverNarrativeIndex += 1;
     }
   }
 }, 5000);
+
+// Broadcast voyage state on an interval so late joiners get synchronized reliably
+setInterval(() => {
+  try {
+    const voyageState = getCurrentVoyageState();
+    io.emit("voyage-state", voyageState);
+    // Also periodically refresh start time so clients that reconnect quickly can resync
+    io.emit("voyage-start-time", voyageStartTime);
+    // Throttle logging to avoid noise in production; verbose logs are disabled by default
+  } catch (err) {
+    console.error("❌ Failed to broadcast periodic voyage-state:", err.message);
+  }
+}, 3000); // every 3s keeps clients in sync without too much traffic
 
 // Environment variable validation
 function validateEnvironment() {
@@ -148,7 +178,7 @@ function validateEnvironment() {
     process.exit(1);
   }
 
-  console.log("✅ Environment variables validated");
+  console.info("✅ Environment variables validated");
 }
 
 // Cloudinary Configuration
@@ -158,7 +188,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-console.log("✅ Cloudinary configured");
+console.info("✅ Cloudinary configured");
 
 // MongoDB Configuration
 const initMongoDB = async () => {
@@ -167,7 +197,7 @@ const initMongoDB = async () => {
     const uri = process.env.MONGO_URL;
 
     await mongoose.connect(uri);
-    console.log("✅ MongoDB connected successfully");
+    console.info("✅ MongoDB connected successfully");
   } catch (err) {
     console.error("❌ MongoDB connection error:", err);
     process.exit(1);
@@ -286,12 +316,12 @@ app.post(
   upload.single("avatar"),
   async (req, res) => {
     try {
-      console.log(
+      console.info(
         `📝 Registration attempt from IP: ${req.ip}, Email: ${req.body.email}`
       );
 
       if (!req.file) {
-        console.log(
+        console.warn(
           `❌ Registration failed: No avatar file uploaded for ${req.body.email}`
         );
         return res
@@ -301,7 +331,7 @@ app.post(
 
       const existingUser = await User.findOne({ email: req.body.email });
       if (existingUser) {
-        console.log(
+        console.warn(
           `❌ Registration failed: Email already registered: ${req.body.email}`
         );
         return res
@@ -312,10 +342,10 @@ app.post(
       const cabinType = req.body.cabin;
       const cabinNumber = req.body.cabin_number;
 
-      console.log(`🏠 Checking cabin: ${cabinType} - ${cabinNumber}`);
+      console.debug(`🏠 Checking cabin: ${cabinType} - ${cabinNumber}`);
 
       if (!cabins[cabinType] || !cabins[cabinType][cabinNumber]) {
-        console.log(
+        console.warn(
           `❌ Registration failed: Invalid cabin selected: ${cabinType} - ${cabinNumber}`
         );
         return res
@@ -327,7 +357,7 @@ app.post(
         cabins[cabinType][cabinNumber].occupied >=
         cabins[cabinType][cabinNumber].capacity
       ) {
-        console.log(
+        console.warn(
           `❌ Registration failed: Cabin fully booked: ${cabinType} - ${cabinNumber}`
         );
         return res
@@ -353,10 +383,8 @@ app.post(
       await newUser.save();
       cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
       io.emit("new-passenger", newUser.character);
-      console.log(
-        `✅ New user registered: ${
-          req.body.email
-        }, Cabin: ${cabinNumber}, Total registered: ${await User.countDocuments()}`
+      console.info(
+        `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`
       );
       res.json({ success: true, passenger: newUser.character });
     } catch (error) {
@@ -372,12 +400,12 @@ app.post("/api/check-credentials", authLimiter, async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      console.log(`❌ Login failed for email: ${email}`);
+      console.warn(`❌ Login failed for email: ${email}`);
       return res.json({ success: false });
     }
 
     req.session.userId = user._id;
-    console.log(`✅ User logged in: ${email}`);
+    console.info(`✅ User logged in: ${email}`);
     res.json({
       success: true,
       character: user.character, // Return the full character object
@@ -425,7 +453,10 @@ app.post("/api/admin/reset-password", authLimiter, async (req, res) => {
     // Log to server console for the admin to copy and communicate securely.
     // NOTE: This is sensitive — logs can be read by others. Prefer emailing a
     // reset link or sending the temporary password via an admin-only channel.
-    console.log(`🔐 [ADMIN] Temporary password for ${email}: ${tempPass}`);
+    // Log that a temp password was generated, but do not print the plaintext password to logs
+    console.info(
+      `🔐 [ADMIN] Temporary password generated for ${email} (not logged)`
+    );
 
     // (Optional) Here you could send an email with nodemailer — omitted for brevity.
 
@@ -450,11 +481,11 @@ app.get("/api/get-songs", async (req, res) => {
       .map((file) => `/sounds/music/${file}`);
 
     if (songs.length === 0) {
-      console.log("❌ No MP3 files found in music directory");
+      console.warn("❌ No MP3 files found in music directory");
       return res.status(404).json({ error: "No MP3 files found" });
     }
 
-    console.log(`✅ Retrieved ${songs.length} songs from music directory`);
+    console.info(`✅ Retrieved ${songs.length} songs from music directory`);
     res.json(songs);
   } catch (err) {
     console.error("❌ Error reading music directory:", err);
@@ -539,7 +570,7 @@ app.post("/api/report", async (req, res) => {
         .json({ success: false, error: "Failed to send report" });
     }
 
-    console.log(
+    console.info(
       `✅ Report sent to Discord: ${type} by ${
         reporterName || "Anonymous"
       } from ${room || "Unknown Room"}`
@@ -557,17 +588,18 @@ app.get("/", (req, res) => {
 });
 
 app.get("/game", (req, res) => {
-  console.log(`🎮 Game access attempt - Session userId: ${req.session.userId}`);
+  console.debug(
+    `🎮 Game access attempt - Session userId: ${req.session.userId}`
+  );
 
   // Check if user is logged in
   if (!req.session.userId) {
-    console.log(
+    console.warn(
       `🚫 Game access denied: No session userId, redirecting to login`
     );
     return res.redirect("/");
   }
-
-  console.log(
+  console.info(
     `✅ Game access granted: User ${req.session.userId} accessing game`
   );
   res.sendFile(path.join(__dirname, "public/game/game.html"));
@@ -681,7 +713,7 @@ try {
     }
   });
   if (newlyAdded.length) {
-    console.log(
+    console.info(
       `✅ Auto-added ${
         newlyAdded.length
       } room(s) to allowedRooms: ${newlyAdded.join(", ")}`
@@ -717,7 +749,7 @@ function addMessageToRoomHistory(room, message) {
 // Add this function at the top level of server.js
 function emitRoomCount(roomId) {
   const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-  console.log(`📊 Room ${roomId} has ${roomSize} user(s)`);
+  console.debug(`📊 Room ${roomId} has ${roomSize} user(s)`);
   // Emit to all connected clients, not just room members
   io.emit("room-count", {
     roomId: roomId,
@@ -734,22 +766,25 @@ function getCurrentVoyageState() {
   let speedValue = 0; // Actual current speed
   let targetSpeed = 0; // Target speed for smooth acceleration
 
-  // Timeline milestones (in milliseconds from departure start)
-  const DEPARTURE_START = 0;
-  const SOUTHAMPTON_WATER_END = 1200000; // 20 minutes - 6 knots
-  const NEEDLES_PASS = 4650000; // 1h 17.5m - Isle of Wight passage - 12 knots
-  const NEEDLES_COMPLETE = 5130000; // ~8 minutes after Needles start (8 min passage)
-  const CHANNEL_COMPLETE = 18000000; // 5 hours - 19 knots cruising across English Channel
-  const APPROACH_COMPLETE = 18900000; // 15 more minutes - 12 knots approaching harbor
-  const BERTHING_COMPLETE = 19500000; // 10 more minutes - 6 knots → 0 (5h 25m total)
+  const {
+    DEPARTURE_DELAY,
+    SOUTHAMPTON_WATER_END,
+    NEEDLES_COMPLETE,
+    CHANNEL_COMPLETE,
+    APPROACH_COMPLETE,
+    BERTHING_COMPLETE,
+  } = TIMELINE_MS;
 
   // Acceleration rate: 0.012 knots per second squared (matches client)
   const ACCELERATION = 0.012;
 
-  // Departure happens at 420 seconds (7 minutes) into the voyage
-  const elapsedSinceDeparture = Math.max(0, elapsedSeconds - 420); // in seconds
+  // Departure happens DEPARTURE_DELAY milliseconds into the voyage
+  const elapsedSinceDeparture = Math.max(
+    0,
+    elapsedSeconds - DEPARTURE_DELAY / 1000
+  );
 
-  if (elapsedSeconds < 420) {
+  if (elapsedSeconds < DEPARTURE_DELAY / 1000) {
     // Before departure
     location = "Southampton";
     speed = "0 knots";
@@ -808,55 +843,28 @@ function getCurrentVoyageState() {
       speedValue = 19;
     }
     speed = `${speedValue.toFixed(1)} knots`;
-  } else if (elapsedSinceDeparture * 1000 < APPROACH_COMPLETE) {
-    // Approach to Cherbourg - decelerating from 19 to 12 knots
-    location = "Approaching Cherbourg";
-    targetSpeed = 12;
-
-    // Calculate time elapsed since starting approach
-    const elapsedInApproach = elapsedSinceDeparture - CHANNEL_COMPLETE / 1000;
-
-    // Time to decelerate from 19 to 12 knots: (19 - 12) / 0.012 = 583.33 seconds
-    const timeToDecel12Knots = (19 - 12) / ACCELERATION;
-
-    if (elapsedInApproach < timeToDecel12Knots) {
-      // Still decelerating from 19 to 12
-      speedValue = Math.max(12, 19 - elapsedInApproach * ACCELERATION);
-    } else {
-      // Reached 12 knots
-      speedValue = 12;
-    }
-    speed = `${speedValue.toFixed(1)} knots`;
   } else if (elapsedSinceDeparture * 1000 < BERTHING_COMPLETE) {
-    // Harbor entry - decelerating from 12 to 6 knots then to 0
-    location = "Cherbourg Harbor";
+    // Continuous Cherbourg deceleration from 19 knots down to 0 by berthing
+    const elapsedSinceChannelEntry = Math.max(
+      0,
+      elapsedSinceDeparture - CHANNEL_COMPLETE / 1000
+    );
+    const drop = elapsedSinceChannelEntry * CHERBOURG_DECEL_RATE;
+    speedValue = Math.max(0, 19 - drop);
+    targetSpeed = Math.max(0, speedValue - CHERBOURG_DECEL_RATE);
 
-    // Calculate time elapsed since entering harbor
-    const elapsedInHarbor = elapsedSinceDeparture - APPROACH_COMPLETE / 1000;
-
-    // Time to decelerate from 12 to 6 knots: (12 - 6) / 0.012 = 500 seconds
-    const timeToDecel6Knots = (12 - 6) / ACCELERATION;
-    // Time to decelerate from 6 to 0 knots: 6 / 0.012 = 500 seconds
-    const timeToStop = 6 / ACCELERATION;
-
-    if (elapsedInHarbor < timeToDecel6Knots) {
-      // Decelerating from 12 to 6
-      speedValue = Math.max(6, 12 - elapsedInHarbor * ACCELERATION);
-      targetSpeed = 6;
+    if (speedValue > 6) {
+      location = "Approaching Cherbourg";
+    } else if (speedValue > 0) {
+      location = "Cherbourg Harbor";
     } else {
-      // Decelerating from 6 to 0
-      const elapsedDecelToStop = elapsedInHarbor - timeToDecel6Knots;
-      if (elapsedDecelToStop < timeToStop) {
-        speedValue = Math.max(0, 6 - elapsedDecelToStop * ACCELERATION);
-      } else {
-        speedValue = 0;
-      }
-      targetSpeed = 0;
+      location = "Cherbourg";
     }
+
     speed = `${speedValue.toFixed(1)} knots`;
   } else {
     // Berthed - full stop
-    location = "Cherbourg Harbor";
+    location = "Cherbourg";
     speed = "0 knots";
     speedValue = 0;
     targetSpeed = 0;
@@ -953,7 +961,7 @@ async function syncCabinOccupancyFromDB() {
       }
     }
 
-    console.log("✅ Synchronized cabin occupancy from DB");
+    console.info("✅ Synchronized cabin occupancy from DB");
   } catch (err) {
     console.error("❌ Failed to sync cabin occupancy from DB:", err.message);
   }
@@ -961,7 +969,7 @@ async function syncCabinOccupancyFromDB() {
 
 app.get("/api/get_available_cabins", (req, res) => {
   const cabinType = req.query.cabin_type;
-  console.log(`📋 Cabin request received for type: ${cabinType}`);
+  console.debug(`📋 Cabin request received for type: ${cabinType}`);
 
   if (!cabinType) {
     console.error("❌ No cabin type provided in request");
@@ -970,7 +978,7 @@ app.get("/api/get_available_cabins", (req, res) => {
 
   if (!cabins[cabinType]) {
     console.error(`❌ Invalid cabin type requested: ${cabinType}`);
-    console.log(`Available cabin types: ${Object.keys(cabins).join(", ")}`);
+    console.debug(`Available cabin types: ${Object.keys(cabins).join(", ")}`);
     return res.status(400).json({
       error: "Invalid cabin type",
       availableTypes: Object.keys(cabins),
@@ -978,7 +986,7 @@ app.get("/api/get_available_cabins", (req, res) => {
   }
 
   const cabinEntries = Object.entries(cabins[cabinType]);
-  console.log(`📊 Found ${cabinEntries.length} cabins in ${cabinType}`);
+  console.debug(`📊 Found ${cabinEntries.length} cabins in ${cabinType}`);
 
   // Return detailed cabin availability so the client can show capacities
   const availableCabins = cabinEntries
@@ -990,7 +998,7 @@ app.get("/api/get_available_cabins", (req, res) => {
       available: cabin.capacity - cabin.occupied,
     }));
 
-  console.log(
+  console.info(
     `✅ Returning ${
       availableCabins.length
     } available cabins: ${availableCabins.join(", ")}`
@@ -1020,21 +1028,21 @@ app.get("/api/get-stats", async (req, res) => {
 
     // Apply decay for each interval
     for (let i = 0; i < decayIntervals; i++) {
-      // Hunger decreases by 0.05 per second
-      updatedStats.hunger = Math.max(0, updatedStats.hunger - 0.05);
-      // Thirst decreases by 0.07 per second
-      updatedStats.thirst = Math.max(0, updatedStats.thirst - 0.07);
-      // Energy decreases by 0.03 per second
-      updatedStats.energy = Math.max(0, updatedStats.energy - 0.03);
-      // Hygiene decreases by 0.02 per second
-      updatedStats.hygiene = Math.max(0, updatedStats.hygiene - 0.02);
-      // Bladder decreases by 0.06 per second
-      updatedStats.bladder = Math.max(0, updatedStats.bladder - 0.06);
-      // Intoxication decreases by 0.1 per second (if above 0)
+      // Hunger decreases by 0.005 per second (more realistic timing)
+      updatedStats.hunger = Math.max(0, updatedStats.hunger - 0.005);
+      // Thirst decreases by 0.007 per second
+      updatedStats.thirst = Math.max(0, updatedStats.thirst - 0.007);
+      // Energy decreases by 0.003 per second
+      updatedStats.energy = Math.max(0, updatedStats.energy - 0.003);
+      // Hygiene decreases by 0.002 per second
+      updatedStats.hygiene = Math.max(0, updatedStats.hygiene - 0.002);
+      // Bladder decreases by 0.006 per second
+      updatedStats.bladder = Math.max(0, updatedStats.bladder - 0.006);
+      // Intoxication decreases by 0.01 per second (if above 0)
       if (updatedStats.intoxication > 0) {
         updatedStats.intoxication = Math.max(
           0,
-          updatedStats.intoxication - 0.1
+          updatedStats.intoxication - 0.01
         );
       }
     }
@@ -1046,7 +1054,7 @@ app.get("/api/get-stats", async (req, res) => {
     user.stats = updatedStats;
     await user.save();
 
-    console.log(`📊 Loaded and updated stats for ${userEmail}`);
+    console.debug(`📊 Loaded and updated stats for ${userEmail}`);
     res.json(updatedStats);
   } catch (error) {
     console.error("❌ Error loading stats:", error);
@@ -1073,7 +1081,7 @@ app.post("/api/save-stats", async (req, res) => {
     };
 
     await user.save();
-    console.log(`💾 Saved stats for ${email}`);
+    console.debug(`💾 Saved stats for ${email}`);
     res.json({ success: true });
   } catch (error) {
     console.error("❌ Error saving stats:", error);
@@ -1083,21 +1091,23 @@ app.post("/api/save-stats", async (req, res) => {
 
 // Socket.IO Setup
 io.on("connection", async (socket) => {
-  console.log(`🔌 New connection: ${socket.id}`);
+  console.debug(`🔌 New connection: ${socket.id}`);
   userCount++;
   io.emit("global-user-count", userCount); // Global site-wide count
-  console.log(`👥 User count increased: ${userCount}`);
+  console.info(`👥 User count increased: ${userCount}`);
 
   socket.isGameClient = false;
 
   // Send voyage start time to client for synchronization
   socket.emit("voyage-start-time", voyageStartTime);
-  console.log(`⏰ Sent voyage start time to ${socket.id}: ${voyageStartTime}`);
+  console.debug(
+    `⏰ Sent voyage start time to ${socket.id}: ${voyageStartTime}`
+  );
 
   // Send current voyage state for immediate sync
   const currentVoyageState = getCurrentVoyageState();
   socket.emit("voyage-state", currentVoyageState);
-  console.log(
+  console.debug(
     `🚢 Sent current voyage state to ${socket.id}:`,
     currentVoyageState
   );
@@ -1105,7 +1115,6 @@ io.on("connection", async (socket) => {
   // Identify authenticated user by server session (safer than trusting client handshake)
   const sessionUserId = socket.request?.session?.userId;
   let assignedColor = "#c0932b"; // default chat color
-  let sessionEmail = null;
 
   if (sessionUserId) {
     try {
@@ -1113,16 +1122,15 @@ io.on("connection", async (socket) => {
         "email chatColor"
       );
       if (dbUser) {
-        sessionEmail = dbUser.email;
         socket.userEmail = dbUser.email;
         if (dbUser.chatColor) {
           assignedColor = dbUser.chatColor;
-          console.log(
-            `🎨 Loaded saved chat color for ${sessionEmail}: ${assignedColor}`
+          console.debug(
+            `🎨 Loaded saved chat color for ${socket.userEmail}: ${assignedColor}`
           );
         }
       } else {
-        console.log(`🎨 Session user ${sessionUserId} not found in DB`);
+        console.debug(`🎨 Session user ${sessionUserId} not found in DB`);
       }
     } catch (err) {
       console.error(
@@ -1141,7 +1149,7 @@ io.on("connection", async (socket) => {
         );
         if (tmpUser && tmpUser.chatColor) {
           assignedColor = tmpUser.chatColor;
-          console.log(
+          console.debug(
             `🎨 Loaded saved chat color for ${handshakeEmail}: ${assignedColor}`
           );
         }
@@ -1152,25 +1160,25 @@ io.on("connection", async (socket) => {
         );
       }
     } else {
-      console.log(
+      console.debug(
         `🎨 Anonymous user connected, using default color: ${assignedColor}`
       );
     }
   }
 
   userChatColors[socket.id] = assignedColor;
-  console.log(`🎨 Assigned color to ${socket.id}: ${assignedColor}`);
+  console.debug(`🎨 Assigned color to ${socket.id}: ${assignedColor}`);
 
   // Send the assigned color to the connected client
   socket.emit("assign-chat-color", assignedColor);
   socket.emit("game-user-count", gameClientCount);
-  console.log(`📩 Sent assigned chat color to ${socket.id}`);
+  console.debug(`📩 Sent assigned chat color to ${socket.id}`);
 
   // Send existing passengers to ALL new connections (public feature)
   User.find({}, "character")
     .then((users) => {
       const passengers = users.map((user) => user.character);
-      console.log("🗂️ Sending initial passengers:", passengers);
+      console.debug("🗂️ Sending initial passengers:", passengers);
       socket.emit("initial-passengers", passengers);
       // If there is a last narrative event, tell this client where server is currently
       if (
@@ -1183,7 +1191,7 @@ io.on("connection", async (socket) => {
           text: narrativeEvents[idx].text,
           time: narrativeEvents[idx].time,
         });
-        console.log(`📣 Sent current narrative index ${idx} to ${socket.id}`);
+        console.debug(`📣 Sent current narrative index ${idx} to ${socket.id}`);
       }
     })
     .catch((err) => {
@@ -1202,7 +1210,7 @@ io.on("connection", async (socket) => {
       socket.isGameClient = true;
       gameClientCount++;
       io.emit("game-user-count", gameClientCount);
-      console.log(`🎮 Game client count increased: ${gameClientCount}`);
+      console.info(`🎮 Game client count increased: ${gameClientCount}`);
     }
     if (allowedRooms.includes(room)) {
       socket.join(room);
@@ -1216,35 +1224,62 @@ io.on("connection", async (socket) => {
       const roomHistory = roomMessageHistory[room] || [];
       if (roomHistory.length > 0) {
         socket.emit("room-message-history", { room, messages: roomHistory });
-        console.log(
+        console.debug(
           `📚 Sent ${roomHistory.length} messages from history for room: ${room}`
         );
       }
 
-      console.log(`✅ User joined room: ${room}`);
+      console.info(`✅ User joined room: ${room}`);
     }
   });
 
   // Handle 'chat-message' event (corrected)
-  socket.on("chat-message", (data) => {
-    if (data.character && data.character.forename && data.character.surname) {
-      // Validate room
-      if (!allowedRooms.includes(data.room)) {
-        console.warn(`⚠️ Message sent to invalid room: ${data.room}`);
-        return;
-      }
+  socket.on("chat-message", (data = {}) => {
+    const roomId = data.room;
+    const text = typeof data.message === "string" ? data.message.trim() : "";
 
-      // Add message to room history
-      addMessageToRoomHistory(data.room, data);
-
-      // Broadcast the message to all clients globally
-      io.emit("chat-message", data);
-      console.log(
-        `📤 Broadcasted message from ${socket.id} to all clients from room: ${data.room}`
-      );
-    } else {
-      console.warn("⚠️ Received chat message without character data:", data);
+    if (!roomId || !allowedRooms.includes(roomId)) {
+      console.warn(`⚠️ Message sent to invalid or missing room: ${roomId}`);
+      return;
     }
+
+    if (!text) {
+      console.warn("⚠️ Ignoring empty chat message payload");
+      return;
+    }
+
+    const activeCharacter = socket.character || {};
+    const safeCharacter = {
+      forename: activeCharacter.forename || "Passenger",
+      surname: activeCharacter.surname || "",
+    };
+
+    const cabinRef =
+      activeCharacter.cabin_number ||
+      activeCharacter.cabin ||
+      activeCharacter.cabinNumber ||
+      null;
+
+    // Strip /me prefix if present for action messages
+    const processedMessage = text.startsWith("/me ") ? text.substring(4) : text;
+
+    const outboundMessage = {
+      room: roomId,
+      message: processedMessage,
+      timestamp: Date.now(),
+      type: "user",
+      userId: socket.id,
+      color: userChatColors[socket.id] || data.color || "#c0932b",
+      character: safeCharacter,
+      cabin: cabinRef,
+      isAction: text.startsWith("/me "),
+    };
+
+    addMessageToRoomHistory(roomId, outboundMessage);
+    io.emit("chat-message", outboundMessage);
+    console.debug(
+      `📤 Broadcasted message from ${socket.id} to all clients from room: ${roomId}`
+    );
   });
 
   // Handle 'change-chat-color' event
@@ -1265,7 +1300,7 @@ io.on("connection", async (socket) => {
 
       user.chatColor = color;
       await user.save();
-      console.log(`🎨 Updated chat color for ${user.email}: ${color}`);
+      console.debug(`🎨 Updated chat color for ${user.email}: ${color}`);
 
       // Update in-memory color for this socket
       userChatColors[socket.id] = color;
@@ -1276,7 +1311,7 @@ io.on("connection", async (socket) => {
         userId: user._id,
         color,
       });
-      console.log(`📤 Broadcasted color change for ${socket.id}`);
+      console.debug(`📤 Broadcasted color change for ${socket.id}`);
     } catch (error) {
       console.error(`❌ Error updating chat color: ${error.message}`);
     }
@@ -1303,10 +1338,10 @@ io.on("connection", async (socket) => {
           return { socketId, character: userSocket.character };
         });
         socket.emit("room-users", { roomId, users: userList });
-        console.log(`📤 Sent user list for ${roomId} to ${socket.id}`);
+        console.debug(`📤 Sent user list for ${roomId} to ${socket.id}`);
       } else {
         socket.emit("room-users", { roomId, users: [] });
-        console.log(`📤 Sent empty user list for ${roomId} to ${socket.id}`);
+        console.debug(`📤 Sent empty user list for ${roomId} to ${socket.id}`);
       }
     }
   });
@@ -1315,14 +1350,36 @@ io.on("connection", async (socket) => {
     allowedRooms.forEach((roomId) => {
       emitRoomCount(roomId);
     });
-    console.log(`📊 Sent room counts for all rooms to ${socket.id}`);
+    console.debug(`📊 Sent room counts for all rooms to ${socket.id}`);
   });
 
   socket.on("request-room-count", (roomId) => {
     if (allowedRooms.includes(roomId)) {
       emitRoomCount(roomId);
-      console.log(`📊 Sent room count for ${roomId} to ${socket.id}`);
+      console.debug(`📊 Sent room count for ${roomId} to ${socket.id}`);
     }
+  });
+
+  socket.on("request-room-counts", (payload) => {
+    const roomIds = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.rooms)
+      ? payload.rooms
+      : [];
+
+    if (!roomIds.length) {
+      return;
+    }
+
+    roomIds
+      .filter((roomId) => allowedRooms.includes(roomId))
+      .forEach((roomId) => {
+        emitRoomCount(roomId);
+      });
+
+    console.debug(
+      `📊 Sent batched room counts for ${roomIds.length} room(s) to ${socket.id}`
+    );
   });
 
   socket.on("request-room-players", (roomId) => {
@@ -1346,22 +1403,35 @@ io.on("connection", async (socket) => {
           .filter(Boolean);
 
         socket.emit("room-players", { roomId, players });
-        console.log(`👥 Sent player list for ${roomId} to ${socket.id}`);
+        console.debug(`👥 Sent player list for ${roomId} to ${socket.id}`);
       }
     }
   });
 
   socket.on("load-stats", async () => {
     try {
-      if (!socket.email) {
-        console.error("❌ No email found for stats loading");
+      if (!socket.userEmail && socket.request?.session?.userId) {
+        const sessionUser = await User.findById(
+          socket.request.session.userId
+        ).select("email stats");
+        if (sessionUser) {
+          socket.userEmail = sessionUser.email;
+          if (!socket.character && sessionUser.character) {
+            socket.character = sessionUser.character;
+          }
+        }
+      }
+
+      const targetEmail = socket.userEmail;
+      if (!targetEmail) {
+        console.error("❌ No user email available for stats loading");
         return;
       }
 
-      const user = await User.findOne({ email: socket.email });
+      const user = await User.findOne({ email: targetEmail });
       if (!user || !user.stats) {
-        console.log(
-          `📊 No stats found for user ${socket.email}, sending defaults`
+        console.debug(
+          `📊 No stats found for user ${targetEmail}, sending defaults`
         );
         socket.emit("stats-loaded", {
           hunger: 100,
@@ -1379,12 +1449,12 @@ io.on("connection", async (socket) => {
       const timeDiffSeconds = (now - user.stats.lastUpdated) / 1000;
 
       // Apply decay rates
-      const hungerDecay = Math.min(100, timeDiffSeconds * 0.05); // 0.05 per second
-      const thirstDecay = Math.min(100, timeDiffSeconds * 0.07); // 0.07 per second
-      const energyDecay = Math.min(100, timeDiffSeconds * 0.03); // 0.03 per second
-      const hygieneDecay = Math.min(100, timeDiffSeconds * 0.02); // 0.02 per second
-      const bladderDecay = Math.min(100, timeDiffSeconds * 0.06); // 0.06 per second
-      const intoxicationDecay = Math.max(0, timeDiffSeconds * 0.1); // 0.1 per second (only decreases)
+      const hungerDecay = Math.min(100, timeDiffSeconds * 0.005); // 0.005 per second
+      const thirstDecay = Math.min(100, timeDiffSeconds * 0.007); // 0.007 per second
+      const energyDecay = Math.min(100, timeDiffSeconds * 0.003); // 0.003 per second
+      const hygieneDecay = Math.min(100, timeDiffSeconds * 0.002); // 0.002 per second
+      const bladderDecay = Math.min(100, timeDiffSeconds * 0.006); // 0.006 per second
+      const intoxicationDecay = Math.max(0, timeDiffSeconds * 0.01); // 0.01 per second (only decreases)
 
       const currentStats = {
         hunger: Math.max(0, user.stats.hunger - hungerDecay),
@@ -1395,7 +1465,7 @@ io.on("connection", async (socket) => {
         intoxication: Math.max(0, user.stats.intoxication - intoxicationDecay),
       };
 
-      console.log(`📊 Loaded stats for ${socket.email}:`, currentStats);
+      console.debug(`📊 Loaded stats for ${targetEmail}:`, currentStats);
       socket.emit("stats-loaded", currentStats);
     } catch (error) {
       console.error(`❌ Error loading stats: ${error.message}`);
@@ -1404,13 +1474,22 @@ io.on("connection", async (socket) => {
 
   socket.on("save-stats", async (statsData) => {
     try {
-      if (!socket.email) {
-        console.error("❌ No email found for stats saving");
+      if (!socket.userEmail && socket.request?.session?.userId) {
+        const sessionUser = await User.findById(
+          socket.request.session.userId
+        ).select("email");
+        if (sessionUser) {
+          socket.userEmail = sessionUser.email;
+        }
+      }
+
+      if (!socket.userEmail) {
+        console.error("❌ No user email available for stats saving");
         return;
       }
 
       await User.findOneAndUpdate(
-        { email: socket.email },
+        { email: socket.userEmail },
         {
           stats: {
             hunger: statsData.hunger,
@@ -1425,29 +1504,29 @@ io.on("connection", async (socket) => {
         { upsert: true }
       );
 
-      console.log(`💾 Saved stats for ${socket.email}:`, statsData);
+      console.info(`💾 Saved stats for ${socket.userEmail}:`, statsData);
     } catch (error) {
       console.error(`❌ Error saving stats: ${error.message}`);
     }
   });
 
   socket.on("disconnect", () => {
-    console.log(`👤 User disconnected: ${socket.id}`);
+    console.info(`👤 User disconnected: ${socket.id}`);
     try {
-      console.log("👤 User disconnected:", socket.id);
+      console.debug("👤 User disconnected:", socket.id);
       userCount--; // Keep this decrement
-      console.log(`👥 User count decremented: ${userCount}`);
+      console.info(`👥 User count decremented: ${userCount}`);
 
       // Emit the updated user count to all clients
       io.emit("global-user-count", userCount); // Use this event consistently
-      console.log(
+      console.debug(
         "📣 Emitted updated user count to all clients after disconnect"
       );
 
       if (socket.isGameClient) {
         gameClientCount = Math.max(0, gameClientCount - 1);
         io.emit("game-user-count", gameClientCount);
-        console.log(`🎮 Game client count decremented: ${gameClientCount}`);
+        console.info(`🎮 Game client count decremented: ${gameClientCount}`);
       }
 
       if (currentRoom && currentCharacter) {
@@ -1457,7 +1536,7 @@ io.on("connection", async (socket) => {
           socketId: socket.id,
           roomId: currentRoom,
         });
-        console.log(`🔒 ${socket.id} disconnected from room: ${currentRoom}`);
+        console.info(`🔒 ${socket.id} disconnected from room: ${currentRoom}`);
 
         // Emit the updated room count to all clients in the room
         const roomSizeAfterDisconnect =
@@ -1466,7 +1545,7 @@ io.on("connection", async (socket) => {
           roomId: currentRoom,
           count: roomSizeAfterDisconnect,
         });
-        console.log(
+        console.debug(
           `📊 Emitted updated room count for ${currentRoom}: ${roomSizeAfterDisconnect}`
         );
       }
@@ -1474,12 +1553,12 @@ io.on("connection", async (socket) => {
       // Remove the user's character data
       if (users[socket.id]) {
         delete users[socket.id];
-        console.log(`🗑️ Removed character data for ${socket.id}`);
+        console.debug(`🗑️ Removed character data for ${socket.id}`);
       }
 
-      console.log("👤 Client disconnected");
+      console.info("👤 Client disconnected");
       delete userChatColors[socket.id];
-      console.log(`🗑️ Deleted chat color for ${socket.id}`);
+      console.debug(`🗑️ Deleted chat color for ${socket.id}`);
     } catch (error) {
       console.error(`❌ Error during disconnect: ${error.message}`);
     }
@@ -1488,15 +1567,15 @@ io.on("connection", async (socket) => {
 
 // Initialize Server
 const startServer = async () => {
-  console.log("🚀 Initializing server...");
+  console.info("🚀 Initializing server...");
   validateEnvironment();
-  console.log("🚀 Initializing MongoDB...");
+  console.info("🚀 Initializing MongoDB...");
   await initMongoDB();
-  console.log("🔁 Syncing cabin occupancy from DB...");
+  console.info("🔁 Syncing cabin occupancy from DB...");
   await syncCabinOccupancyFromDB();
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
+    console.info(`🚀 Server running on port ${PORT}`);
   });
 };
 
@@ -1524,7 +1603,7 @@ function sendMessage() {
       color: userColor,
     };
 
-    console.log("✉️ Sending message:", messageData);
+    console.debug("✉️ Sending message:", messageData);
     socket.emit("chat-message", messageData);
     chatInput.value = "";
 
