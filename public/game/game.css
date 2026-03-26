@@ -9,18 +9,25 @@
   align-items: center;
   justify-content: center;
   font-size: 22px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18), 0 1.5px 0 #fff inset;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.18),
+    0 1.5px 0 #fff inset;
   margin-left: 0;
   margin-right: 0;
   cursor: pointer;
-  transition: background 0.18s, box-shadow 0.18s, transform 0.12s;
+  transition:
+    background 0.18s,
+    box-shadow 0.18s,
+    transform 0.12s;
   outline: none;
   position: relative;
 }
 .cabin-action-btn:hover,
 .cabin-action-btn:focus {
   background: linear-gradient(135deg, #fffbe6 60%, #f4e4bc 100%);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22), 0 2px 0 #fff inset;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.22),
+    0 2px 0 #fff inset;
   transform: scale(1.08);
   border-color: #daa520;
 }
@@ -41,7 +48,8 @@
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
   padding: 12px 24px;
   cursor: pointer;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4),
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.4),
     inset 0 2px 4px rgba(255, 255, 255, 0.2),
     inset 0 -2px 2px rgba(0, 0, 0, 0.3);
   transition: all 0.3s ease;
@@ -53,7 +61,8 @@
 .enter-britannic-btn:hover {
   background: linear-gradient(145deg, #2d6a4f, #3a8f66);
   transform: translateX(-50%) translateY(-2px);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5),
+  box-shadow:
+    0 6px 12px rgba(0, 0, 0, 0.5),
     inset 0 2px 4px rgba(255, 255, 255, 0.3),
     inset 0 -2px 2px rgba(0, 0, 0, 0.2);
   border-color: #e0b13d;
@@ -61,7 +70,9 @@
 
 .enter-britannic-btn:active {
   transform: translateX(-50%) translateY(1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.3),
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
     inset 0 -1px 2px rgba(255, 255, 255, 0.2);
   background: linear-gradient(145deg, #163d24, #2d6a4f);
 }
@@ -84,22 +95,13 @@ body {
 
 :root {
   --scale: 1; /* Default value, will be overridden by JavaScript */
+  --scene-scale: 1; /* Cover-based scale for the scene layer (set by JS) */
   --scene-width: 1920;
   --scene-height: 1080;
-  --scene-manual-offset: 0px;
-  --scene-bottom-offset: 0px;
+  --scene-manual-offset: -30px;
+  --scene-bottom-offset: -40px;
   --ship-bottom: 693px;
-  --water-bottom: 150px;
-  /* Shared baseline for all yachts. Anchor to ship bottom (waterline) so they
-     stay seated on the surface no matter the viewport scaling. Adjust with
-     --yacht-offset if art needs a small nudge. */
-  /* Keep yachts referenced to the global waterline instead of Britannic */
-  /* Vertical adjust — increase this to raise yachts further above the water.
-      This is position-only (not z-index). */
-  /* Use a computed offset so the yacht baseline sits at 578px by default
-      (calculates 578px - water bottom). Override with setYachtOffset in DevTools
-      to test different values. */
-  /* Raise yachts by 30px to improve visibility above waves */
+  --water-bottom: 75px;
   --yacht-offset: calc(578px - var(--water-bottom, 150px) + 145px);
   /* Per-yacht vertical offsets (added on top of --yacht-baseline). Use
       negative to push down or positive to raise further. */
@@ -238,7 +240,10 @@ body {
   border-radius: 5px;
   cursor: pointer;
   box-shadow: 0 0 10px #c0932b;
-  transition: background 0.3s, transform 0.3s, box-shadow 0.3s;
+  transition:
+    background 0.3s,
+    transform 0.3s,
+    box-shadow 0.3s;
   font-family: "Julius Sans One", serif;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -297,7 +302,7 @@ body {
   overflow: hidden;
   pointer-events: none;
   transform-origin: center bottom;
-  transform: translateX(-50%) scale(var(--scale));
+  transform: translateX(-50%) scale(var(--scene-scale));
 }
 
 .top-bar {
@@ -341,7 +346,7 @@ body {
 
 .water {
   width: 100%;
-  height: 54.25%;
+  height: calc(54.25% + var(--water-bottom, 150px));
   position: absolute;
   bottom: var(--water-bottom, 150px);
   left: 0;
@@ -354,7 +359,7 @@ body {
 
 .swater {
   width: 100%;
-  height: 54.25%;
+  height: calc(54.25% + var(--water-bottom, 150px));
   position: absolute;
   bottom: var(--water-bottom, 150px);
   left: 0;
@@ -474,17 +479,6 @@ body {
   opacity: 1;
 }
 
-/* Debug outlines to visually locate yachts during testing */
-.yacht-1-container.visible {
-  outline: 2px dashed rgba(255, 255, 0, 0.85);
-}
-.yacht-2-container.visible {
-  outline: 2px dashed rgba(255, 0, 255, 0.6);
-}
-.yacht-3-container.visible {
-  outline: 2px dashed rgba(0, 255, 255, 0.6);
-}
-
 /* When container becomes visible ensure the yacht image is also shown */
 .yacht-1-container.visible > .southampton-yacht,
 .yacht-2-container.visible > .southampton-yacht,
@@ -528,10 +522,39 @@ body {
   overflow: visible;
 }
 
+.bird-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.bird-container-back {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.bird-container canvas,
+.bird-container-back canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .smoke-container {
   position: absolute;
   /* Anchor to ship bottom then apply adjustable offset */
-  bottom: calc(var(--ship-bottom, 100px) + 95px + var(--smoke-offset));
+  bottom: calc(var(--ship-bottom, 50px) + 95px + var(--smoke-offset));
   right: 75.25%;
   width: 960px;
   height: 960px;
@@ -539,6 +562,14 @@ body {
   overflow: visible;
   pointer-events: none;
   transform: translateX(50%);
+  /* Ensure canvas is visible */
+  display: block;
+}
+
+.smoke-container canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .location {
@@ -666,8 +697,8 @@ body {
   border: calc(2px * var(--scale)) solid #fff;
   padding: calc(15px * var(--scale)) calc(20px * var(--scale));
   z-index: 11;
-  box-shadow: 0 calc(8px * var(--scale)) calc(25px * var(--scale))
-      rgba(0, 0, 0, 0.4),
+  box-shadow:
+    0 calc(8px * var(--scale)) calc(25px * var(--scale)) rgba(0, 0, 0, 0.4),
     inset 0 calc(2px * var(--scale)) calc(4px * var(--scale))
       rgba(255, 255, 255, 0.1),
     inset 0 calc(-2px * var(--scale)) calc(4px * var(--scale))
@@ -731,7 +762,9 @@ body {
   top: -5vh; /* Raise gradient layer slightly above the scene */
   z-index: 0;
   opacity: 0;
-  transition: opacity 5s ease-in-out, background 6s linear;
+  transition:
+    opacity 5s ease-in-out,
+    background 6s linear;
 }
 
 /* Day sky - clear blue gradient matching reference */
@@ -847,7 +880,9 @@ body {
   padding: calc(6px * var(--scale)); /* Reduced from 8px */
   background: #f6f1e7; /* Solid white-beige background */
   border-radius: calc(8px * var(--scale));
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18), 0 0 0 2px #c0932b;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.18),
+    0 0 0 2px #c0932b;
   border: 1.5px solid #c0932b;
   backdrop-filter: none;
 }
@@ -860,12 +895,18 @@ body {
   border-radius: calc(7px * var(--scale));
   padding: calc(6px * var(--scale)) 0; /* Reduced from 11px */
   cursor: pointer;
-  transition: background 0.25s, color 0.25s, transform 0.18s, box-shadow 0.25s;
+  transition:
+    background 0.25s,
+    color 0.25s,
+    transform 0.18s,
+    box-shadow 0.25s;
   font-size: calc(13px * var(--scale));
   font-weight: 700;
   letter-spacing: 1px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  text-shadow: 0 1px 2px #000, 0 0 6px #c0932b44;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 6px #c0932b44;
   outline: none;
   display: flex;
   align-items: center;
@@ -892,7 +933,9 @@ body {
   text-align: center;
   border-radius: calc(7px * var(--scale)) calc(7px * var(--scale)) 0 0; /* Rounded only at the top */
   padding: calc(10px * var(--scale)) 0; /* More vertical padding */
-  transition: padding-top 0.2s ease, background-color 0.2s ease; /* Added padding-top to transition */
+  transition:
+    padding-top 0.2s ease,
+    background-color 0.2s ease; /* Added padding-top to transition */
   transform-origin: bottom center;
 }
 
@@ -961,7 +1004,9 @@ body {
   width: calc(40px * var(--scale));
   height: calc(40px * var(--scale));
   cursor: pointer;
-  transition: background-color 0.3s, transform 0.3s;
+  transition:
+    background-color 0.3s,
+    transform 0.3s;
   font-size: calc(18px * var(--scale));
 }
 
@@ -1128,7 +1173,9 @@ body {
   height: 42.6%; /* Adjust these based on your needs */
   top: 0; /* Will be set via JS */
   left: 0; /* Will be set via JS */
-  transition: background-color 0.3s ease, opacity 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    opacity 0.3s ease;
   pointer-events: auto; /* Add this line to make markers clickable */
 }
 
@@ -1236,7 +1283,7 @@ body {
   height: var(--hud-panel-height);
   background-color: #1a1a1a;
   border: calc(2px * var(--scale)) solid #c0932b;
-  z-index: 11; /* Place above bottom bar */
+  z-index: 9; /* Keep behind bottom bar */
   overflow: hidden;
   padding: calc(10px * var(--scale));
 }
@@ -1250,7 +1297,7 @@ body {
   height: var(--hud-panel-height);
   background-color: rgba(26, 26, 26, 0.95);
   border: calc(2px * var(--scale)) solid #c0932b;
-  z-index: 11; /* Place above bottom bar */
+  z-index: 9; /* Keep behind bottom bar */
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -1406,14 +1453,14 @@ body {
   }
   to {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(120%);
   }
 }
 
 @keyframes fadeInDown {
   from {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(120%);
   }
   to {
     opacity: 1;
@@ -1486,7 +1533,9 @@ body {
 
 .bar {
   height: 100%;
-  transition: width 0.3s ease, background-color 0.3s ease; /* Smooth transitions for both width and color */
+  transition:
+    width 0.3s ease,
+    background-color 0.3s ease; /* Smooth transitions for both width and color */
 }
 
 .bar.hunger {
@@ -1981,6 +2030,7 @@ body {
 
 :root {
   --scale: 1; /* Default value, will be overridden by JavaScript */
+  --scene-scale: 1;
 }
 
 /* ... (Previous unchanged styles remain here) ... */
@@ -2036,7 +2086,10 @@ body {
   justify-content: space-between;
   padding: calc(5px * var(--scale));
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
-  transition: transform 0.2s ease, border 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    border 0.2s ease,
+    box-shadow 0.2s ease;
   flex-shrink: 0; /* Prevents cards from shrinking too much */
 }
 
@@ -2110,7 +2163,10 @@ body {
   border: none;
   border-radius: calc(5px * var(--scale));
   cursor: pointer;
-  transition: background 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    background 0.3s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   font-family: "Julius Sans One", serif;
   text-transform: uppercase;
@@ -2161,7 +2217,9 @@ body {
   font-size: calc(24px * var(--scale));
   cursor: pointer;
   color: #c0932b;
-  transition: color 0.3s ease, transform 0.2s ease;
+  transition:
+    color 0.3s ease,
+    transform 0.2s ease;
 }
 
 .close-video-poker:hover {
@@ -2299,7 +2357,9 @@ body {
   border-radius: 5px;
   padding: 10px;
   cursor: pointer;
-  transition: background-color 0.3s, transform 0.3s;
+  transition:
+    background-color 0.3s,
+    transform 0.3s;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2361,7 +2421,8 @@ body {
   text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.3);
   padding: 8px 16px;
   cursor: pointer;
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3),
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.3),
     inset 0 1px 2px rgba(255, 255, 255, 0.4),
     inset 0 -1px 1px rgba(0, 0, 0, 0.2);
   transition: all 0.2s ease;
@@ -2374,14 +2435,17 @@ body {
 .eat-drink-button:hover {
   background: linear-gradient(145deg, #e0b180, #c49f66);
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4),
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.4),
     inset 0 1px 2px rgba(255, 255, 255, 0.5),
     inset 0 -1px 1px rgba(0, 0, 0, 0.1);
 }
 
 .eat-drink-button:active {
   transform: translateY(1px);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(0, 0, 0, 0.2),
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.3),
+    inset 0 1px 2px rgba(0, 0, 0, 0.2),
     inset 0 -1px 1px rgba(255, 255, 255, 0.3);
   background: linear-gradient(145deg, #c49f66, #b8935a);
 }
@@ -2507,7 +2571,10 @@ body {
   color: #2e1608;
   cursor: pointer;
   box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.1);
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2575,7 +2642,9 @@ body {
   box-shadow: 0 6px 10px rgba(0, 0, 0, 0.12);
   cursor: pointer;
   position: relative;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .menu-item:hover {
