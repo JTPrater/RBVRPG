@@ -12,6 +12,7 @@ const bodyParser = require("body-parser");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const session = require("express-session");
+const MongoStore = require("connect-mongo");
 const mongoose = require("mongoose");
 const rateLimit = require("express-rate-limit");
 const cors = require("cors");
@@ -60,6 +61,131 @@ io.use((socket, next) => {
 // Begin from Southampton (real-time progression)
 const voyageStartTime = Date.now(); // Start at Southampton (12:00 PM)
 console.debug("⏰ Voyage start time initialized at Southampton (BST 12:00).");
+
+// --- Deterministic cloud/yacht schedules (computed once, sent to all clients) ---
+
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t = (t + 0x6d2b79f5) | 0;
+    let z = t;
+    z = Math.imul(z ^ (z >>> 15), z | 1);
+    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+    return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function computeCloudSchedule(rng, maxTimeMs) {
+  const SPAWN_RATE = 0.006; // ~1 cloud every 2-3 min (matches original p=0.0001 @ 60fps)
+  const schedule = [];
+
+  for (let i = 0; i < 3; i++) {
+    rng(); // consume for sequence alignment
+    schedule.push({
+      time: 0,
+      speed: 0.1 + rng() * 0.1,
+      xFactor: rng(),
+      isInitial: true,
+    });
+  }
+
+  let time = 0;
+  while (time < maxTimeMs) {
+    const u = rng();
+    time += (-Math.log(1 - Math.min(u, 0.9999999)) / SPAWN_RATE) * 1000;
+    if (time < maxTimeMs) {
+      schedule.push({
+        time,
+        speed: 0.1 + rng() * 0.1,
+        xFactor: null,
+        isInitial: false,
+      });
+    }
+  }
+  return schedule;
+}
+
+function computeYachtSchedule(rng, windowStartMs, windowEndMs) {
+  const schedule = [];
+  let time = windowStartMs;
+  while (time < windowEndMs) {
+    time += 20000 + rng() * 20000; // 20-40s intervals
+    if (time < windowEndMs) {
+      schedule.push({ time, selectionRandom: rng() });
+    }
+  }
+  return schedule;
+}
+
+// Bird spawn rate mirrors client-side getBirdSpawnRate() but in milliseconds.
+// Returns spawns-per-second at a given elapsed ms since voyage start.
+function birdSpawnRateAt(elapsedMs) {
+  const s = elapsedMs / 1000;
+  const DEP = 420, SWE = 1200, NC = 5130;
+  if (s >= NC) return 0;
+  if (s >= SWE) return 0.0003 * (1 - (s - SWE) / (NC - SWE));
+  if (s >= DEP) return 0.001 * (1 - ((s - DEP) / (SWE - DEP)) * 0.7);
+  return 0.001;
+}
+
+function computeBirdSchedule(rng, maxTimeMs) {
+  const schedule = [];
+  // 2 initial flocks at time 0 (front + back)
+  for (let layer = 0; layer < 2; layer++) {
+    schedule.push(generateFlockEntry(rng, 0, layer === 0, true));
+  }
+
+  // Ongoing flocks via Poisson process with time-varying rate
+  // Step through time in 1-second increments to approximate the variable rate
+  let time = 0;
+  const STEP = 1000;
+  while (time < maxTimeMs) {
+    const rate = birdSpawnRateAt(time) * 60; // convert per-frame@60fps to per-second
+    if (rate <= 0) { time += STEP; continue; }
+    const u = rng();
+    const interval = (-Math.log(1 - Math.min(u, 0.9999999)) / rate) * 1000;
+    time += interval;
+    if (time < maxTimeMs && birdSpawnRateAt(time) > 0) {
+      schedule.push(generateFlockEntry(rng, time, rng() < 0.5, false));
+    }
+  }
+  return schedule;
+}
+
+function generateFlockEntry(rng, time, isFront, isInitial) {
+  const flockSize = 3 + Math.floor(rng() * 5);
+  const baseYFactor = rng(); // 0-1, multiplied by canvas.height*0.4 on client
+  const baseSpeed = 1.5 + rng() * 0.5;
+  const baseFrame = Math.floor(rng() * 16);
+
+  const birds = [];
+  for (let i = 0; i < flockSize; i++) {
+    birds.push({
+      offsetXRand: rng(),     // random component of X offset
+      offsetYRand: rng(),     // random component of Y offset
+      speedJitter: rng(),     // (rand-0.5)*0.15 applied on client
+      frameOffset: rng(),     // frame offset rand
+      frameCounter: rng(),    // desync flapping
+      wobbleOffset: rng(),    // wobble phase (0-1, multiplied by 2PI on client)
+      wobbleSpeed: rng(),     // 0.03 + rand*0.01
+      wobbleAmount: rng(),    // 1.5 + rand*1.5
+    });
+  }
+
+  return { time, isFront, isInitial, flockSize, baseYFactor, baseSpeed, baseFrame, birds };
+}
+
+const envRng = mulberry32(voyageStartTime);
+const cloudSchedule = computeCloudSchedule(envRng, 6 * 60 * 60 * 1000);
+const yachtSchedule = computeYachtSchedule(
+  envRng,
+  TIMELINE_MS.SOUTHAMPTON_WATER_END,
+  TIMELINE_MS.NEEDLES_PASS,
+);
+const birdSchedule = computeBirdSchedule(envRng, TIMELINE_MS.NEEDLES_COMPLETE);
+console.debug(
+  `🌤️ Computed environment schedules: ${cloudSchedule.length} cloud, ${yachtSchedule.length} yacht, ${birdSchedule.length} bird events`,
+);
 
 // Narrative events for server-side synchronization (times are seconds)
 const narrativeEvents = [
@@ -119,13 +245,13 @@ let serverNarrativeIndex = 0;
   serverNarrativeIndex = idx;
   if (serverNarrativeIndex > 0) {
     console.debug(
-      `🔁 Server narrative synced to index ${serverNarrativeIndex}`
+      `🔁 Server narrative synced to index ${serverNarrativeIndex}`,
     );
   }
 }
 
 // Periodically check for narrative events (every 5 seconds) and broadcast them
-setInterval(() => {
+const narrativeInterval = setInterval(() => {
   const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
   if (serverNarrativeIndex < narrativeEvents.length) {
     const next = narrativeEvents[serverNarrativeIndex];
@@ -143,7 +269,7 @@ setInterval(() => {
 }, 5000);
 
 // Broadcast voyage state on an interval so late joiners get synchronized reliably
-setInterval(() => {
+const voyageStateInterval = setInterval(() => {
   try {
     const voyageState = getCurrentVoyageState();
     io.emit("voyage-state", voyageState);
@@ -170,10 +296,10 @@ function validateEnvironment() {
   if (missing.length > 0) {
     console.error(
       "❌ Missing required environment variables:",
-      missing.join(", ")
+      missing.join(", "),
     );
     console.error(
-      "Please check your .env file and ensure all required variables are set."
+      "Please check your .env file and ensure all required variables are set.",
     );
     process.exit(1);
   }
@@ -273,7 +399,7 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -284,8 +410,15 @@ app.use(bodyParser.urlencoded({ extended: true }));
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || "change-this-in-production",
   resave: false,
-  saveUninitialized: true,
-  cookie: { secure: false }, // Set to true if using HTTPS
+  saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: process.env.MONGO_URL,
+    ttl: 24 * 60 * 60, // Sessions expire after 1 day (seconds)
+  }),
+  cookie: {
+    secure: false, // Set to true if using HTTPS
+    maxAge: 24 * 60 * 60 * 1000, // 1 day in milliseconds
+  },
 });
 
 app.use(sessionMiddleware);
@@ -317,12 +450,12 @@ app.post(
   async (req, res) => {
     try {
       console.info(
-        `📝 Registration attempt from IP: ${req.ip}, Email: ${req.body.email}`
+        `📝 Registration attempt from IP: ${req.ip}, Email: ${req.body.email}`,
       );
 
       if (!req.file) {
         console.warn(
-          `❌ Registration failed: No avatar file uploaded for ${req.body.email}`
+          `❌ Registration failed: No avatar file uploaded for ${req.body.email}`,
         );
         return res
           .status(400)
@@ -332,7 +465,7 @@ app.post(
       const existingUser = await User.findOne({ email: req.body.email });
       if (existingUser) {
         console.warn(
-          `❌ Registration failed: Email already registered: ${req.body.email}`
+          `❌ Registration failed: Email already registered: ${req.body.email}`,
         );
         return res
           .status(400)
@@ -346,7 +479,7 @@ app.post(
 
       if (!cabins[cabinType] || !cabins[cabinType][cabinNumber]) {
         console.warn(
-          `❌ Registration failed: Invalid cabin selected: ${cabinType} - ${cabinNumber}`
+          `❌ Registration failed: Invalid cabin selected: ${cabinType} - ${cabinNumber}`,
         );
         return res
           .status(400)
@@ -358,7 +491,7 @@ app.post(
         cabins[cabinType][cabinNumber].capacity
       ) {
         console.warn(
-          `❌ Registration failed: Cabin fully booked: ${cabinType} - ${cabinNumber}`
+          `❌ Registration failed: Cabin fully booked: ${cabinType} - ${cabinNumber}`,
         );
         return res
           .status(400)
@@ -384,14 +517,14 @@ app.post(
       cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
       io.emit("new-passenger", newUser.character);
       console.info(
-        `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`
+        `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`,
       );
       res.json({ success: true, passenger: newUser.character });
     } catch (error) {
       console.error("❌ Registration error:", error);
       res.status(500).json({ success: false, error: error.message });
     }
-  }
+  },
 );
 
 app.post("/api/check-credentials", authLimiter, async (req, res) => {
@@ -455,7 +588,7 @@ app.post("/api/admin/reset-password", authLimiter, async (req, res) => {
     // reset link or sending the temporary password via an admin-only channel.
     // Log that a temp password was generated, but do not print the plaintext password to logs
     console.info(
-      `🔐 [ADMIN] Temporary password generated for ${email} (not logged)`
+      `🔐 [ADMIN] Temporary password generated for ${email} (not logged)`,
     );
 
     // (Optional) Here you could send an email with nodemailer — omitted for brevity.
@@ -573,7 +706,7 @@ app.post("/api/report", async (req, res) => {
     console.info(
       `✅ Report sent to Discord: ${type} by ${
         reporterName || "Anonymous"
-      } from ${room || "Unknown Room"}`
+      } from ${room || "Unknown Room"}`,
     );
     res.json({ success: true, message: "Report submitted successfully" });
   } catch (error) {
@@ -589,18 +722,18 @@ app.get("/", (req, res) => {
 
 app.get("/game", (req, res) => {
   console.debug(
-    `🎮 Game access attempt - Session userId: ${req.session.userId}`
+    `🎮 Game access attempt - Session userId: ${req.session.userId}`,
   );
 
   // Check if user is logged in
   if (!req.session.userId) {
     console.warn(
-      `🚫 Game access denied: No session userId, redirecting to login`
+      `🚫 Game access denied: No session userId, redirecting to login`,
     );
     return res.redirect("/");
   }
   console.info(
-    `✅ Game access granted: User ${req.session.userId} accessing game`
+    `✅ Game access granted: User ${req.session.userId} accessing game`,
   );
   res.sendFile(path.join(__dirname, "public/game/game.html"));
 });
@@ -716,13 +849,13 @@ try {
     console.info(
       `✅ Auto-added ${
         newlyAdded.length
-      } room(s) to allowedRooms: ${newlyAdded.join(", ")}`
+      } room(s) to allowedRooms: ${newlyAdded.join(", ")}`,
     );
   }
 } catch (err) {
   console.error(
     "❌ Failed to auto-extend allowedRooms from game.js:",
-    err.message
+    err.message,
   );
 }
 
@@ -741,7 +874,7 @@ function addMessageToRoomHistory(room, message) {
   // Keep only the most recent messages
   if (roomMessageHistory[room].length > MAX_MESSAGES_PER_ROOM) {
     roomMessageHistory[room] = roomMessageHistory[room].slice(
-      -MAX_MESSAGES_PER_ROOM
+      -MAX_MESSAGES_PER_ROOM,
     );
   }
 }
@@ -781,7 +914,7 @@ function getCurrentVoyageState() {
   // Departure happens DEPARTURE_DELAY milliseconds into the voyage
   const elapsedSinceDeparture = Math.max(
     0,
-    elapsedSeconds - DEPARTURE_DELAY / 1000
+    elapsedSeconds - DEPARTURE_DELAY / 1000,
   );
 
   if (elapsedSeconds < DEPARTURE_DELAY / 1000) {
@@ -847,7 +980,7 @@ function getCurrentVoyageState() {
     // Continuous Cherbourg deceleration from 19 knots down to 0 by berthing
     const elapsedSinceChannelEntry = Math.max(
       0,
-      elapsedSinceDeparture - CHANNEL_COMPLETE / 1000
+      elapsedSinceDeparture - CHANNEL_COMPLETE / 1000,
     );
     const drop = elapsedSinceChannelEntry * CHERBOURG_DECEL_RATE;
     speedValue = Math.max(0, 19 - drop);
@@ -946,7 +1079,7 @@ async function syncCabinOccupancyFromDB() {
     // Count existing registered users per cabin
     const users = await User.find(
       {},
-      "character.cabin character.cabin_number"
+      "character.cabin character.cabin_number",
     ).lean();
     for (const u of users) {
       const cabinType = u?.character?.cabin;
@@ -1001,7 +1134,7 @@ app.get("/api/get_available_cabins", (req, res) => {
   console.info(
     `✅ Returning ${
       availableCabins.length
-    } available cabins: ${availableCabins.join(", ")}`
+    } available cabins: ${availableCabins.join(", ")}`,
   );
   res.json(availableCabins);
 });
@@ -1042,7 +1175,7 @@ app.get("/api/get-stats", async (req, res) => {
       if (updatedStats.intoxication > 0) {
         updatedStats.intoxication = Math.max(
           0,
-          updatedStats.intoxication - 0.01
+          updatedStats.intoxication - 0.01,
         );
       }
     }
@@ -1100,8 +1233,11 @@ io.on("connection", async (socket) => {
 
   // Send voyage start time to client for synchronization
   socket.emit("voyage-start-time", voyageStartTime);
+
+  // Send pre-computed environment schedules for cloud/yacht sync
+  socket.emit("environment-schedules", { cloudSchedule, yachtSchedule, birdSchedule });
   console.debug(
-    `⏰ Sent voyage start time to ${socket.id}: ${voyageStartTime}`
+    `⏰ Sent voyage start time to ${socket.id}: ${voyageStartTime}`,
   );
 
   // Send current voyage state for immediate sync
@@ -1109,7 +1245,7 @@ io.on("connection", async (socket) => {
   socket.emit("voyage-state", currentVoyageState);
   console.debug(
     `🚢 Sent current voyage state to ${socket.id}:`,
-    currentVoyageState
+    currentVoyageState,
   );
 
   // Identify authenticated user by server session (safer than trusting client handshake)
@@ -1118,15 +1254,14 @@ io.on("connection", async (socket) => {
 
   if (sessionUserId) {
     try {
-      const dbUser = await User.findById(sessionUserId).select(
-        "email chatColor"
-      );
+      const dbUser =
+        await User.findById(sessionUserId).select("email chatColor");
       if (dbUser) {
         socket.userEmail = dbUser.email;
         if (dbUser.chatColor) {
           assignedColor = dbUser.chatColor;
           console.debug(
-            `🎨 Loaded saved chat color for ${socket.userEmail}: ${assignedColor}`
+            `🎨 Loaded saved chat color for ${socket.userEmail}: ${assignedColor}`,
           );
         }
       } else {
@@ -1135,7 +1270,7 @@ io.on("connection", async (socket) => {
     } catch (err) {
       console.error(
         `❌ Error loading chat color for userId ${sessionUserId}:`,
-        err.message
+        err.message,
       );
     }
   } else {
@@ -1145,23 +1280,23 @@ io.on("connection", async (socket) => {
     if (handshakeEmail) {
       try {
         const tmpUser = await User.findOne({ email: handshakeEmail }).select(
-          "chatColor"
+          "chatColor",
         );
         if (tmpUser && tmpUser.chatColor) {
           assignedColor = tmpUser.chatColor;
           console.debug(
-            `🎨 Loaded saved chat color for ${handshakeEmail}: ${assignedColor}`
+            `🎨 Loaded saved chat color for ${handshakeEmail}: ${assignedColor}`,
           );
         }
       } catch (err) {
         console.error(
           `❌ Error loading chat color for handshake email ${handshakeEmail}:`,
-          err.message
+          err.message,
         );
       }
     } else {
       console.debug(
-        `🎨 Anonymous user connected, using default color: ${assignedColor}`
+        `🎨 Anonymous user connected, using default color: ${assignedColor}`,
       );
     }
   }
@@ -1225,7 +1360,7 @@ io.on("connection", async (socket) => {
       if (roomHistory.length > 0) {
         socket.emit("room-message-history", { room, messages: roomHistory });
         console.debug(
-          `📚 Sent ${roomHistory.length} messages from history for room: ${room}`
+          `📚 Sent ${roomHistory.length} messages from history for room: ${room}`,
         );
       }
 
@@ -1278,7 +1413,7 @@ io.on("connection", async (socket) => {
     addMessageToRoomHistory(roomId, outboundMessage);
     io.emit("chat-message", outboundMessage);
     console.debug(
-      `📤 Broadcasted message from ${socket.id} to all clients from room: ${roomId}`
+      `📤 Broadcasted message from ${socket.id} to all clients from room: ${roomId}`,
     );
   });
 
@@ -1364,8 +1499,8 @@ io.on("connection", async (socket) => {
     const roomIds = Array.isArray(payload)
       ? payload
       : Array.isArray(payload?.rooms)
-      ? payload.rooms
-      : [];
+        ? payload.rooms
+        : [];
 
     if (!roomIds.length) {
       return;
@@ -1378,7 +1513,7 @@ io.on("connection", async (socket) => {
       });
 
     console.debug(
-      `📊 Sent batched room counts for ${roomIds.length} room(s) to ${socket.id}`
+      `📊 Sent batched room counts for ${roomIds.length} room(s) to ${socket.id}`,
     );
   });
 
@@ -1412,7 +1547,7 @@ io.on("connection", async (socket) => {
     try {
       if (!socket.userEmail && socket.request?.session?.userId) {
         const sessionUser = await User.findById(
-          socket.request.session.userId
+          socket.request.session.userId,
         ).select("email stats");
         if (sessionUser) {
           socket.userEmail = sessionUser.email;
@@ -1431,7 +1566,7 @@ io.on("connection", async (socket) => {
       const user = await User.findOne({ email: targetEmail });
       if (!user || !user.stats) {
         console.debug(
-          `📊 No stats found for user ${targetEmail}, sending defaults`
+          `📊 No stats found for user ${targetEmail}, sending defaults`,
         );
         socket.emit("stats-loaded", {
           hunger: 100,
@@ -1476,7 +1611,7 @@ io.on("connection", async (socket) => {
     try {
       if (!socket.userEmail && socket.request?.session?.userId) {
         const sessionUser = await User.findById(
-          socket.request.session.userId
+          socket.request.session.userId,
         ).select("email");
         if (sessionUser) {
           socket.userEmail = sessionUser.email;
@@ -1501,7 +1636,7 @@ io.on("connection", async (socket) => {
             lastUpdated: Date.now(),
           },
         },
-        { upsert: true }
+        { upsert: true },
       );
 
       console.info(`💾 Saved stats for ${socket.userEmail}:`, statsData);
@@ -1520,7 +1655,7 @@ io.on("connection", async (socket) => {
       // Emit the updated user count to all clients
       io.emit("global-user-count", userCount); // Use this event consistently
       console.debug(
-        "📣 Emitted updated user count to all clients after disconnect"
+        "📣 Emitted updated user count to all clients after disconnect",
       );
 
       if (socket.isGameClient) {
@@ -1546,7 +1681,7 @@ io.on("connection", async (socket) => {
           count: roomSizeAfterDisconnect,
         });
         console.debug(
-          `📊 Emitted updated room count for ${currentRoom}: ${roomSizeAfterDisconnect}`
+          `📊 Emitted updated room count for ${currentRoom}: ${roomSizeAfterDisconnect}`,
         );
       }
 
@@ -1557,10 +1692,12 @@ io.on("connection", async (socket) => {
       }
 
       console.info("👤 Client disconnected");
-      delete userChatColors[socket.id];
-      console.debug(`🗑️ Deleted chat color for ${socket.id}`);
     } catch (error) {
       console.error(`❌ Error during disconnect: ${error.message}`);
+    } finally {
+      // Always clean up socket-keyed maps, even if an error occurred above
+      delete users[socket.id];
+      delete userChatColors[socket.id];
     }
   });
 });
@@ -1584,6 +1721,20 @@ process.on("unhandledRejection", (err) => {
   console.error("❌ Unhandled Promise Rejection:", err);
   process.exit(1);
 });
+
+// Graceful shutdown: clear intervals and close connections
+function gracefulShutdown() {
+  console.info("🛑 Shutting down gracefully...");
+  clearInterval(narrativeInterval);
+  clearInterval(voyageStateInterval);
+  server.close(() => {
+    mongoose.disconnect().then(() => process.exit(0));
+  });
+  // Force exit after 10 seconds if cleanup hangs
+  setTimeout(() => process.exit(1), 10000);
+}
+process.on("SIGTERM", gracefulShutdown);
+process.on("SIGINT", gracefulShutdown);
 
 startServer();
 

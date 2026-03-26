@@ -10,8 +10,24 @@ const chatHistory = {
 let isGlobalChat = false; // Global chat toggle state
 console.debug("✅ Initialized socket connection and global variables.");
 
+// Check for PIXI immediately
+if (window.PIXI) {
+  console.debug("✅ PIXI is available on window load.");
+} else {
+  console.warn("⚠️ PIXI is NOT available on window load.");
+}
+
 // Global voyage start time (will be set by server)
 let voyageStartTime = null;
+
+// Server-provided environment schedules for synchronized clouds/yachts.
+// These are computed once on the server and sent to every client on connection.
+let cloudSchedule = null;
+let yachtSchedule = null;
+let cloudScheduleIndex = 0;
+let yachtScheduleIndex = 0;
+let birdSchedule = null;
+let birdScheduleIndex = 0;
 
 // Store pending sync data until functions are ready
 let pendingVoyageState = null;
@@ -100,7 +116,7 @@ window.RBVLog = {
   },
   getLevel() {
     return Object.keys(RBV_LOG_LEVELS).find(
-      (key) => RBV_LOG_LEVELS[key] === activeLogLevel
+      (key) => RBV_LOG_LEVELS[key] === activeLogLevel,
     );
   },
   levels: Object.keys(RBV_LOG_LEVELS),
@@ -113,8 +129,8 @@ socket.on("voyage-start-time", (serverStartTime) => {
   pendingVoyageStartTime = serverStartTime;
   console.debug(
     `⏰ Received voyage start time from server: ${new Date(
-      voyageStartTime
-    ).toISOString()}`
+      voyageStartTime,
+    ).toISOString()}`,
   );
 
   // Try to sync immediately if functions are available
@@ -126,11 +142,51 @@ socket.on("voyage-start-time", (serverStartTime) => {
   }
 });
 
+// Receive pre-computed environment schedules from server
+socket.on("environment-schedules", (data) => {
+  if (data.cloudSchedule && !cloudSchedule) {
+    cloudSchedule = data.cloudSchedule;
+    // Advance past already-elapsed cloud events for late joiners
+    if (voyageStartTime) {
+      const elapsed = Date.now() - voyageStartTime;
+      const initialCount = cloudSchedule.filter(e => e.isInitial).length;
+      cloudScheduleIndex = initialCount; // skip initial entries (handled at initClouds)
+      while (
+        cloudScheduleIndex < cloudSchedule.length &&
+        cloudSchedule[cloudScheduleIndex].time <= elapsed
+      ) {
+        cloudScheduleIndex++;
+      }
+    }
+    console.debug(`🌤️ Received cloud schedule from server: ${cloudSchedule.length} events`);
+  }
+  if (data.yachtSchedule && !yachtSchedule) {
+    yachtSchedule = data.yachtSchedule;
+    console.debug(`⛵ Received yacht schedule from server: ${yachtSchedule.length} events`);
+  }
+  if (data.birdSchedule && !birdSchedule) {
+    birdSchedule = data.birdSchedule;
+    // Advance past already-elapsed bird events for late joiners
+    if (voyageStartTime) {
+      const elapsed = Date.now() - voyageStartTime;
+      const initialCount = birdSchedule.filter(e => e.isInitial).length;
+      birdScheduleIndex = initialCount; // skip initial entries (handled at initBirds)
+      while (
+        birdScheduleIndex < birdSchedule.length &&
+        birdSchedule[birdScheduleIndex].time <= elapsed
+      ) {
+        birdScheduleIndex++;
+      }
+    }
+    console.debug(`🐦 Received bird schedule from server: ${birdSchedule.length} events`);
+  }
+});
+
 // Listen for current voyage state from server (for immediate sync on refresh)
 socket.on("voyage-state", (currentVoyageState) => {
   console.debug(
     "🚢 Received current voyage state from server:",
-    currentVoyageState
+    currentVoyageState,
   );
 
   // Store for later if functions aren't ready yet
@@ -138,19 +194,17 @@ socket.on("voyage-state", (currentVoyageState) => {
   latestVoyageState = currentVoyageState;
 
   // Update info bar elements immediately
-  document.getElementById(
-    "location"
-  ).textContent = `Location: ${currentVoyageState.location}`;
-  document.getElementById(
-    "speed"
-  ).textContent = `Speed: ${currentVoyageState.speed}`;
+  document.getElementById("location").textContent =
+    `Location: ${currentVoyageState.location}`;
+  document.getElementById("speed").textContent =
+    `Speed: ${currentVoyageState.speed}`;
 
   // Set window.currentSpeed for visual effects (smoke, wind)
   window.currentSpeed = currentVoyageState.speedValue;
   // Set target speed for smooth acceleration/deceleration
   window.targetSpeed = currentVoyageState.targetSpeed;
   console.debug(
-    `💨 Set window.currentSpeed to ${window.currentSpeed} and targetSpeed to ${window.targetSpeed} for visual effects`
+    `💨 Set window.currentSpeed to ${window.currentSpeed} and targetSpeed to ${window.targetSpeed} for visual effects`,
   );
 
   // Update sky immediately with server-synced time if function is available
@@ -159,55 +213,55 @@ socket.on("voyage-state", (currentVoyageState) => {
     console.debug("🌤️ Updated sky with server voyage state");
   }
 
-  // Also listen for server narrative events — server will broadcast narrative events
-  socket.on("narrative-event", (data) => {
-    try {
-      console.debug("📣 Received narrative-event from server:", data);
-      const storyTextElement = document.getElementById("story-text");
-      if (storyTextElement) {
-        storyTextElement.style.opacity = "0";
-        setTimeout(() => {
-          storyTextElement.textContent = data.text;
-          storyTextElement.style.opacity = "1";
-        }, 500);
-      }
-
-      // Advance client's narrative index to avoid replaying
-      if (narrativeSystem) {
-        narrativeSystem.currentEventIndex = data.index + 1;
-        sessionStorage.setItem(
-          "narrativeEventIndex",
-          narrativeSystem.currentEventIndex.toString()
-        );
-      }
-    } catch (err) {
-      console.error("❌ Failed to process narrative-event:", err);
-    }
-  });
-
-  // Receive the current narrative index for this connection from the server
-  socket.on("narrative-current", (data) => {
-    console.debug("📣 Received narrative-current from server:", data);
-    const storyTextElement = document.getElementById("story-text");
-    if (storyTextElement && data && data.text) {
-      storyTextElement.textContent = data.text;
-      storyTextElement.style.opacity = "1";
-    }
-    if (narrativeSystem && data && typeof data.index === "number") {
-      narrativeSystem.currentEventIndex = data.index + 1;
-      sessionStorage.setItem(
-        "narrativeEventIndex",
-        narrativeSystem.currentEventIndex.toString()
-      );
-    }
-  });
-
   // Try to perform full sync if functions are available
   if (
     typeof updateInfoBar === "function" &&
     typeof updateSkyImage === "function"
   ) {
     performInitialSync();
+  }
+});
+
+// Listen for server narrative events (registered once at top level, NOT inside voyage-state)
+socket.on("narrative-event", (data) => {
+  try {
+    console.debug("📣 Received narrative-event from server:", data);
+    const storyTextElement = document.getElementById("story-text");
+    if (storyTextElement) {
+      storyTextElement.style.opacity = "0";
+      setTimeout(() => {
+        storyTextElement.textContent = data.text;
+        storyTextElement.style.opacity = "1";
+      }, 500);
+    }
+
+    // Advance client's narrative index to avoid replaying
+    if (narrativeSystem) {
+      narrativeSystem.currentEventIndex = data.index + 1;
+      sessionStorage.setItem(
+        "narrativeEventIndex",
+        narrativeSystem.currentEventIndex.toString(),
+      );
+    }
+  } catch (err) {
+    console.error("❌ Failed to process narrative-event:", err);
+  }
+});
+
+// Receive the current narrative index for this connection from the server
+socket.on("narrative-current", (data) => {
+  console.debug("📣 Received narrative-current from server:", data);
+  const storyTextElement = document.getElementById("story-text");
+  if (storyTextElement && data && data.text) {
+    storyTextElement.textContent = data.text;
+    storyTextElement.style.opacity = "1";
+  }
+  if (narrativeSystem && data && typeof data.index === "number") {
+    narrativeSystem.currentEventIndex = data.index + 1;
+    sessionStorage.setItem(
+      "narrativeEventIndex",
+      narrativeSystem.currentEventIndex.toString(),
+    );
   }
 });
 
@@ -240,7 +294,7 @@ function handleReconnectionRoomJoin() {
 
   if (!voyageAnchor) {
     console.warn(
-      "⚠️ Voyage start time not yet available; defaulting spawn to Southampton"
+      "⚠️ Voyage start time not yet available; defaulting spawn to Southampton",
     );
   }
 
@@ -248,15 +302,15 @@ function handleReconnectionRoomJoin() {
     // Voyage has departed - spawn on ship
     console.debug(
       `🚢 Voyage already departed (${Math.floor(
-        elapsedSeconds / 60
-      )} min elapsed) - auto-joining ship`
+        elapsedSeconds / 60,
+      )} min elapsed) - auto-joining ship`,
     );
 
     // Try to find player's cabin first, otherwise default to promenade
     const cabinRoom = findPlayerCabin();
     const defaultShipRoom =
       (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
-        (r) => r.id === "port_promenade_bd"
+        (r) => r.id === "port_promenade_bd",
       ) || deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd");
 
     const fallbackRoom =
@@ -274,11 +328,11 @@ function handleReconnectionRoomJoin() {
   } else {
     // Voyage hasn't departed yet - spawn at Southampton
     console.debug(
-      `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - auto-joining Southampton`
+      `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - auto-joining Southampton`,
     );
 
     const initialRoom = deckRooms.southampton?.find(
-      (r) => r.name === "Berth 44 Forward Docks"
+      (r) => r.name === "Berth 44 Forward Docks",
     );
     const fallbackRoom =
       initialRoom ||
@@ -291,7 +345,7 @@ function handleReconnectionRoomJoin() {
       console.debug(`🚪 Auto-joined Southampton room: ${fallbackRoom.name}`);
     } else {
       console.error(
-        "❌ Could not determine any spawn location during reconnection"
+        "❌ Could not determine any spawn location during reconnection",
       );
     }
   }
@@ -370,9 +424,9 @@ const narrativeSystem = {
     this.updateWeather();
 
     // Update narrative every 5 seconds
-    setInterval(() => this.updateNarrative(), 5000);
+    this._narrativeInterval = setInterval(() => this.updateNarrative(), 5000);
     // Update weather every 2 minutes
-    setInterval(() => this.updateWeather(), 120000);
+    this._weatherInterval = setInterval(() => this.updateWeather(), 120000);
 
     console.debug("✅ Narrative system initialized (waiting for server time)");
   },
@@ -398,7 +452,7 @@ const narrativeSystem = {
         // Save current event index to sessionStorage to prevent replaying on reconnect
         sessionStorage.setItem(
           "narrativeEventIndex",
-          this.currentEventIndex.toString()
+          this.currentEventIndex.toString(),
         );
 
         console.debug(`📖 Narrative event: ${nextEvent.text}`);
@@ -429,7 +483,6 @@ function setScale() {
   const styles = getComputedStyle(root);
   const baseWidth =
     parseFloat(styles.getPropertyValue("--scene-width")) || 1920;
-
   const baseHeight =
     parseFloat(styles.getPropertyValue("--scene-height")) || 1080;
   const waterBaseline =
@@ -438,24 +491,26 @@ function setScale() {
     parseFloat(styles.getPropertyValue("--scene-manual-offset")) || 0;
 
   const widthRatio = window.innerWidth / baseWidth;
-  const sceneHeight = baseHeight * widthRatio;
+  const heightRatio = window.innerHeight / baseHeight;
+
+  // "Cover" scale: use the larger ratio so the scene always fills the viewport
+  const sceneScale = Math.max(widthRatio, heightRatio);
+
+  const sceneHeight = baseHeight * sceneScale;
   const viewportHeight = window.innerHeight;
-  // Compute the offset required to keep the waterline touching the viewport bottom.
-  // The water element sits `waterBaseline` px above the scene-layer bottom in design canvas
-  // units. After scaling, that becomes waterBaseline * widthRatio. To compensate so the
-  // water contacts the viewport bottom, set the bottom offset to the negative of that
-  // visual distance.
+
   const desiredOffset = viewportHeight - sceneHeight;
-  const waterCorrection = -waterBaseline * widthRatio;
+  const waterCorrection = -waterBaseline * sceneScale;
 
-  // Use the larger of the two adjustments so the scene either fills tall viewports
-  // or drops low enough for the water to touch the bottom edge.
   let bottomOffset = Math.max(desiredOffset, waterCorrection);
-
-  // Add the manual user offset after the clamp.
   bottomOffset += manualOffset;
 
+  // Clamp so the scene never leaves a gap at top or bottom
+  const minOffset = viewportHeight - sceneHeight;
+  bottomOffset = Math.max(minOffset, Math.min(0, bottomOffset));
+
   root.style.setProperty("--scale", widthRatio.toString());
+  root.style.setProperty("--scene-scale", sceneScale.toString());
   root.style.setProperty("--scene-bottom-offset", `${bottomOffset}px`);
 }
 
@@ -1445,7 +1500,7 @@ deckRooms.a_deck.push(
       image: "2nd class staircase1.jpg",
       chatRoom: "second_class_staircase_a",
     },
-  }
+  },
 );
 
 // Southampton location (off-ship)
@@ -2179,6 +2234,10 @@ const musicPlayer = {
   isShuffleOn: false,
   isRepeatOn: false,
   originalPlaylist: [], // Store original song order
+  _fadeTimer: null,
+  _overlayPaused: false,
+  _overlayResumeVolume: null,
+  _overlayWasPlaying: false,
 
   init() {
     console.debug("🔧 Initializing music player...");
@@ -2208,7 +2267,7 @@ const musicPlayer = {
 
             if (this.songs.length > 0) {
               this.currentSongIndex = Math.floor(
-                Math.random() * this.songs.length
+                Math.random() * this.songs.length,
               );
               this.loadCurrentSong();
               songSelect.value = this.currentSongIndex;
@@ -2277,7 +2336,7 @@ const musicPlayer = {
     console.debug(
       `🎵 Loading song index ${this.currentSongIndex}: ${
         this.songs[this.currentSongIndex]
-      }`
+      }`,
     );
     this.audio.src = this.songs[this.currentSongIndex];
     this.updateNowPlaying();
@@ -2332,7 +2391,7 @@ const musicPlayer = {
     this.currentSongIndex =
       (this.currentSongIndex - 1 + this.songs.length) % this.songs.length;
     console.debug(
-      `🔄 Playing previous song. New index: ${this.currentSongIndex}`
+      `🔄 Playing previous song. New index: ${this.currentSongIndex}`,
     );
     this.loadCurrentSong();
   },
@@ -2350,6 +2409,91 @@ const musicPlayer = {
     console.debug(`🔊 Volume set to: ${this.audio.volume}`);
   },
 
+  fadeTo(targetVolume, durationMs = 1200, onComplete) {
+    const clampedTarget = Math.max(0, Math.min(1, targetVolume));
+    const startVolume = this.audio.volume;
+    const delta = clampedTarget - startVolume;
+
+    if (this._fadeTimer) {
+      clearInterval(this._fadeTimer);
+      this._fadeTimer = null;
+    }
+
+    if (!durationMs || durationMs <= 0 || Math.abs(delta) < 0.001) {
+      this.audio.volume = clampedTarget;
+      if (onComplete) onComplete();
+      return;
+    }
+
+    const startTime = performance.now();
+    this._fadeTimer = setInterval(() => {
+      const elapsed = performance.now() - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      this.audio.volume = Math.max(
+        0,
+        Math.min(1, startVolume + delta * progress),
+      );
+      if (progress >= 1) {
+        clearInterval(this._fadeTimer);
+        this._fadeTimer = null;
+        if (onComplete) onComplete();
+      }
+    }, 30);
+  },
+
+  pauseForOverlay(durationMs = 1200) {
+    if (this._overlayPaused) return;
+
+    const wasPlaying = this.isPlaying && !this.audio.paused;
+    this._overlayWasPlaying = wasPlaying;
+    this._overlayResumeVolume = this.audio.volume;
+
+    if (!wasPlaying) return;
+
+    this.fadeTo(0, durationMs, () => {
+      this.audio.pause();
+      this.isPlaying = false;
+      this.updatePlayButton();
+      this._overlayPaused = true;
+    });
+  },
+
+  resumeFromOverlay(durationMs = 1200) {
+    if (!this._overlayPaused || !this._overlayWasPlaying) return;
+
+    const slider = document.getElementById("volume-slider");
+    const sliderVolume = slider ? Number(slider.value) / 100 : null;
+    const targetVolume = Number.isFinite(sliderVolume)
+      ? sliderVolume
+      : (this._overlayResumeVolume ?? this.audio.volume ?? 1);
+
+    this._overlayPaused = false;
+    if (this.audio.muted) {
+      this.audio
+        .play()
+        .then(() => {
+          this.isPlaying = true;
+          this.updatePlayButton();
+        })
+        .catch((error) => {
+          console.warn("⚠️ Error resuming music:", error);
+        });
+      return;
+    }
+
+    this.audio.volume = 0;
+    this.audio
+      .play()
+      .then(() => {
+        this.isPlaying = true;
+        this.updatePlayButton();
+        this.fadeTo(targetVolume, durationMs);
+      })
+      .catch((error) => {
+        console.warn("⚠️ Error resuming music:", error);
+      });
+  },
+
   updateNowPlaying() {
     if (this.songs.length === 0) {
       document.getElementById("current-song").textContent =
@@ -2360,9 +2504,8 @@ const musicPlayer = {
       .split("/")
       .pop()
       .replace(".mp3", "");
-    document.getElementById(
-      "current-song"
-    ).textContent = `Now Playing: ${songName}`;
+    document.getElementById("current-song").textContent =
+      `Now Playing: ${songName}`;
     console.debug(`🆕 Now Playing updated to: ${songName}`);
   },
 
@@ -2533,8 +2676,8 @@ function updateStatusBars() {
   }
 }
 
-// Update status bars every minute
-setInterval(updateStatusBars, 1000);
+// Update status bars every second
+const statusBarsInterval = setInterval(updateStatusBars, 1000);
 
 // Function to save current stats to server
 function saveStatsToServer() {
@@ -2564,6 +2707,12 @@ window.addEventListener("beforeunload", () => {
   } catch (err) {
     console.warn("⚠️ Failed to persist stats on unload:", err);
   }
+  // Clean up intervals to prevent leaks
+  clearInterval(statusBarsInterval);
+  if (narrativeSystem._narrativeInterval)
+    clearInterval(narrativeSystem._narrativeInterval);
+  if (narrativeSystem._weatherInterval)
+    clearInterval(narrativeSystem._weatherInterval);
 });
 
 // Single DOMContentLoaded event listener
@@ -2588,7 +2737,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const characterData = JSON.parse(sessionStorage.getItem("character"));
   if (characterData) {
     console.debug(
-      `🔑 Retrieved character data: ${characterData.forename} ${characterData.surname}`
+      `🔑 Retrieved character data: ${characterData.forename} ${characterData.surname}`,
     );
     const avatarElement = document.getElementById("character-avatar");
     const nameElement = document.getElementById("character-name");
@@ -2682,7 +2831,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Seconds after actual departure (0 while still alongside)
     const elapsedSinceDeparture = Math.max(
       0,
-      elapsedSeconds - TIMELINE_SECONDS.DEPARTURE_DELAY
+      elapsedSeconds - TIMELINE_SECONDS.DEPARTURE_DELAY,
     );
 
     if (elapsedSeconds < TIMELINE_SECONDS.DEPARTURE_DELAY) {
@@ -2728,7 +2877,7 @@ document.addEventListener("DOMContentLoaded", function () {
       // Continuous slowdown from 19 → 0 knots across the Cherbourg sequence
       const elapsedSinceChannel = Math.max(
         0,
-        elapsedSinceDeparture - TIMELINE_SECONDS.CHANNEL_COMPLETE
+        elapsedSinceDeparture - TIMELINE_SECONDS.CHANNEL_COMPLETE,
       );
       speedValue = Math.max(0, 19 - elapsedSinceChannel * CHERBOURG_DECEL_RATE);
       targetSpeed = Math.max(0, speedValue - CHERBOURG_DECEL_RATE);
@@ -2802,7 +2951,7 @@ document.addEventListener("DOMContentLoaded", function () {
       window.setCloudTexture(targetTexture);
     } else {
       console.debug(
-        `⏳ Queued cloud texture ${targetTexture}.png until clouds initialize.`
+        `⏳ Queued cloud texture ${targetTexture}.png until clouds initialize.`,
       );
     }
   }
@@ -2818,7 +2967,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // 1. Determine active interval and show correct sky element
     const interval = imageIntervals.find(
-      (interval) => hours >= interval.start && hours <= interval.end
+      (interval) => hours >= interval.start && hours <= interval.end,
     );
 
     if (interval) {
@@ -2953,7 +3102,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (!currentRoom || !currentRoom.name) {
       console.debug(
-        "🔍 swapLocationImagesForSky: no currentRoom or name present"
+        "🔍 swapLocationImagesForSky: no currentRoom or name present",
       );
       return;
     }
@@ -2964,14 +3113,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const roomName = currentRoom.name;
     const roomData = roomImages[roomName];
     if (!roomData) {
-      console.warn(
-        `🔍 swapLocationImagesForSky: roomData not found for ${roomName}`
-      );
       return;
     }
     console.debug(
       `🔍 swapLocationImagesForSky: roomData variants:`,
-      roomData.variants
+      roomData.variants,
     );
 
     // Helper to draw the room's default image
@@ -3004,14 +3150,14 @@ document.addEventListener("DOMContentLoaded", function () {
           "britannic",
         ];
         const tryPaths = candidateFolders.map(
-          (f) => `/images/animations/locations/${f}/${msImage}`
+          (f) => `/images/animations/locations/${f}/${msImage}`,
         );
         let tried = 0;
         const tryNext = () => {
           if (tried >= tryPaths.length) {
             console.warn(
               `⚠️ All sunset variant paths failed for ${roomName}, reverting to default`,
-              tryPaths
+              tryPaths,
             );
             drawDefault();
             return;
@@ -3066,7 +3212,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (voyageStartTime) {
       const elapsedSeconds = Math.max(
         0,
-        Math.floor((Date.now() - voyageStartTime) / 1000)
+        Math.floor((Date.now() - voyageStartTime) / 1000),
       );
       const state = calculateVoyageState(elapsedSeconds);
       location = state.location;
@@ -3162,7 +3308,7 @@ document.addEventListener("DOMContentLoaded", function () {
     } else {
       // Standard interpolation based on intervals
       const intervalIndex = imageIntervals.findIndex(
-        (iv) => hours >= iv.start && hours <= iv.end
+        (iv) => hours >= iv.start && hours <= iv.end,
       );
 
       if (intervalIndex >= 0) {
@@ -3218,10 +3364,10 @@ document.addEventListener("DOMContentLoaded", function () {
           (c, idx) =>
             `${c} ${
               positions[idx] ?? Math.round((idx + 1) * (100 / stops.length))
-            }%`
+            }%`,
         );
         visibleSky.style.background = `linear-gradient(to bottom, ${parts.join(
-          ", "
+          ", ",
         )})`;
       }
     } catch (err) {
@@ -3285,7 +3431,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
           sessionStorage.setItem(
             "narrativeEventIndex",
-            narrativeSystem.currentEventIndex.toString()
+            narrativeSystem.currentEventIndex.toString(),
           );
 
           console.debug(`📖 Synced narrative: ${currentEvent.text}`);
@@ -3315,8 +3461,8 @@ document.addEventListener("DOMContentLoaded", function () {
     performInitialSync();
   }
 
-  setInterval(updateSkyImage, 1000); // Update every second
-  setInterval(updateInfoBar, 5000); // Update every 5 seconds for better sync
+  const skyImageInterval = setInterval(updateSkyImage, 1000); // Update every second
+  const infoBarInterval = setInterval(updateInfoBar, 5000); // Update every 5 seconds for better sync
 
   console.debug("✅ Initialized sky image and info bar updates.");
 
@@ -3401,13 +3547,12 @@ document.addEventListener("DOMContentLoaded", function () {
       console.debug(`☁️ Cloud texture forced to ${type}.png`);
     }
 
-    function spawnCloud(forceType = null) {
+    function spawnCloud(forceType = null, overrideSpeed = null) {
       const cloudType = forceType || currentCloudTexture;
-      // historic spawn: start exactly offscreen to the right, keep clouds higher in the sky
       clouds.push({
-        x: canvas.width, // Start from right edge
-        y: Math.random() * (canvas.height * 0), // Keep clouds near top of canvas
-        speed: 0.1 + Math.random() * 0.1, // Slower base speed for gentle cloud travel
+        x: canvas.width,
+        y: 0,
+        speed: overrideSpeed !== null ? overrideSpeed : 0.15,
         image: cloudImages[cloudType],
       });
     }
@@ -3439,17 +3584,46 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       });
 
-      // Historic spawn behavior: very infrequent, natural clouds
-      if (Math.random() < 0.0001) spawnCloud();
+      // Time-based cloud spawning from pre-computed deterministic schedule
+      if (cloudSchedule && voyageStartTime) {
+        var elapsedNow = Date.now() - voyageStartTime;
+        while (
+          cloudScheduleIndex < cloudSchedule.length &&
+          cloudSchedule[cloudScheduleIndex].time <= elapsedNow &&
+          !cloudSchedule[cloudScheduleIndex].isInitial
+        ) {
+          spawnCloud(null, cloudSchedule[cloudScheduleIndex].speed);
+          cloudScheduleIndex++;
+        }
+      }
 
       requestAnimationFrame(animate);
     }
 
-    // Initial spawn to populate the sky
-    for (let i = 0; i < 3; i++) {
-      spawnCloud(currentCloudTexture);
-      // Spread initial clouds across the canvas so they don't clump
-      clouds[i].x = Math.random() * canvas.width;
+    // Initial spawn using server-provided schedule
+    if (cloudSchedule) {
+      var initialEntries = cloudSchedule.filter(function (e) { return e.isInitial; });
+      for (var i = 0; i < initialEntries.length; i++) {
+        spawnCloud(currentCloudTexture, initialEntries[i].speed);
+        clouds[i].x = initialEntries[i].xFactor * canvas.width;
+      }
+      cloudScheduleIndex = initialEntries.length;
+      // Late joiners: skip past already-elapsed scheduled spawns
+      if (voyageStartTime) {
+        var elapsed = Date.now() - voyageStartTime;
+        while (
+          cloudScheduleIndex < cloudSchedule.length &&
+          cloudSchedule[cloudScheduleIndex].time <= elapsed
+        ) {
+          cloudScheduleIndex++;
+        }
+      }
+    } else {
+      // Fallback: schedule not received yet, spawn with fixed values
+      for (var i = 0; i < 3; i++) {
+        spawnCloud(currentCloudTexture, 0.15);
+        clouds[i].x = (i + 1) * (canvas.width / 4);
+      }
     }
 
     applyCloudTexture(currentCloudTexture);
@@ -3462,13 +3636,469 @@ document.addEventListener("DOMContentLoaded", function () {
     window.forceCloudTextureMS = () => applyCloudTexture("ms");
     if (currentCloudTexture !== "ms") {
       console.debug(
-        `☁️ Applied queued cloud texture ${currentCloudTexture}.png after init.`
+        `☁️ Applied queued cloud texture ${currentCloudTexture}.png after init.`,
       );
     }
   }
 
   // Initialize clouds
   initClouds();
+
+  // Initialize birds animation with two layers (front and back of ship)
+  function initBirds() {
+    const canvasFront = document.createElement("canvas");
+    const canvasBack = document.createElement("canvas");
+
+    const parentLayer =
+      document.querySelector(".scene-layer") ||
+      document.querySelector(".sprite-container") ||
+      document.body;
+
+    // Get or create front container (in front of ship)
+    let birdContainerFront = document.querySelector(".bird-container");
+    if (!birdContainerFront && parentLayer) {
+      birdContainerFront = document.createElement("div");
+      birdContainerFront.className = "bird-container";
+      parentLayer.appendChild(birdContainerFront);
+    }
+
+    // Get or create back container (behind ship)
+    let birdContainerBack = document.querySelector(".bird-container-back");
+    if (!birdContainerBack && parentLayer) {
+      birdContainerBack = document.createElement("div");
+      birdContainerBack.className = "bird-container-back";
+      parentLayer.appendChild(birdContainerBack);
+    }
+
+    if (!birdContainerFront || !birdContainerBack) {
+      console.warn("⚠️ Could not find or create bird containers");
+      return;
+    }
+
+    // Clear existing canvases
+    const existingFront = birdContainerFront.querySelector("canvas");
+    if (existingFront) birdContainerFront.removeChild(existingFront);
+    const existingBack = birdContainerBack.querySelector("canvas");
+    if (existingBack) birdContainerBack.removeChild(existingBack);
+
+    birdContainerFront.appendChild(canvasFront);
+    birdContainerBack.appendChild(canvasBack);
+
+    const ctxFront = canvasFront.getContext("2d");
+    const ctxBack = canvasBack.getContext("2d");
+
+    if (!ctxFront || !ctxBack) {
+      console.warn("⚠️ Could not acquire 2d context for bird canvases");
+      return;
+    }
+
+    function resizeCanvases() {
+      const dpr = window.devicePixelRatio || 1;
+      [canvasFront, canvasBack].forEach((canvas) => {
+        canvas.width = 1920 * dpr;
+        canvas.height = 540 * dpr;
+        canvas.style.width = "1920px";
+        canvas.style.height = "540px";
+      });
+      ctxFront.setTransform(1, 0, 0, 1, 0, 0);
+      ctxFront.scale(dpr, dpr);
+      ctxBack.setTransform(1, 0, 0, 1, 0, 0);
+      ctxBack.scale(dpr, dpr);
+    }
+
+    resizeCanvases();
+    window.addEventListener("resize", resizeCanvases);
+
+    const birdsFront = []; // Birds in front of ship
+    const birdsBack = []; // Birds behind ship
+    const birdSpriteSheet = new Image();
+    // Use encoded URL to handle spaces/parentheses correctly
+    birdSpriteSheet.src = "/images/animations/bird_sprite%20(1).png";
+
+    // Sprite sheet configuration: 4x4 grid = 16 frames, 28x28 image = 7x7 per frame
+    const SPRITE_CONFIG = {
+      frameWidth: 7,
+      frameHeight: 7,
+      totalFrames: 16,
+      framesPerRow: 4,
+      animationSpeed: 0.25,
+    };
+
+    birdSpriteSheet.onload = () => {
+      console.debug(
+        `✅ Loaded bird sprite sheet: ${birdSpriteSheet.width}x${birdSpriteSheet.height}`,
+      );
+      console.debug(
+        `🐦 Using 4x4 grid config: ${SPRITE_CONFIG.totalFrames} frames, ${SPRITE_CONFIG.frameWidth}x${SPRITE_CONFIG.frameHeight}px each`,
+      );
+    };
+
+    birdSpriteSheet.onerror = (err) => {
+      console.error("❌ Failed to load bird sprite sheet:", err);
+    };
+
+    // Spawn a flock from a server-provided schedule entry
+    function spawnFlockFromEntry(entry) {
+      if (!birdSpriteSheet.complete || birdSpriteSheet.naturalWidth === 0)
+        return;
+
+      const targetArray = entry.isFront ? birdsFront : birdsBack;
+      const baseX = canvasFront.width + 50;
+      const baseY = 30 + entry.baseYFactor * (canvasFront.height * 0.4);
+      const baseSpeed = entry.baseSpeed;
+      const baseFrame = entry.baseFrame;
+
+      for (let i = 0; i < entry.birds.length; i++) {
+        const b = entry.birds[i];
+        const row = Math.floor(i / 2);
+        const side = i % 2 === 0 ? -1 : 1;
+        const offsetX = row * 15 + b.offsetXRand * 10;
+        const offsetY = row * 12 * side + (b.offsetYRand - 0.5) * 8;
+
+        const bird = {
+          x: baseX + offsetX,
+          y: baseY + offsetY,
+          speed: baseSpeed + (b.speedJitter - 0.5) * 0.15,
+          scale: 1,
+          frame:
+            (baseFrame + Math.floor(b.frameOffset * 2)) %
+            SPRITE_CONFIG.totalFrames,
+          frameCounter: b.frameCounter,
+          wobbleOffset: b.wobbleOffset * Math.PI * 2,
+          wobbleSpeed: 0.03 + b.wobbleSpeed * 0.01,
+          wobbleAmount: 1.5 + b.wobbleAmount * 1.5,
+        };
+        targetArray.push(bird);
+      }
+    }
+
+    // Legacy spawnFlock for debug hooks (uses fixed values)
+    function spawnFlock(layer = null) {
+      if (!birdSpriteSheet.complete || birdSpriteSheet.naturalWidth === 0)
+        return;
+      const isFront = layer === "front" ? true : layer === "back" ? false : true;
+      const targetArray = isFront ? birdsFront : birdsBack;
+      const baseX = canvasFront.width + 50;
+      const baseY = 30 + 0.5 * (canvasFront.height * 0.4);
+      for (let i = 0; i < 5; i++) {
+        const row = Math.floor(i / 2);
+        const side = i % 2 === 0 ? -1 : 1;
+        targetArray.push({
+          x: baseX + row * 15,
+          y: baseY + row * 12 * side,
+          speed: 1.75,
+          scale: 1,
+          frame: i % SPRITE_CONFIG.totalFrames,
+          frameCounter: i * 0.2,
+          wobbleOffset: i,
+          wobbleSpeed: 0.035,
+          wobbleAmount: 2.0,
+        });
+      }
+    }
+
+    function drawBirds(ctx, birds) {
+      birds.forEach((bird, index) => {
+        // Update animation frame
+        bird.frameCounter += SPRITE_CONFIG.animationSpeed;
+        if (bird.frameCounter >= 1) {
+          bird.frameCounter = 0;
+          bird.frame = (bird.frame + 1) % SPRITE_CONFIG.totalFrames;
+        }
+
+        // Calculate source rectangle from sprite sheet
+        const frameX =
+          (bird.frame % SPRITE_CONFIG.framesPerRow) * SPRITE_CONFIG.frameWidth;
+        const frameY =
+          Math.floor(bird.frame / SPRITE_CONFIG.framesPerRow) *
+          SPRITE_CONFIG.frameHeight;
+
+        // Calculate wobble for natural flight motion
+        bird.wobbleOffset += bird.wobbleSpeed;
+        const wobbleY = Math.sin(bird.wobbleOffset) * bird.wobbleAmount;
+
+        // Draw the bird
+        const drawWidth = SPRITE_CONFIG.frameWidth * bird.scale;
+        const drawHeight = SPRITE_CONFIG.frameHeight * bird.scale;
+
+        ctx.save();
+        // Use nearest-neighbor scaling for crisp pixel art
+        ctx.imageSmoothingEnabled = false;
+
+        // Translate to center of bird for flipping
+        ctx.translate(
+          bird.x + drawWidth / 2,
+          bird.y + wobbleY + drawHeight / 2,
+        );
+        ctx.scale(-1, 1); // Flip horizontally (bird flies left)
+
+        ctx.drawImage(
+          birdSpriteSheet,
+          frameX,
+          frameY,
+          SPRITE_CONFIG.frameWidth,
+          SPRITE_CONFIG.frameHeight,
+          -drawWidth / 2,
+          -drawHeight / 2,
+          drawWidth,
+          drawHeight,
+        );
+        ctx.restore();
+
+        // Move bird from right to left
+        bird.x -= bird.speed;
+
+        // Remove bird if it goes off screen
+        if (bird.x + drawWidth < 0) {
+          birds.splice(index, 1);
+        }
+      });
+    }
+
+    function animate() {
+      // Clear both canvases
+      ctxFront.clearRect(0, 0, canvasFront.width, canvasFront.height);
+      ctxBack.clearRect(0, 0, canvasBack.width, canvasBack.height);
+
+      if (!birdSpriteSheet.complete || SPRITE_CONFIG.totalFrames === 0) {
+        requestAnimationFrame(animate);
+        return;
+      }
+
+      // Draw birds on both layers
+      drawBirds(ctxFront, birdsFront);
+      drawBirds(ctxBack, birdsBack);
+
+      // Time-based bird spawning from server-provided schedule
+      if (birdSchedule && voyageStartTime) {
+        var elapsedNow = Date.now() - voyageStartTime;
+        var totalBirds = birdsFront.length + birdsBack.length;
+        while (
+          birdScheduleIndex < birdSchedule.length &&
+          birdSchedule[birdScheduleIndex].time <= elapsedNow &&
+          !birdSchedule[birdScheduleIndex].isInitial &&
+          totalBirds < 30
+        ) {
+          spawnFlockFromEntry(birdSchedule[birdScheduleIndex]);
+          birdScheduleIndex++;
+          totalBirds = birdsFront.length + birdsBack.length;
+        }
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    // Initial spawn using server-provided schedule
+    setTimeout(() => {
+      if (birdSpriteSheet.complete && birdSchedule) {
+        var initialEntries = birdSchedule.filter(function (e) { return e.isInitial; });
+        for (var i = 0; i < initialEntries.length; i++) {
+          spawnFlockFromEntry(initialEntries[i]);
+        }
+        // Position the initial flocks mid-screen
+        const offsetX = canvasFront.width * 0.5;
+        birdsFront.forEach((bird) => {
+          bird.x -= offsetX;
+        });
+        birdsBack.forEach((bird) => {
+          bird.x -= offsetX * 0.7;
+        });
+        // Set schedule index past initial entries
+        var initialCount = initialEntries.length;
+        birdScheduleIndex = Math.max(birdScheduleIndex, initialCount);
+        // Late joiners: skip past already-elapsed events
+        if (voyageStartTime) {
+          var elapsed = Date.now() - voyageStartTime;
+          while (
+            birdScheduleIndex < birdSchedule.length &&
+            birdSchedule[birdScheduleIndex].time <= elapsed
+          ) {
+            birdScheduleIndex++;
+          }
+        }
+      } else if (birdSpriteSheet.complete) {
+        // Fallback: schedule not received yet
+        spawnFlock("front");
+        spawnFlock("back");
+        const offsetX = canvasFront.width * 0.5;
+        birdsFront.forEach((bird) => {
+          bird.x -= offsetX;
+        });
+        birdsBack.forEach((bird) => {
+          bird.x -= offsetX * 0.7;
+        });
+      }
+    }, 1000);
+
+    animate();
+    console.debug("🔄 Started birds animation loop (front and back layers).");
+
+    // Expose control functions for testing
+    window.spawnFlock = spawnFlock;
+    window.spawnFlockFront = () => spawnFlock("front");
+    window.spawnFlockBack = () => spawnFlock("back");
+  }
+
+  // Initialize birds
+  initBirds();
+
+  // Funnel offset persistence helpers for smoke positions (three funnels)
+  const SMOKE_OFFSETS_KEY = "rbv:smokeFunnelOffsets";
+
+  const DEFAULT_SMOKE_OFFSETS = [
+    { x: 5, y: 0 },
+    { x: 5, y: 0 },
+    { x: 0, y: 0 },
+  ];
+
+  function loadFunnelOffsets() {
+    try {
+      const raw = localStorage.getItem(SMOKE_OFFSETS_KEY);
+      if (!raw) return JSON.parse(JSON.stringify(DEFAULT_SMOKE_OFFSETS));
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed) || parsed.length !== 3)
+        return JSON.parse(JSON.stringify(DEFAULT_SMOKE_OFFSETS));
+      // normalize values
+      return parsed.map((p) => ({ x: Number(p.x) || 0, y: Number(p.y) || 0 }));
+    } catch (e) {
+      console.warn("⚠️ Failed to load smoke funnel offsets, using defaults", e);
+      return JSON.parse(JSON.stringify(DEFAULT_SMOKE_OFFSETS));
+    }
+  }
+
+  function saveFunnelOffsets(offsets) {
+    try {
+      if (!Array.isArray(offsets) || offsets.length !== 3)
+        throw new Error("invalid offsets");
+      localStorage.setItem(SMOKE_OFFSETS_KEY, JSON.stringify(offsets));
+    } catch (e) {
+      console.warn("⚠️ Failed to save smoke funnel offsets:", e);
+    }
+  }
+
+  // Expose a global buffer of offsets so both 2D and WebGL inits can reference
+  window._smokeFunnelOffsets = loadFunnelOffsets();
+  window.getFunnelOffsets = () =>
+    JSON.parse(JSON.stringify(window._smokeFunnelOffsets));
+
+  // Runtime API for adjusting funnels. Offsets are pixel values applied to base funnel positions.
+  window.setFunnelOffset = (index, dx = 0, dy = 0, persist = true) => {
+    index = Number(index);
+    if (Number.isNaN(index) || index < 0 || index > 2) {
+      console.warn("setFunnelOffset: invalid index", index);
+      return;
+    }
+    const offs = window._smokeFunnelOffsets || loadFunnelOffsets();
+    offs[index].x = (Number(offs[index].x) || 0) + Number(dx || 0);
+    offs[index].y = (Number(offs[index].y) || 0) + Number(dy || 0);
+    window._smokeFunnelOffsets = offs;
+    if (persist) saveFunnelOffsets(offs);
+
+    // Notify running systems to update particle positions
+    try {
+      if (typeof window._2dSmokeUpdatePositions === "function") {
+        window._2dSmokeUpdatePositions();
+      }
+    } catch (e) {}
+
+    try {
+      if (Array.isArray(window._webglSmokeParticles)) {
+        // Shift existing particles originating from this funnel
+        window._webglSmokeParticles.forEach((p) => {
+          if (typeof p.funnelId === "number" && p.funnelId === index) {
+            p.x += Number(dx || 0);
+            p.y += Number(dy || 0);
+          }
+        });
+      }
+    } catch (e) {}
+
+    console.debug("🔧 setFunnelOffset", index, dx, dy);
+  };
+
+  // Set absolute pixel offsets
+  window.setFunnelOffsetTo = (index, xPx = 0, yPx = 0, persist = true) => {
+    index = Number(index);
+    if (Number.isNaN(index) || index < 0 || index > 2) {
+      console.warn("setFunnelOffsetTo: invalid index", index);
+      return;
+    }
+    const offs = window._smokeFunnelOffsets || loadFunnelOffsets();
+    const prev = offs[index] || { x: 0, y: 0 };
+    const newOff = { x: Number(xPx) || 0, y: Number(yPx) || 0 };
+    offs[index] = newOff;
+    window._smokeFunnelOffsets = offs;
+    if (persist) saveFunnelOffsets(offs);
+    try {
+      if (typeof window._2dSmokeUpdatePositions === "function")
+        window._2dSmokeUpdatePositions();
+    } catch (e) {}
+
+    // Apply delta to any already-spawned WebGL particles for the same funnel
+    try {
+      const dx = newOff.x - (prev.x || 0);
+      const dy = newOff.y - (prev.y || 0);
+      if (
+        Array.isArray(window._webglSmokeParticles) &&
+        (dx !== 0 || dy !== 0)
+      ) {
+        window._webglSmokeParticles.forEach((p) => {
+          if (typeof p.funnelId === "number" && p.funnelId === index) {
+            p.x += dx;
+            p.y += dy;
+          }
+        });
+      }
+    } catch (e) {}
+    console.debug("🔧 setFunnelOffsetTo", index, xPx, yPx);
+  };
+
+  // Set funnel target based on percentage of smoke container [0..1]
+  window.setFunnelPositionPercent = (
+    index,
+    xPercent = 0.5,
+    yPercent = 0.8,
+    persist = true,
+  ) => {
+    index = Number(index);
+    if (Number.isNaN(index) || index < 0 || index > 2) {
+      console.warn("setFunnelPositionPercent: invalid index", index);
+      return;
+    }
+    const smokeContainer = document.querySelector(".smoke-container");
+    if (!smokeContainer) {
+      console.warn("setFunnelPositionPercent: .smoke-container not found");
+      return;
+    }
+    const rect = smokeContainer.getBoundingClientRect();
+    const cw = Math.max(1, rect.width || 960);
+    const ch = Math.max(1, rect.height || 320);
+
+    // Base percent positions used historically
+    const basePercents = [0.7, 0.572, 0.455];
+    const baseX = cw * basePercents[index];
+    const baseY = ch * 0.81;
+
+    const targetX = Math.max(0, Math.min(1, Number(xPercent))) * cw;
+    const targetY = Math.max(0, Math.min(1, Number(yPercent))) * ch;
+
+    const dx = targetX - baseX;
+    const dy = targetY - baseY;
+
+    window.setFunnelOffsetTo(index, dx, dy, persist);
+  };
+
+  window.resetFunnelOffsets = (persist = true) => {
+    window._smokeFunnelOffsets = JSON.parse(
+      JSON.stringify(DEFAULT_SMOKE_OFFSETS),
+    );
+    if (persist) saveFunnelOffsets(window._smokeFunnelOffsets);
+    try {
+      if (typeof window._2dSmokeUpdatePositions === "function")
+        window._2dSmokeUpdatePositions();
+    } catch (e) {}
+    console.debug("🔁 Funnel offsets reset to defaults");
+  };
 
   function initSmoke() {
     const canvas = document.createElement("canvas");
@@ -3524,11 +4154,22 @@ document.addEventListener("DOMContentLoaded", function () {
         parseFloat(canvas.style.height) ||
         containerWidth;
 
-      return [
+      const base = [
         { x: containerWidth * 0.7, y: containerHeight * 0.81 },
         { x: containerWidth * 0.572, y: containerHeight * 0.81 },
         { x: containerWidth * 0.455, y: containerHeight * 0.81 },
       ];
+
+      const offsets = (window && window._smokeFunnelOffsets) || [
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+      ];
+
+      return base.map((b, i) => ({
+        x: b.x + (offsets[i]?.x || 0),
+        y: b.y + (offsets[i]?.y || 0),
+      }));
     }
 
     // Update existing particle positions when canvas resizes
@@ -3551,6 +4192,10 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       });
     }
+
+    // Expose 2D smoke internals for runtime offset adjustments
+    window._2dSmokeParticles = smokeParticles;
+    window._2dSmokeUpdatePositions = updateParticlePositions;
 
     function spawnSmokeParticle() {
       // Get current responsive funnel positions
@@ -3602,7 +4247,7 @@ document.addEventListener("DOMContentLoaded", function () {
         // As the particle ages, blend from initial vertical to horizontal wind
         const bendProgress = Math.min(
           particle.life / (particle.maxLife * 0.6),
-          1
+          1,
         ); // 0 to 1 over first 60% of life
         particle.vx =
           particle.initialVx * (1 - bendProgress) +
@@ -3628,7 +4273,7 @@ document.addEventListener("DOMContentLoaded", function () {
           // Last 30% of life: fade out faster
           particle.opacity = Math.max(
             0,
-            0.5 * (1 - ageRatio) * (1 - (ageRatio - 0.7) * 2.5)
+            0.5 * (1 - ageRatio) * (1 - (ageRatio - 0.7) * 2.5),
           );
         }
 
@@ -3653,7 +4298,7 @@ document.addEventListener("DOMContentLoaded", function () {
           -scaledWidth / 2,
           -scaledHeight / 2,
           scaledWidth,
-          scaledHeight
+          scaledHeight,
         );
         ctx.restore();
 
@@ -3690,8 +4335,617 @@ document.addEventListener("DOMContentLoaded", function () {
     console.debug("🔄 Started smoke animation loop.");
   }
 
-  // Initialize smoke
-  initSmoke();
+  // Initialize smoke: prefer GPU-accelerated WebGL renderer (PixiJS) with fallback
+  // More robust WebGL availability check — tests for an actually usable context
+  function supportsWebGL() {
+    try {
+      const canvas = document.createElement("canvas");
+
+      // Prefer WebGL2 if available, otherwise test WebGL1 contexts
+      const ctx =
+        canvas.getContext("webgl2", { antialias: true }) ||
+        canvas.getContext("webgl", { antialias: true }) ||
+        canvas.getContext("experimental-webgl");
+
+      if (!ctx) return false;
+
+      // Try a simple capability check (some environments expose JS objects but fail to allocate a working context)
+      if (typeof ctx.getParameter !== "function") return false;
+
+      // Good enough — environment has a working WebGL context
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // WebGL / PixiJS-based smoke renderer (keeps the same PNG sprite and logic,
+  // but moves rendering to GPU for better performance)
+  async function initSmokeWebGL() {
+    const smokeContainer = document.querySelector(".smoke-container");
+    if (!smokeContainer) {
+      console.warn(
+        "⚠️ .smoke-container missing — cannot initialize WebGL smoke.",
+      );
+      initSmoke();
+      return;
+    }
+
+    // Remove any existing 2D canvas created earlier
+    const existingCanvas = smokeContainer.querySelector(
+      "canvas, canvas.pixi-canvas",
+    );
+    if (existingCanvas) existingCanvas.remove();
+
+    // PIXI app options tuned to match existing look and DPR handling
+    const dpr = window.devicePixelRatio || 1;
+    const rect = smokeContainer.getBoundingClientRect();
+    console.debug("📏 Smoke Container Rect:", rect);
+
+    const width = Math.max(1, rect.width || 960);
+    const height = Math.max(1, rect.height || 320);
+
+    // PixiJS v8 uses backgroundAlpha instead of transparent
+    const commonOptions = {
+      width: width,
+      height: height,
+      backgroundAlpha: 0, // v8 transparency
+      transparent: true, // v7 fallback
+      antialias: true,
+      resolution: dpr,
+      autoDensity: true,
+      powerPreference: "high-performance",
+      hello: true, // Enable PixiJS banner in console
+    };
+    let app;
+    let failSafeTimer = null;
+    const cleanupApp = () => {
+      try {
+        if (app && app._manualTicker) {
+          app._manualTicker.stop();
+        }
+      } catch (e) {}
+      try {
+        if (app && app.ticker && typeof app.ticker.stop === "function") {
+          app.ticker.stop();
+        }
+      } catch (e) {}
+      try {
+        if (app && typeof app.destroy === "function") {
+          app.destroy(true, {
+            children: true,
+            texture: true,
+            baseTexture: true,
+          });
+        } else if (
+          app &&
+          app.renderer &&
+          typeof app.renderer.destroy === "function"
+        ) {
+          app.renderer.destroy(true);
+        }
+      } catch (e) {}
+      try {
+        const view =
+          app &&
+          (app.view ||
+            app.canvas ||
+            (app.renderer && (app.renderer.view || app.renderer.canvas)));
+        if (view && view.parentNode === smokeContainer) {
+          view.parentNode.removeChild(view);
+        }
+      } catch (e) {}
+    };
+
+    const fallbackTo2D = (reason, err) => {
+      if (failSafeTimer) {
+        clearTimeout(failSafeTimer);
+        failSafeTimer = null;
+      }
+      if (reason) {
+        console.warn(reason, err || "");
+      }
+      cleanupApp();
+      initSmoke();
+    };
+    try {
+      if (!window.PIXI || !PIXI.Application) {
+        throw new Error("PIXI.Application missing on window");
+      }
+
+      const appPrototype = PIXI.Application.prototype || {};
+      const needsAsyncInit = typeof appPrototype.init === "function";
+
+      if (needsAsyncInit) {
+        // Pixi v8+: constructor is sync but renderer/view created after awaiting init
+        app = new PIXI.Application();
+        await app.init(commonOptions);
+      } else {
+        app = new PIXI.Application(commonOptions);
+      }
+    } catch (err) {
+      // Fail safe — if creating the PIXI application throws, fall back to the 2D smoke renderer.
+      fallbackTo2D(
+        "⚠️ PIXI.Application construction failed — falling back to 2D smoke:",
+        err,
+      );
+      return;
+    }
+
+    // Validate that the renderer and view were created successfully.
+    if (
+      !app ||
+      !app.renderer ||
+      !(app.view || (app.renderer && app.renderer.view))
+    ) {
+      // Diagnostic output to help triage environments where PIXI global exists
+      // but doesn't create a usable renderer.
+      console.warn(
+        "⚠️ PIXI.Application created but renderer/view missing — attempting recovery before falling back to 2D smoke.",
+      );
+      try {
+        if (window.PIXI) {
+          console.debug("ℹ️ PIXI object detected", {
+            version: PIXI.VERSION || null,
+            hasApplication: typeof PIXI.Application === "function",
+            hasRenderer: typeof PIXI.Renderer === "function",
+            hasAutoDetect: typeof PIXI.autoDetectRenderer === "function",
+            keys: Object.keys(PIXI).slice(0, 40),
+          });
+        } else {
+          console.debug("ℹ️ PIXI not present on window");
+        }
+      } catch (e) {
+        console.debug("⚠️ Error while logging PIXI diagnostic info", e);
+      }
+
+      // Try to build a minimal renderer manually using PIXI.Renderer (or autoDetect) so
+      // older or alternative builds of Pixi still work. If we succeed we'll wire up a
+      // small render loop (ticker) and continue — otherwise we clean up and fall back.
+      if (window.PIXI && typeof PIXI.Renderer === "function") {
+        try {
+          const manualRenderer = new PIXI.Renderer({
+            width: Math.max(1, rect.width || 960),
+            height: Math.max(1, rect.height || 320),
+            transparent: true,
+            antialias: true,
+            resolution: dpr,
+            autoDensity: true,
+            powerPreference: "high-performance",
+          });
+
+          if (manualRenderer && manualRenderer.view) {
+            console.debug("✅ Manually created PIXI.Renderer fallback");
+
+            // Create a minimal app shell compatible with the rest of the code
+            app = {
+              renderer: manualRenderer,
+              view: manualRenderer.view,
+              screen: {
+                width: manualRenderer.width,
+                height: manualRenderer.height,
+              },
+              stage: new PIXI.Container(),
+              ticker: new PIXI.Ticker(),
+              destroy(force, opts) {
+                try {
+                  this.ticker.stop();
+                } catch (e) {}
+                try {
+                  manualRenderer.destroy(opts);
+                } catch (e) {}
+              },
+            };
+
+            // Basic render loop: render the stage via our manual renderer
+            app.ticker.add(() => {
+              try {
+                manualRenderer.render(app.stage);
+              } catch (e) {
+                /* ignore render errors here, fallback handled below */
+              }
+            });
+            app.ticker.start();
+
+            smokeContainer.appendChild(app.view);
+            console.debug(
+              "ℹ️ PIXI fallback renderer attached to DOM and ticker started",
+            );
+          } else {
+            try {
+              manualRenderer.destroy();
+            } catch (e) {}
+            throw new Error("manualRenderer created but view missing");
+          }
+        } catch (err) {
+          fallbackTo2D(
+            "⚠️ Manual PIXI.Renderer attempt failed — falling back to 2D smoke:",
+            err,
+          );
+          return;
+        }
+      } else if (window.PIXI && typeof PIXI.autoDetectRenderer === "function") {
+        try {
+          // Older Pixi versions shipped autoDetectRenderer — try it as last resort
+          const fallback = PIXI.autoDetectRenderer({
+            width: Math.max(1, rect.width || 960),
+            height: Math.max(1, rect.height || 320),
+            transparent: true,
+            antialias: true,
+            resolution: dpr,
+            autoDensity: true,
+            powerPreference: "high-performance",
+          });
+          if (fallback && fallback.view) {
+            app = {
+              renderer: fallback,
+              view: fallback.view,
+              stage: new PIXI.Container(),
+              ticker: new PIXI.Ticker(),
+              destroy(force, opts) {
+                try {
+                  this.ticker.stop();
+                } catch (e) {}
+                try {
+                  fallback.destroy(opts);
+                } catch (e) {}
+              },
+            };
+            app.ticker.add(() => {
+              try {
+                fallback.render(app.stage);
+              } catch (e) {}
+            });
+            app.ticker.start();
+            smokeContainer.appendChild(app.view);
+            console.debug(
+              "✅ PIXI.autoDetectRenderer fallback created and attached",
+            );
+          } else {
+            throw new Error("autoDetectRenderer created no view");
+          }
+        } catch (err) {
+          fallbackTo2D(
+            "⚠️ PIXI.autoDetectRenderer attempt failed — falling back to 2D smoke:",
+            err,
+          );
+          return;
+        }
+      } else {
+        fallbackTo2D(
+          "⚠️ PIXI could not create a renderer/view — falling back to 2D smoke",
+        );
+        return;
+      }
+    }
+
+    const view =
+      app.view ||
+      app.canvas ||
+      (app.renderer && (app.renderer.view || app.renderer.canvas));
+    if (!view) {
+      fallbackTo2D(
+        "⚠️ PIXI app missing view even after init — reverting to 2D smoke.",
+      );
+      return;
+    }
+
+    view.style.width = `${Math.max(1, rect.width || 960)}px`;
+    view.style.height = `${Math.max(1, rect.height || 320)}px`;
+    if (!view.parentNode) {
+      smokeContainer.appendChild(view);
+    }
+
+    // Load the same smoke sprite used by the 2D renderer
+    let smokeTexture;
+    console.log("ℹ️ Starting smoke texture load...");
+
+    try {
+      // Create a timeout promise
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Texture load timed out")), 5000),
+      );
+
+      if (PIXI.Assets && typeof PIXI.Assets.load === "function") {
+        // Race between load and timeout
+        smokeTexture = await Promise.race([
+          PIXI.Assets.load("/images/animations/smoke/day.png"),
+          timeoutPromise,
+        ]);
+      } else if (PIXI.Texture && typeof PIXI.Texture.from === "function") {
+        smokeTexture = PIXI.Texture.from("/images/animations/smoke/day.png");
+      } else {
+        throw new Error("No suitable texture loading method found");
+      }
+    } catch (err) {
+      fallbackTo2D(
+        "⚠️ Failed to create PIXI texture — falling back to 2D smoke:",
+        err,
+      );
+      return;
+    }
+
+    if (!smokeTexture) {
+      fallbackTo2D(
+        "⚠️ PIXI texture creation returned undefined — falling back to 2D smoke.",
+      );
+      return;
+    }
+
+    // Debug texture loading (handle Pixi v7 baseTexture and v8 source)
+    const textureSource = smokeTexture.baseTexture || smokeTexture.source;
+    if (textureSource && typeof textureSource.on === "function") {
+      textureSource.on("error", (e) => {
+        console.error("❌ Smoke texture failed to load:", e);
+      });
+      textureSource.on("loaded", () => {
+        console.debug("✅ Smoke texture loaded successfully.");
+      });
+    }
+
+    // Particle container for batching
+    const particlesContainer = new PIXI.Container();
+    app.stage.addChild(particlesContainer);
+
+    // Force a render immediately to ensure context is active
+    app.renderer.render(app.stage);
+
+    const particles = [];
+    // Expose particles so runtime API can nudge existing sprites
+    window._webglSmokeParticles = particles;
+    let framesRendered = 0;
+    let hasRendered = false;
+
+    const renderStage = () => {
+      if (!app) return;
+      try {
+        if (typeof app.render === "function") {
+          app.render();
+        } else if (app.renderer && typeof app.renderer.render === "function") {
+          app.renderer.render(app.stage);
+        }
+        framesRendered++;
+        if (!hasRendered && framesRendered > 0) {
+          hasRendered = true;
+          if (failSafeTimer) clearTimeout(failSafeTimer);
+          console.debug("✅ WebGL smoke rendering confirmed.");
+        }
+
+        // Periodic debug log (every ~10 seconds)
+        if (framesRendered % 600 === 0) {
+          const screen = app.screen || {};
+          console.debug(
+            `💨 WebGL Smoke Status: ${
+              particles.length
+            } particles. Canvas visible: ${
+              view.style.display !== "none"
+            }. Z-Index: ${getComputedStyle(smokeContainer).zIndex}. Size: ${
+              screen.width
+            }x${screen.height}`,
+          );
+        }
+      } catch (err) {
+        fallbackTo2D(
+          "⚠️ PIXI renderer threw during renderStage — reverting to 2D smoke.",
+          err,
+        );
+      }
+    };
+
+    function getFunnelPositionsLocal() {
+      const renderer = app.renderer || {};
+      const screen = app.screen ||
+        renderer.screen || {
+          width: renderer.width || commonOptions.width,
+          height: renderer.height || commonOptions.height,
+        };
+
+      const containerWidth = Math.max(1, screen.width || commonOptions.width);
+      const containerHeight = Math.max(
+        1,
+        screen.height || commonOptions.height,
+      );
+
+      // Base positions (same as historic implementation)
+      const base = [
+        { x: containerWidth * 0.7, y: containerHeight * 0.81 },
+        { x: containerWidth * 0.572, y: containerHeight * 0.81 },
+        { x: containerWidth * 0.455, y: containerHeight * 0.81 },
+      ];
+
+      // Allow per-funnel pixel offsets stored in window._smokeFunnelOffsets
+      const offsets = (window && window._smokeFunnelOffsets) || [
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+      ];
+
+      return base.map((b, i) => ({
+        x: b.x + (offsets[i]?.x || 0),
+        y: b.y + (offsets[i]?.y || 0),
+      }));
+    }
+
+    function spawnParticle() {
+      const funnels = getFunnelPositionsLocal();
+      funnels.forEach((funnel, funnelIndex) => {
+        const offsetX = (Math.random() - 0.5) * 10;
+        const offsetY = Math.random() * 5;
+
+        const s = new PIXI.Sprite(smokeTexture);
+        s.anchor.set(0.5);
+        const initialScale = 0.8 + Math.random() * 0.3;
+        s.scale.set(initialScale);
+        s.x = funnel.x + offsetX;
+        s.y = funnel.y + offsetY;
+        s.vx = (Math.random() - 0.5) * 0.004;
+        s.vy = -0.22 - Math.random() * 0.04;
+        s.initialScale = initialScale;
+        s.opacity = 0.6 + Math.random() * 0.2;
+        s.life = 0;
+        s.maxLife = 250 + Math.random() * 150;
+        s.rotationSpeed = 0.001;
+        s.rotation = Math.random() * Math.PI * 2;
+        s.funnelId = funnelIndex;
+        s.originalOffsetX = offsetX;
+        s.originalOffsetY = offsetY;
+        s.initialVx = (Math.random() - 0.5) * 0.01;
+        s.initialVy = s.vy;
+
+        s.alpha = s.opacity;
+        particlesContainer.addChild(s);
+        particles.push(s);
+      });
+    }
+
+    // Pre-populate like the 2D system
+    for (let i = 0; i < 50; i++) spawnParticle(); // Increased initial spawn count
+
+    const updateParticles = () => {
+      // Update logic mimics existing code but runs in the GPU-side rendering loop
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+
+        let horizontalWind = 0;
+        if (typeof window.currentSpeed === "number") {
+          const speed = window.currentSpeed || 0;
+          horizontalWind = -0.05 - speed * 0.04;
+        }
+
+        const bendProgress = Math.min(p.life / (p.maxLife * 0.6), 1);
+        p.vx = p.initialVx * (1 - bendProgress) + horizontalWind * bendProgress;
+
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life++;
+
+        const ageRatio = p.life / p.maxLife;
+        const scale = p.initialScale * (1 + ageRatio);
+        p.scale.set(scale);
+        p.vy *= 0.9998;
+        p.vx *= 0.9998;
+
+        if (ageRatio < 0.7) {
+          p.alpha = Math.max(0, 0.5 * (1 - ageRatio));
+        } else {
+          p.alpha = Math.max(
+            0,
+            0.5 * (1 - ageRatio) * (1 - (ageRatio - 0.7) * 2.5),
+          );
+        }
+
+        p.rotation += p.rotationSpeed;
+
+        // Small turbulence
+        p.vx += (Math.random() - 0.5) * 0.0005;
+        p.vy += Math.random() * 0.0005 - 0.00025;
+
+        if (p.life >= p.maxLife || p.alpha <= 0) {
+          particlesContainer.removeChild(p);
+          p.destroy();
+          particles.splice(i, 1);
+        }
+      }
+
+      // Spawn occasionally (same odds as existing code)
+      if (Math.random() < 0.2) spawnParticle();
+
+      renderStage();
+    };
+
+    if (app.ticker && typeof app.ticker.add === "function") {
+      app.ticker.add(updateParticles);
+    } else if (window.PIXI && PIXI.Ticker) {
+      const manualTicker = new PIXI.Ticker();
+      manualTicker.add(updateParticles);
+      manualTicker.start();
+      app._manualTicker = manualTicker;
+    } else {
+      const rafLoop = () => {
+        updateParticles();
+        requestAnimationFrame(rafLoop);
+      };
+      requestAnimationFrame(rafLoop);
+    }
+
+    failSafeTimer = setTimeout(() => {
+      if (!hasRendered) {
+        fallbackTo2D(
+          "⚠️ WebGL smoke failed to render any frames within 3 seconds — falling back to 2D smoke.",
+        );
+      }
+    }, 3000);
+
+    console.debug(
+      "🔆 WebGL smoke renderer (Pixi) initialized — smoke moved to GPU.",
+    );
+    // Expose app for debugging
+    window._webglSmokeApp = app;
+    window.debugSmoke = () => {
+      console.log("--- Smoke Debug Info ---");
+      console.log("Container:", smokeContainer);
+      console.log("Canvas:", view);
+      console.log("App Stage:", app ? app.stage : "N/A");
+      console.log("Particles:", particles.length);
+      console.log(
+        "_webglSmokeParticles (exported):",
+        window._webglSmokeParticles
+          ? window._webglSmokeParticles.length
+          : "not exported",
+      );
+      console.log(
+        "Funnel Offsets:",
+        window.getFunnelOffsets
+          ? window.getFunnelOffsets()
+          : window._smokeFunnelOffsets,
+      );
+      console.log("Texture:", smokeTexture);
+      console.log("Frames Rendered:", framesRendered);
+      console.log("Has Rendered:", hasRendered);
+      console.log("Z-Index:", getComputedStyle(smokeContainer).zIndex);
+      console.log("------------------------");
+    };
+  }
+
+  // Initialize: choose WebGL (PixiJS) if available, otherwise fall back to 2D
+  const webGLSupported = supportsWebGL();
+  console.debug(`🖥️ WebGL Support Check: ${webGLSupported}`);
+
+  // Define the start function but don't call it yet
+  const startSmokeSystem = () => {
+    if (webGLSupported) {
+      const startWebGL = () =>
+        initSmokeWebGL().catch((err) => {
+          console.warn(
+            "⚠️ initSmokeWebGL failed — falling back to 2D smoke:",
+            err,
+          );
+          initSmoke();
+        });
+
+      if (window.PIXI) {
+        console.debug("✅ PixiJS detected globally (likely local install).");
+        startWebGL();
+      } else {
+        // Load Pixi from CDN and then init, fall back on failure
+        const pixiUrl = "https://pixijs.download/release/pixi.min.js";
+        const s = document.createElement("script");
+        s.src = pixiUrl;
+        s.onload = () => startWebGL();
+        s.onerror = function (err) {
+          console.warn(
+            "⚠️ Failed to load PixiJS, falling back to 2D smoke",
+            err,
+          );
+          initSmoke();
+        };
+        document.head.appendChild(s);
+      }
+    } else {
+      // WebGL unavailable — keep the original 2D smoke implementation
+      initSmoke();
+    }
+  };
 
   // Loading screen logic
   const loadingScreen = document.getElementById("loading-screen");
@@ -3722,6 +4976,13 @@ document.addEventListener("DOMContentLoaded", function () {
     setTimeout(() => {
       loadingScreen.style.display = "none";
       gameContainer.style.display = "flex";
+
+      // Initialize smoke system now that the container is visible
+      // Wait a moment for layout to settle
+      setTimeout(() => {
+        startSmokeSystem();
+      }, 100);
+
       if (musicPlayer.songs.length > 0) {
         // Set the specific song as the first to play
         const desiredSongName =
@@ -3752,7 +5013,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         clearInterval(waitForSpawn);
         const elapsedSeconds = Math.floor(
-          (Date.now() - voyageStartTime) / 1000
+          (Date.now() - voyageStartTime) / 1000,
         );
 
         // If ship has already departed (past 7 minutes), spawn on ship
@@ -3771,13 +5032,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (lastRoom) {
               console.debug(
-                `🔄 Restoring player to last room: ${lastRoom.name}`
+                `🔄 Restoring player to last room: ${lastRoom.name}`,
               );
               enterRoom(lastRoom);
               return; // Don't do the spawn logic below
             } else {
               console.debug(
-                `⚠️ Last room "${lastRoomName}" not found, proceeding with spawn logic`
+                `⚠️ Last room "${lastRoomName}" not found, proceeding with spawn logic`,
               );
               localStorage.removeItem("lastRoom"); // Clean up invalid data
             }
@@ -3787,7 +5048,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const cabinRoom = findPlayerCabin();
           const defaultShipRoom =
             (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
-              (r) => r.id === "port_promenade_bd"
+              (r) => r.id === "port_promenade_bd",
             ) || deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd");
 
           const spawnRoom = cabinRoom || defaultShipRoom;
@@ -3799,21 +5060,21 @@ document.addEventListener("DOMContentLoaded", function () {
         } else {
           // Ship hasn't departed yet - spawn at Southampton docks
           console.debug(
-            `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - spawning at Southampton`
+            `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - spawning at Southampton`,
           );
           localStorage.removeItem("lastRoom");
 
           const initialRoom = deckRooms.southampton.find(
-            (r) => r.name === "Berth 44 Forward Docks"
+            (r) => r.name === "Berth 44 Forward Docks",
           );
           if (initialRoom) {
             enterRoom(initialRoom);
           } else {
             console.error(
-              "❌ Initial room not found, defaulting to Berth 44 Forward Docks"
+              "❌ Initial room not found, defaulting to Berth 44 Forward Docks",
             );
             const defaultRoom = deckRooms.southampton.find(
-              (r) => r.name === "Berth 44 Forward Docks"
+              (r) => r.name === "Berth 44 Forward Docks",
             );
             if (defaultRoom) enterRoom(defaultRoom);
           }
@@ -3822,6 +5083,10 @@ document.addEventListener("DOMContentLoaded", function () {
       }, 100); // Check every 100ms until server time arrives
     }, 1000);
   });
+
+  // Room transition timing
+  const ROOM_TRANSITION_DELAY_MS = 1800;
+  const ROOM_FADE_IN_CLEANUP_MS = 1000;
 
   // Updated enterRoom function with dynamic location image handling
   function enterRoom(room) {
@@ -3855,107 +5120,102 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }
 
-    setTimeout(() => {
-      if (!room) {
-        console.error("❌ Room object is undefined");
-        return;
+    if (!room) {
+      console.error("❌ Room object is undefined");
+      return;
+    }
+
+    // Clear chat display
+    document.getElementById("chat-messages").innerHTML = "";
+
+    // Set new room
+    currentRoom.name = room.location.chatRoom;
+    console.debug(`🔑 Set new room: ${currentRoom.name}`);
+    console.debug(
+      `🏨 Entered room with currentRoom.name set to: ${currentRoom.name}`,
+    );
+    console.debug(
+      `🖼️ Available room images:`,
+      roomImages[currentRoom.name]
+        ? roomImages[currentRoom.name].images.length
+        : "none",
+    );
+
+    // Initialize room chat history and join via socket
+    if (!chatHistory.rooms[currentRoom.name]) {
+      chatHistory.rooms[currentRoom.name] = [];
+    }
+    socket.emit("join-room", {
+      room: currentRoom.name,
+      character: characterData,
+    });
+
+    // Update location image using roomImages if available
+    const chatRoom = room.location.chatRoom;
+    let imageSrc;
+    // Helper function to check if room is in Southampton
+    const isSouthamptonRoom = (roomObj) => {
+      return (
+        deckRooms.southampton &&
+        deckRooms.southampton.some((r) => r.id === roomObj.id)
+      );
+    };
+
+    const bstNow = getBSTTime();
+    const bstHours = bstNow.getHours();
+    const activeInterval = imageIntervals.find(
+      (iv) => bstHours >= iv.start && bstHours <= iv.end,
+    );
+
+    if (roomImages[chatRoom]) {
+      const roomData = roomImages[chatRoom];
+
+      let targetImages = roomData.images;
+      let isMsVariant = false;
+
+      if (
+        activeInterval &&
+        activeInterval.className.startsWith("ms") &&
+        roomData.variants &&
+        roomData.variants.ms &&
+        roomData.variants.ms.length > 0
+      ) {
+        targetImages = roomData.variants.ms;
+        isMsVariant = true;
       }
 
-      // Clear chat display
-      document.getElementById("chat-messages").innerHTML = "";
-
-      // Set new room
-      currentRoom.name = room.location.chatRoom;
-      console.debug(`🔑 Set new room: ${currentRoom.name}`);
-      console.debug(
-        `🏨 Entered room with currentRoom.name set to: ${currentRoom.name}`
-      );
-      console.debug(
-        `🖼️ Available room images:`,
-        roomImages[currentRoom.name]
-          ? roomImages[currentRoom.name].images.length
-          : "none"
-      );
-
-      // Initialize room chat history and join via socket
-      if (!chatHistory.rooms[currentRoom.name]) {
-        chatHistory.rooms[currentRoom.name] = [];
+      // Sanitize index
+      if (roomData.currentIndex >= targetImages.length) {
+        roomData.currentIndex = 0;
       }
-      socket.emit("join-room", {
-        room: currentRoom.name,
-        character: characterData,
-      });
+      const imageToShow = targetImages[roomData.currentIndex];
 
-      // Update location image using roomImages if available
-      const chatRoom = room.location.chatRoom;
-      let imageSrc;
-      // Helper function to check if room is in Southampton
-      const isSouthamptonRoom = (roomObj) => {
-        return (
-          deckRooms.southampton &&
-          deckRooms.southampton.some((r) => r.id === roomObj.id)
-        );
-      };
-
-      const bstNow = getBSTTime();
-      const bstHours = bstNow.getHours();
-      const activeInterval = imageIntervals.find(
-        (iv) => bstHours >= iv.start && bstHours <= iv.end
-      );
-
-      if (roomImages[chatRoom]) {
-        const roomData = roomImages[chatRoom];
-
-        let targetImages = roomData.images;
-        let isMsVariant = false;
-
-        if (
-          activeInterval &&
-          activeInterval.className.startsWith("ms") &&
-          roomData.variants &&
-          roomData.variants.ms &&
-          roomData.variants.ms.length > 0
-        ) {
-          targetImages = roomData.variants.ms;
-          isMsVariant = true;
-        }
-
-        // Sanitize index
-        if (roomData.currentIndex >= targetImages.length) {
-          roomData.currentIndex = 0;
-        }
-        const imageToShow = targetImages[roomData.currentIndex];
-
-        // If a sunset variant exists and we are in an ms-* interval show it
-        if (isMsVariant) {
-          imageSrc = `/images/animations/locations/${encodeURIComponent(
-            "britannic (sunset)"
-          )}/${imageToShow}`;
-        } else {
-          // Regular behaviour
-          // Check if this is a Southampton location
-          if (isSouthamptonRoom(room)) {
-            imageSrc = `/images/animations/locations/southampton/${imageToShow}`;
-          } else {
-            imageSrc = `/images/animations/locations/britannic/${imageToShow}`;
-          }
-        }
+      // If a sunset variant exists and we are in an ms-* interval show it
+      if (isMsVariant) {
+        imageSrc = `/images/animations/locations/${encodeURIComponent(
+          "britannic (sunset)",
+        )}/${imageToShow}`;
       } else {
+        // Regular behaviour
         // Check if this is a Southampton location
         if (isSouthamptonRoom(room)) {
-          imageSrc = `/images/animations/locations/southampton/${room.location.image}`;
+          imageSrc = `/images/animations/locations/southampton/${imageToShow}`;
         } else {
-          // Check for matching variant for the location name itself
-          // fallback to plain Britannic path
-          imageSrc = `/images/animations/locations/britannic/${room.location.image}`;
+          imageSrc = `/images/animations/locations/britannic/${imageToShow}`;
         }
       }
-      if (imageSrc) {
-        drawLocationImage(imageSrc);
+    } else {
+      // Check if this is a Southampton location
+      if (isSouthamptonRoom(room)) {
+        imageSrc = `/images/animations/locations/southampton/${room.location.image}`;
       } else {
-        console.warn("⚠️ No image source available for room", room.name);
+        // Check for matching variant for the location name itself
+        // fallback to plain Britannic path
+        imageSrc = `/images/animations/locations/britannic/${room.location.image}`;
       }
+    }
 
+    const finalizeRoomEntry = () => {
       // Preload room variants and images (if any)
       try {
         locationImageSystem.preloadRoomImages(currentRoom.name);
@@ -4044,7 +5304,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Remove any existing Enter Britannic button
       const prevEnterBritannicBtn = document.getElementById(
-        "enter-britannic-btn"
+        "enter-britannic-btn",
       );
       if (prevEnterBritannicBtn) prevEnterBritannicBtn.remove();
 
@@ -4064,7 +5324,7 @@ document.addEventListener("DOMContentLoaded", function () {
         enterBritannicBtn.onclick = function () {
           // Find the D-Deck First Class Reception Room
           const receptionRoom = deckRooms.d_deck.find(
-            (r) => r.id === "first_class_reception_d"
+            (r) => r.id === "first_class_reception_d",
           );
           if (receptionRoom) {
             const message =
@@ -4175,7 +5435,7 @@ document.addEventListener("DOMContentLoaded", function () {
           interiorSound
             .play()
             .catch((error) =>
-              console.error("Error playing interior sound:", error)
+              console.error("Error playing interior sound:", error),
             );
         }
         exteriorSound.pause();
@@ -4185,17 +5445,27 @@ document.addEventListener("DOMContentLoaded", function () {
           exteriorSound
             .play()
             .catch((error) =>
-              console.error("Error playing exterior sound:", error)
+              console.error("Error playing exterior sound:", error),
             );
         }
       }
-    }, 500);
+    };
+
+    if (imageSrc) {
+      drawLocationImage(imageSrc);
+    } else {
+      console.warn("⚠️ No image source available for room", room.name);
+    }
+
+    setTimeout(() => {
+      finalizeRoomEntry();
+    }, ROOM_TRANSITION_DELAY_MS);
 
     // Remove fade-in class after animation completes
     setTimeout(() => {
       chatContainer.classList.remove("fade-in");
       locationDisplay.classList.remove("fade-in");
-    }, 1000);
+    }, ROOM_TRANSITION_DELAY_MS + ROOM_FADE_IN_CLEANUP_MS);
   }
 
   // When sending a message
@@ -4276,7 +5546,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Only scroll to bottom if explicitly requested (not automatic on mode switch)
     // This prevents jarring scroll behavior when switching between local/global chat
     console.debug(
-      `✅ Updated chat display with ${messagesToShow.length} messages`
+      `✅ Updated chat display with ${messagesToShow.length} messages`,
     );
   }
 
@@ -4336,7 +5606,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (data.character && data.character.forename && data.character.surname) {
         addChatMessage(data);
         console.debug(
-          `✉️ Message from ${data.character.forename}: ${data.message}`
+          `✉️ Message from ${data.character.forename}: ${data.message}`,
         );
       } else {
         console.warn("⚠️ Received chat message without character data:", data);
@@ -4364,7 +5634,7 @@ document.addEventListener("DOMContentLoaded", function () {
   socket.on("room-message-history", (data) => {
     const { room, messages } = data;
     console.debug(
-      `📚 Received ${messages.length} messages from room history for: ${room}`
+      `📚 Received ${messages.length} messages from room history for: ${room}`,
     );
 
     // Add each historical message to chat
@@ -4404,6 +5674,10 @@ document.addEventListener("DOMContentLoaded", function () {
       chatHistory.rooms[data.room] = [];
     }
     chatHistory.rooms[data.room].push(data);
+    // Cap per-room history to prevent unbounded memory growth
+    if (chatHistory.rooms[data.room].length > 200) {
+      chatHistory.rooms[data.room].shift();
+    }
 
     // Update display if needed
     if (isGlobalChat || data.room === currentRoom.name) {
@@ -4447,8 +5721,8 @@ document.addEventListener("DOMContentLoaded", function () {
           messageDiv.appendChild(roomSpan);
           messageDiv.appendChild(
             document.createTextNode(
-              ` ${fullName}${isActionMessage ? " " : ": "}${data.message}`
-            )
+              ` ${fullName}${isActionMessage ? " " : ": "}${data.message}`,
+            ),
           );
         } else {
           // Local chat mode - just show name and message
@@ -4560,7 +5834,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (result.success) {
           alert(
-            "✅ Report submitted successfully! Thank you for helping keep the game safe."
+            "✅ Report submitted successfully! Thank you for helping keep the game safe.",
           );
           reportModal.style.display = "none";
           reportForm.reset();
@@ -4571,7 +5845,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       } catch (error) {
         alert(
-          "❌ Error submitting report. Please check your connection and try again."
+          "❌ Error submitting report. Please check your connection and try again.",
         );
         console.error("❌ Report submission error:", error);
       }
@@ -4631,7 +5905,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!titleEl) {
         titleEl = document.createElementNS(
           "http://www.w3.org/2000/svg",
-          "title"
+          "title",
         );
         el.appendChild(titleEl);
       }
@@ -4644,7 +5918,7 @@ document.addEventListener("DOMContentLoaded", function () {
     return (
       deckRooms.southampton &&
       deckRooms.southampton.some(
-        (r) => r.location.chatRoom === currentRoom.name
+        (r) => r.location.chatRoom === currentRoom.name,
       )
     );
   }
@@ -4662,7 +5936,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Remove existing Southampton category buttons if any
     const existingSouthamptonButtons = document.querySelector(
-      ".southampton-category-buttons"
+      ".southampton-category-buttons",
     );
     if (existingSouthamptonButtons) {
       existingSouthamptonButtons.remove();
@@ -4680,7 +5954,7 @@ document.addEventListener("DOMContentLoaded", function () {
     `;
     deckButtonsContainer.parentNode.insertBefore(
       southamptonButtonsDiv,
-      deckButtonsContainer.nextSibling
+      deckButtonsContainer.nextSibling,
     );
 
     // Add event listeners for Southampton category buttons
@@ -4738,17 +6012,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for the Southampton room
       const room = deckRooms.southampton.find(
-        (r) => r.id === "berth_44_walkaway"
+        (r) => r.id === "berth_44_walkaway",
       );
       if (room) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="berth_44_walkaway"]'
+          '.room-marker[data-room-id="berth_44_walkaway"]',
         );
         if (link) {
           link.setAttribute("data-room-name", room.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
@@ -4757,7 +6031,7 @@ document.addEventListener("DOMContentLoaded", function () {
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Southampton room area clicked: berth_44_walkaway`
+              `🔍 Southampton room area clicked: berth_44_walkaway`,
             );
             enterRoom(room);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -4837,30 +6111,30 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for Dockside Cafe
       const docksideCafe = deckRooms.southampton.find(
-        (r) => r.id === "dockside_cafe"
+        (r) => r.id === "dockside_cafe",
       );
       if (docksideCafe) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="dockside_cafe"]'
+          '.room-marker[data-room-id="dockside_cafe"]',
         );
         if (link) {
           link.setAttribute("data-room-name", docksideCafe.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             docksideCafe.location.chatRoom,
-            docksideCafe.name
+            docksideCafe.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 Ground room area clicked: dockside_cafe`
+              `🔍 Berth 44 Ground room area clicked: dockside_cafe`,
             );
             enterRoom(docksideCafe);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -4887,30 +6161,30 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for Berth 44 Forward Docks
       const berth44Forward = deckRooms.southampton.find(
-        (r) => r.id === "berth_44_forward"
+        (r) => r.id === "berth_44_forward",
       );
       if (berth44Forward) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="berth_44_forward"]'
+          '.room-marker[data-room-id="berth_44_forward"]',
         );
         if (link) {
           link.setAttribute("data-room-name", berth44Forward.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             berth44Forward.location.chatRoom,
-            berth44Forward.name
+            berth44Forward.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 Ground room area clicked: berth_44_forward`
+              `🔍 Berth 44 Ground room area clicked: berth_44_forward`,
             );
             enterRoom(berth44Forward);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -4937,30 +6211,30 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for First Class Gangway
       const firstClassGangway = deckRooms.southampton.find(
-        (r) => r.id === "first_class_gangway"
+        (r) => r.id === "first_class_gangway",
       );
       if (firstClassGangway) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="first_class_gangway"]'
+          '.room-marker[data-room-id="first_class_gangway"]',
         );
         if (link) {
           link.setAttribute("data-room-name", firstClassGangway.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             firstClassGangway.location.chatRoom,
-            firstClassGangway.name
+            firstClassGangway.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 Ground room area clicked: first_class_gangway`
+              `🔍 Berth 44 Ground room area clicked: first_class_gangway`,
             );
             enterRoom(firstClassGangway);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -4987,24 +6261,24 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for Crew Gangway
       const crewGangway = deckRooms.southampton.find(
-        (r) => r.id === "crew_gangway"
+        (r) => r.id === "crew_gangway",
       );
       if (crewGangway) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="crew_gangway"]'
+          '.room-marker[data-room-id="crew_gangway"]',
         );
         if (link) {
           link.setAttribute("data-room-name", crewGangway.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             crewGangway.location.chatRoom,
-            crewGangway.name
+            crewGangway.name,
           );
 
           link.addEventListener("click", (e) => {
@@ -5035,30 +6309,30 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for 3rd Class Gangway
       const thirdClassGangway = deckRooms.southampton.find(
-        (r) => r.id === "third_class_gangway"
+        (r) => r.id === "third_class_gangway",
       );
       if (thirdClassGangway) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="third_class_gangway"]'
+          '.room-marker[data-room-id="third_class_gangway"]',
         );
         if (link) {
           link.setAttribute("data-room-name", thirdClassGangway.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             thirdClassGangway.location.chatRoom,
-            thirdClassGangway.name
+            thirdClassGangway.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 Ground room area clicked: third_class_gangway`
+              `🔍 Berth 44 Ground room area clicked: third_class_gangway`,
             );
             enterRoom(thirdClassGangway);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -5085,24 +6359,24 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for Berth 44 Aft Docks
       const berth44Aft = deckRooms.southampton.find(
-        (r) => r.id === "berth_44_aft"
+        (r) => r.id === "berth_44_aft",
       );
       if (berth44Aft) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="berth_44_aft"]'
+          '.room-marker[data-room-id="berth_44_aft"]',
         );
         if (link) {
           link.setAttribute("data-room-name", berth44Aft.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             berth44Aft.location.chatRoom,
-            berth44Aft.name
+            berth44Aft.name,
           );
 
           link.addEventListener("click", (e) => {
@@ -5162,11 +6436,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for 1st & 2nd Class Covered Walkway
       const coveredWalkway = deckRooms.southampton.find(
-        (r) => r.id === "covered_walkway"
+        (r) => r.id === "covered_walkway",
       );
       if (coveredWalkway) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="covered_walkway"]'
+          '.room-marker[data-room-id="covered_walkway"]',
         );
         if (link) {
           link.setAttribute("data-room-name", coveredWalkway.name);
@@ -5174,13 +6448,13 @@ document.addEventListener("DOMContentLoaded", function () {
           setMarkerCountAttr(
             link,
             coveredWalkway.location.chatRoom,
-            coveredWalkway.name
+            coveredWalkway.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 2nd Floor room area clicked: covered_walkway`
+              `🔍 Berth 44 2nd Floor room area clicked: covered_walkway`,
             );
             enterRoom(coveredWalkway);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -5207,11 +6481,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for 1st Class Boarding Tower
       const boardingTower = deckRooms.southampton.find(
-        (r) => r.id === "boarding_tower"
+        (r) => r.id === "boarding_tower",
       );
       if (boardingTower) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="boarding_tower"]'
+          '.room-marker[data-room-id="boarding_tower"]',
         );
         if (link) {
           link.setAttribute("data-room-name", boardingTower.name);
@@ -5219,13 +6493,13 @@ document.addEventListener("DOMContentLoaded", function () {
           setMarkerCountAttr(
             link,
             boardingTower.location.chatRoom,
-            boardingTower.name
+            boardingTower.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 2nd Floor room area clicked: boarding_tower`
+              `🔍 Berth 44 2nd Floor room area clicked: boarding_tower`,
             );
             enterRoom(boardingTower);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -5258,8 +6532,8 @@ document.addEventListener("DOMContentLoaded", function () {
       : [];
     emitRoomCountBatch(
       Array.from(southamptonMarkers || []).map((el) =>
-        el.getAttribute("data-room-id")
-      )
+        el.getAttribute("data-room-id"),
+      ),
     );
   } // Function to show Britannic deckplans
   function showBritannicDeckplans() {
@@ -5275,7 +6549,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Remove Southampton category buttons if they exist
     const existingSouthamptonButtons = document.querySelector(
-      ".southampton-category-buttons"
+      ".southampton-category-buttons",
     );
     if (existingSouthamptonButtons) {
       existingSouthamptonButtons.remove();
@@ -5291,7 +6565,8 @@ document.addEventListener("DOMContentLoaded", function () {
     for (const [deckName, rooms] of Object.entries(deckRooms)) {
       if (
         rooms.some(
-          (room) => room.location && room.location.chatRoom === currentRoom.name
+          (room) =>
+            room.location && room.location.chatRoom === currentRoom.name,
         )
       ) {
         currentDeck = deckName;
@@ -5583,7 +6858,7 @@ document.addEventListener("DOMContentLoaded", function () {
             link.setAttribute("data-room-name", room.name);
             {
               const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id")
+                link.getAttribute("data-room-id"),
               );
               link.setAttribute("data-user-count", String(cached ?? 0));
             }
@@ -5647,7 +6922,7 @@ document.addEventListener("DOMContentLoaded", function () {
             link.setAttribute("data-room-name", room.name);
             {
               const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id")
+                link.getAttribute("data-room-id"),
               );
               link.setAttribute("data-user-count", String(cached ?? 0));
             }
@@ -5794,7 +7069,7 @@ document.addEventListener("DOMContentLoaded", function () {
             link.setAttribute("data-room-name", room.name);
             {
               const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id")
+                link.getAttribute("data-room-id"),
               );
               link.setAttribute("data-user-count", String(cached ?? 0));
             }
@@ -6033,7 +7308,7 @@ document.addEventListener("DOMContentLoaded", function () {
             link.setAttribute("data-room-name", room.name);
             {
               const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id")
+                link.getAttribute("data-room-id"),
               );
               link.setAttribute("data-user-count", String(cached ?? 0));
             }
@@ -6077,7 +7352,7 @@ document.addEventListener("DOMContentLoaded", function () {
             console.debug(`ℹ️ Room ${room.name} is SVG, skipping marker`);
           } else if (room.x !== undefined && room.y !== undefined) {
             console.debug(
-              `📍 Creating marker for ${room.name} at ${room.x}%, ${room.y}%`
+              `📍 Creating marker for ${room.name} at ${room.x}%, ${room.y}%`,
             );
             const marker = document.createElement("div");
             marker.className = `room-marker ${room.type} ${room.id}`;
@@ -6087,7 +7362,7 @@ document.addEventListener("DOMContentLoaded", function () {
             marker.setAttribute("data-room-name", room.name);
             {
               const cached = roomCountsCache.get(
-                marker.getAttribute("data-room-id")
+                marker.getAttribute("data-room-id"),
               );
               marker.setAttribute("data-user-count", String(cached ?? 0));
             }
@@ -6120,7 +7395,7 @@ document.addEventListener("DOMContentLoaded", function () {
             roomsToRequest.add(room.location.chatRoom);
           } else {
             console.warn(
-              `🚫 Skipped adding marker for ${room.name} (no coordinates)`
+              `🚫 Skipped adding marker for ${room.name} (no coordinates)`,
             );
           }
         });
@@ -6200,12 +7475,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
       ctx.drawImage(renderImage, 0, 0, width, height);
       currentLocationImageSrc = imagePath;
+      // Release reference to help GC
+      renderImage.onload = null;
+      renderImage.onerror = null;
       if (typeof onLoad === "function") {
         onLoad({ imagePath, width, height });
       }
     };
     renderImage.onerror = (err) => {
       console.error("❌ Failed to draw location image", imagePath, err);
+      renderImage.onload = null;
+      renderImage.onerror = null;
       if (typeof onError === "function") {
         onError(err);
       }
@@ -6222,7 +7502,7 @@ document.addEventListener("DOMContentLoaded", function () {
       console.warn("Could not cache room count", roomId, e);
     }
     const markers = document.querySelectorAll(
-      `.room-marker[data-room-id="${roomId}"]`
+      `.room-marker[data-room-id="${roomId}"]`,
     );
     markers.forEach((marker) => {
       marker.setAttribute("data-user-count", count);
@@ -6256,7 +7536,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const updateMessagesForUser = (userIdentifier, color) => {
     if (!userIdentifier || !color) return;
     const userMessages = document.querySelectorAll(
-      `.chat-message[data-user-id="${userIdentifier}"]`
+      `.chat-message[data-user-id="${userIdentifier}"]`,
     );
     userMessages.forEach((msg) => {
       if (!msg.classList.contains("system")) {
@@ -6362,7 +7642,7 @@ document.addEventListener("DOMContentLoaded", function () {
     refreshBtn.addEventListener("click", () => {
       // Log the action for debugging
       console.debug(
-        `🔄 Refresh button clicked, currentRoom.name: ${currentRoom.name}`
+        `🔄 Refresh button clicked, currentRoom.name: ${currentRoom.name}`,
       );
 
       // Check if there's a current room and images available
@@ -6390,7 +7670,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!roomData) return console.warn(`No roomImages entry for ${roomName}`);
       const images = roomData.images || [];
       console.debug(
-        `🔎 testCycleRoomImages: testing ${images.length} images for ${roomName}`
+        `🔎 testCycleRoomImages: testing ${images.length} images for ${roomName}`,
       );
 
       for (let i = 0; i < images.length; i++) {
@@ -6417,7 +7697,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       console.debug(
         "✅ testCycleRoomImages: Completed testing images for",
-        roomName
+        roomName,
       );
     } catch (err) {
       console.error("❌ testCycleRoomImages error:", err);
@@ -6431,7 +7711,7 @@ document.addEventListener("DOMContentLoaded", function () {
       return console.warn(`No roomImages entry for ${roomName}`);
     console.debug(
       `📋 Images for ${roomName}:`,
-      roomImages[roomName].images || []
+      roomImages[roomName].images || [],
     );
     if (roomImages[roomName].variants)
       console.debug(`📋 Variants:`, roomImages[roomName].variants);
@@ -6446,9 +7726,17 @@ document.addEventListener("DOMContentLoaded", function () {
       const imageSet = roomImages[roomName].images;
       console.debug(`🖼️ Preloading ${imageSet.length} images for ${roomName}`);
 
-      if (!this.preloadedImages[roomName]) {
-        this.preloadedImages[roomName] = [];
+      // Skip if already preloaded for this room
+      if (this.preloadedImages[roomName]) return;
+
+      // Evict oldest rooms if cache exceeds 10 rooms to bound memory
+      const cachedRooms = Object.keys(this.preloadedImages);
+      if (cachedRooms.length >= 10) {
+        const oldest = cachedRooms[0];
+        delete this.preloadedImages[oldest];
       }
+
+      this.preloadedImages[roomName] = [];
 
       imageSet.forEach((imageName) => {
         const img = new Image();
@@ -6469,7 +7757,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const variants = roomImages[roomName].variants || {};
       console.debug(
         `🖼️ Preloading variant folders for ${roomName}:`,
-        Object.keys(variants)
+        Object.keys(variants),
       );
       Object.keys(variants).forEach((key) => {
         // Map variant key to folder name if necessary
@@ -6477,16 +7765,16 @@ document.addEventListener("DOMContentLoaded", function () {
           key === "ms"
             ? "britannic (sunset)"
             : key === "night"
-            ? "britannic (night)"
-            : "britannic";
+              ? "britannic (night)"
+              : "britannic";
         variants[key].forEach((vImage) => {
           const img = new Image();
           const vpath = `/images/animations/locations/${encodeURIComponent(
-            variantFolder
+            variantFolder,
           )}/${vImage}`;
           const vpathPlain = `/images/animations/locations/${variantFolder}/${vImage}`;
           console.debug(
-            `🖼️ Preloading variant path: ${vpath} (plain: ${vpathPlain})`
+            `🖼️ Preloading variant path: ${vpath} (plain: ${vpathPlain})`,
           );
           img.src = vpath; // prefer encoded
           // Also push a plain variant in case server expects non-encoded path
@@ -6508,7 +7796,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const currentBST = getBSTTime();
       const activeInterval = imageIntervals.find(
         (iv) =>
-          currentBST.getHours() >= iv.start && currentBST.getHours() <= iv.end
+          currentBST.getHours() >= iv.start && currentBST.getHours() <= iv.end,
       );
 
       let targetImages = roomData.images;
@@ -6533,7 +7821,7 @@ document.addEventListener("DOMContentLoaded", function () {
       console.debug(
         `🔄 Cycling room image to: ${newImage} (${roomData.currentIndex + 1}/${
           targetImages.length
-        })`
+        })`,
       );
 
       // Set new image source right away
@@ -6553,7 +7841,7 @@ document.addEventListener("DOMContentLoaded", function () {
           if (msTried >= candidateFolders.length) {
             console.warn(
               `⚠️ All MS variants failed for ${roomName}, leaving default`,
-              candidateFolders
+              candidateFolders,
             );
             // Revert index on error
             roomData.currentIndex = previousIndex;
@@ -6755,13 +8043,13 @@ document.addEventListener("DOMContentLoaded", function () {
       });
 
       const isFlush = this.hand.every(
-        (card) => card.suit === this.hand[0].suit
+        (card) => card.suit === this.hand[0].suit,
       );
 
       let isStraight = false;
       if (sortedHand.length === 5) {
         const rankIndices = sortedHand.map((card) =>
-          this.ranks.indexOf(card.rank)
+          this.ranks.indexOf(card.rank),
         );
         isStraight = rankIndices.every((val, i, arr) => {
           return i === 0 || val === arr[i - 1] + 1;
@@ -6815,7 +8103,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (
         Object.keys(rankCounts).find(
           (rank) =>
-            rankCounts[rank] === 2 && ["J", "Q", "K", "A"].includes(rank)
+            rankCounts[rank] === 2 && ["J", "Q", "K", "A"].includes(rank),
         )
       ) {
         return "Jacks or Better";
@@ -6856,7 +8144,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!this.isDraw) return; // Can only hold during draw phase
       this.held[index] = !this.held[index];
       const holdDisplay = document.querySelector(
-        `.card[data-index="${index}"] .hold`
+        `.card[data-index="${index}"] .hold`,
       );
       holdDisplay.style.display = this.held[index] ? "block" : "none";
     },
@@ -7066,7 +8354,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const categoryBtns = popup.querySelectorAll(".category-btn");
     const gridsContainer = popup.querySelector(".items-grid");
     const allGrids = popup.querySelectorAll(
-      ".food-grid, .drinks-grid, .alcohol-grid"
+      ".food-grid, .drinks-grid, .alcohol-grid",
     );
 
     categoryBtns.forEach((btn) => {
@@ -7083,7 +8371,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Show selected category grid
         const targetGrid = gridsContainer?.querySelector(
-          `[data-category="${category}"]`
+          `[data-category="${category}"]`,
         );
         if (targetGrid) {
           targetGrid.classList.add("active");
@@ -7129,7 +8417,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function eatSpecific(itemName, hungerIncrease) {
     statusBars.hunger.value = Math.min(
       100,
-      statusBars.hunger.value + hungerIncrease
+      statusBars.hunger.value + hungerIncrease,
     );
 
     console.debug(`🍽️ Ate ${itemName}, hunger increased by ${hungerIncrease}`);
@@ -7149,11 +8437,11 @@ document.addEventListener("DOMContentLoaded", function () {
   function drinkSpecific(itemName, thirstDecrease) {
     statusBars.thirst.value = Math.min(
       100,
-      statusBars.thirst.value + thirstDecrease
+      statusBars.thirst.value + thirstDecrease,
     );
 
     console.debug(
-      `🥤 Drank ${itemName}, thirst decreased by ${thirstDecrease}`
+      `🥤 Drank ${itemName}, thirst decreased by ${thirstDecrease}`,
     );
 
     // Update the thirst bar immediately
@@ -7172,11 +8460,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const hungerIncrease = 30 + Math.random() * 20; // Restore 30-50 hunger
     statusBars.hunger.value = Math.min(
       100,
-      statusBars.hunger.value + hungerIncrease
+      statusBars.hunger.value + hungerIncrease,
     );
 
     console.debug(
-      `🍽️ Ate food, hunger increased by ${hungerIncrease.toFixed(1)}`
+      `🍽️ Ate food, hunger increased by ${hungerIncrease.toFixed(1)}`,
     );
 
     // Update the hunger bar immediately
@@ -7193,11 +8481,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const thirstDecrease = 35 + Math.random() * 25; // Restore 35-60 thirst
     statusBars.thirst.value = Math.min(
       100,
-      statusBars.thirst.value + thirstDecrease
+      statusBars.thirst.value + thirstDecrease,
     );
 
     console.debug(
-      `🥤 Drank beverage, thirst decreased by ${thirstDecrease.toFixed(1)}`
+      `🥤 Drank beverage, thirst decreased by ${thirstDecrease.toFixed(1)}`,
     );
 
     // Update the thirst bar immediately
@@ -7227,7 +8515,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function requestRoomPlayers() {
     if (!socket || !currentRoom.name) {
       console.error(
-        "❌ Cannot request room players: socket or room not available"
+        "❌ Cannot request room players: socket or room not available",
       );
       return;
     }
@@ -7268,13 +8556,13 @@ document.addEventListener("DOMContentLoaded", function () {
       playerDiv.innerHTML = DOMPurify.sanitize(`
         <div class="player-avatar">
           <img src="${player.avatar || "/images/default-avatar.png"}" alt="${
-        player.name
-      }" />
+            player.name
+          }" />
         </div>
         <div class="player-info">
           <div class="player-name">${player.name}${
-        isCurrentPlayer ? " (You)" : ""
-      }</div>
+            isCurrentPlayer ? " (You)" : ""
+          }</div>
           <div class="player-class">Passenger</div>
           <div class="player-cabin">${
             player.cabin_number || player.cabin || "No cabin assigned"
@@ -7308,7 +8596,7 @@ document.addEventListener("DOMContentLoaded", function () {
         roomPlayersPopup.classList.add("open");
         console.debug("👥 Room players popup opened");
       },
-      true
+      true,
     ); // Use capture phase to run before games panel handler
   }
 
@@ -7361,6 +8649,96 @@ document.addEventListener("DOMContentLoaded", function () {
   let currentSpeed = 0; // pixels per frame (60fps)
   let targetSpeed = 7 / 60; // 7 pixels per second = 7/60 pixels per frame
   let departurePosition = 0;
+  const LEAVING_PORT_OFFSET_MS = 1500; // start 1.5s after whistle begins
+  let leavingPortCueActive = false;
+
+  function playLeavingPortCue({ offsetMs = 0 } = {}) {
+    if (leavingPortCueActive) return;
+    leavingPortCueActive = true;
+
+    const primarySrc = "/sounds/music (not in game)/Leaving Port.mp3";
+    const fallbackSrc =
+      "/sounds/music/[TITANIC] - Leaving Port (Complete Score _ Film Version) - RadioKidCharlemagne (youtube).mp3";
+
+    const leavingPortMusic = new Audio(primarySrc);
+    leavingPortMusic.volume = 0.5;
+
+    const handleLeavingPortEnd = () => {
+      leavingPortCueActive = false;
+      if (typeof musicPlayer?.resumeFromOverlay === "function") {
+        musicPlayer.resumeFromOverlay(2000);
+      }
+    };
+
+    leavingPortMusic.addEventListener("ended", handleLeavingPortEnd, {
+      once: true,
+    });
+
+    const startWithOffset = () => {
+      if (offsetMs > 0) {
+        const offsetSeconds = offsetMs / 1000;
+        const onMetadata = () => {
+          const duration = Number.isFinite(leavingPortMusic.duration)
+            ? leavingPortMusic.duration
+            : null;
+          if (duration && offsetSeconds >= duration - 0.1) {
+            handleLeavingPortEnd();
+            return;
+          }
+          if (typeof musicPlayer?.pauseForOverlay === "function") {
+            musicPlayer.pauseForOverlay(800);
+          }
+          try {
+            leavingPortMusic.currentTime = duration
+              ? Math.max(0, Math.min(offsetSeconds, duration - 0.1))
+              : Math.max(0, offsetSeconds);
+          } catch (err) {
+            console.warn("⚠️ Unable to seek Leaving Port audio:", err);
+          }
+          leavingPortMusic
+            .play()
+            .then(() =>
+              console.debug("🎵 Playing Leaving Port music (synced)..."),
+            )
+            .catch((error) => {
+              console.warn("⚠️ Error playing Leaving Port (synced):", error);
+              handleLeavingPortEnd();
+            });
+        };
+        leavingPortMusic.addEventListener("loadedmetadata", onMetadata, {
+          once: true,
+        });
+        leavingPortMusic.load();
+        return;
+      }
+
+      if (typeof musicPlayer?.pauseForOverlay === "function") {
+        musicPlayer.pauseForOverlay(1500);
+      }
+      leavingPortMusic
+        .play()
+        .then(() => console.debug("🎵 Playing Leaving Port music..."))
+        .catch((e) => {
+          console.warn("⚠️ Error playing primary Leaving Port:", e);
+          tryFallback();
+        });
+    };
+
+    let usedFallback = false;
+    const tryFallback = () => {
+      if (usedFallback) {
+        handleLeavingPortEnd();
+        return;
+      }
+      usedFallback = true;
+      console.warn("⚠️ Primary Leaving Port track failed, trying fallback.");
+      leavingPortMusic.src = fallbackSrc;
+      startWithOffset();
+    };
+
+    leavingPortMusic.addEventListener("error", tryFallback, { once: true });
+    startWithOffset();
+  }
 
   function startDepartureSequence() {
     if (!DEPARTURE_SEQUENCE_ENABLED) {
@@ -7379,7 +8757,7 @@ document.addEventListener("DOMContentLoaded", function () {
     } else if (window.currentRoom && deckRooms && deckRooms.southampton) {
       // currentRoom.name stores chatRoom; compare to Southampton rooms' chatRoom
       shouldTeleport = deckRooms.southampton.some(
-        (r) => r.location && r.location.chatRoom === currentRoom.name
+        (r) => r.location && r.location.chatRoom === currentRoom.name,
       );
     }
     console.debug("🧭 Teleport check:", { shouldTeleport, currentRoom });
@@ -7387,7 +8765,7 @@ document.addEventListener("DOMContentLoaded", function () {
       // Prefer using enterRoom with a real room object
       const target =
         (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
-          (r) => r.id === "port_promenade_bd"
+          (r) => r.id === "port_promenade_bd",
         ) ||
         deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd") ||
         null;
@@ -7415,28 +8793,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Start "Leaving Port" music midway through whistle (assuming whistle is ~3 seconds)
     setTimeout(() => {
-      const primarySrc = "/sounds/music (not in game)/Leaving Port.mp3";
-      const fallbackSrc =
-        "/sounds/music/[TITANIC] - Leaving Port (Complete Score _ Film Version) - RadioKidCharlemagne (youtube).mp3";
-
-      const leavingPortMusic = new Audio(primarySrc);
-      leavingPortMusic.volume = 0.5;
-      const tryFallback = () => {
-        console.warn("⚠️ Primary Leaving Port track failed, trying fallback.");
-        leavingPortMusic.src = fallbackSrc;
-        leavingPortMusic.play().then(() => {
-          console.debug("🎵 Playing Leaving Port music (fallback)...");
-        });
-      };
-      leavingPortMusic.addEventListener("error", tryFallback, { once: true });
-      leavingPortMusic
-        .play()
-        .then(() => console.debug("🎵 Playing Leaving Port music..."))
-        .catch((e) => {
-          console.warn("⚠️ Error playing primary Leaving Port:", e);
-          tryFallback();
-        });
-    }, 1500); // 1.5 seconds into whistle
+      playLeavingPortCue({ offsetMs: 0 });
+    }, LEAVING_PORT_OFFSET_MS);
 
     // Start ship movement animation
     animateDeparture();
@@ -7478,12 +8836,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const maybeHideSouthamptonVisuals = (
       elapsedVoyageMs,
-      reason = "timeline-sync"
+      reason = "timeline-sync",
     ) => {
       if (southamptonElementsHidden) return;
       const elapsedSinceDepartureMs = Math.max(
         0,
-        elapsedVoyageMs - DEPARTURE_DELAY_MS
+        elapsedVoyageMs - DEPARTURE_DELAY_MS,
       );
       if (elapsedSinceDepartureMs >= SOUTHAMPTON_WATER_END) {
         hideSouthamptonVisuals(reason);
@@ -7505,12 +8863,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const maybeHideCoastalTerrain = (
       elapsedVoyageMs,
-      reason = "timeline-sync"
+      reason = "timeline-sync",
     ) => {
       if (coastalTerrainHidden) return;
       const elapsedSinceDepartureMs = Math.max(
         0,
-        elapsedVoyageMs - DEPARTURE_DELAY_MS
+        elapsedVoyageMs - DEPARTURE_DELAY_MS,
       );
       if (elapsedSinceDepartureMs >= NEEDLES_COMPLETE) {
         hideCoastalTerrain(reason);
@@ -7572,13 +8930,14 @@ document.addEventListener("DOMContentLoaded", function () {
       // Get the current scale factor to normalize width
       const root = document.documentElement;
       const scale =
-        parseFloat(getComputedStyle(root).getPropertyValue("--scale")) || 1;
+        parseFloat(getComputedStyle(root).getPropertyValue("--scene-scale")) ||
+        1;
 
       const rectWidth = cherbourg.getBoundingClientRect().width;
       if (rectWidth > 0) return rectWidth / scale; // Return unscaled width
 
       const computedWidth = parseFloat(
-        window.getComputedStyle(cherbourg).width || ""
+        window.getComputedStyle(cherbourg).width || "",
       );
       if (!Number.isNaN(computedWidth) && computedWidth > 0) {
         return computedWidth; // computed style is already unscaled (CSS pixels)
@@ -7651,7 +9010,7 @@ document.addEventListener("DOMContentLoaded", function () {
           if (currentSpeed > CHERBOURG_SHOW_KNOTS) {
             cherbourgPosition = Math.max(
               cherbourgPosition,
-              cherbourgOffscreenRight()
+              cherbourgOffscreenRight(),
             );
           } else {
             // Slow progress-based placement for late joiners when speed already below threshold
@@ -7684,10 +9043,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
       console.debug(
         `🎬 Starting animation from position: ${departurePosition.toFixed(
-          1
+          1,
         )}px (${Math.floor(
-          elapsedSinceDeparture / 60
-        )}min since departure, speed=${currentSpeed.toFixed(1)}kts)`
+          elapsedSinceDeparture / 60,
+        )}min since departure, speed=${currentSpeed.toFixed(1)}kts)`,
       );
     }
     // startTime already defined above - using server voyage time
@@ -7701,18 +9060,18 @@ document.addEventListener("DOMContentLoaded", function () {
     const yachtElements = [yacht1, yacht2, yacht3];
     const activeYachts = []; // Track yachts currently crossing the screen
 
-    const spawnYachtRandomly = () => {
+    const spawnYachtRandomly = (selectionRandom) => {
       const elapsed = Date.now() - startTime;
       // Spawn yachts after Southampton departure and before Isle of Wight
       if (elapsed > SOUTHAMPTON_WATER_END && elapsed < NEEDLES_PASS) {
-        // Pick a random yacht that isn't already active
+        // Pick a yacht that isn't already active
         const availableYachts = yachtElements.filter(
-          (yacht) => yacht && !activeYachts.find((a) => a.element === yacht)
+          (yacht) => yacht && !activeYachts.find((a) => a.element === yacht),
         );
 
         if (availableYachts.length > 0) {
           const randomYacht =
-            availableYachts[Math.floor(Math.random() * availableYachts.length)];
+            availableYachts[Math.floor((typeof selectionRandom === "number" ? selectionRandom : 0.5) * availableYachts.length)];
           const viewportWidth = window.innerWidth;
 
           // Add yacht to active list with initial position (off-screen right)
@@ -7742,7 +9101,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // Image says it's complete but reports zero natural size - that is unusual
             console.warn(
               "⚠️ Yacht image reports complete but natural size 0 — forcing a re-layout check",
-              innerImg.src
+              innerImg.src,
             );
           }
           if (innerImg && !innerImg.complete) {
@@ -7756,10 +9115,10 @@ document.addEventListener("DOMContentLoaded", function () {
                     naturalWidth: innerImg.naturalWidth,
                     naturalHeight: innerImg.naturalHeight,
                     rectAfterLoad: innerImg.getBoundingClientRect(),
-                  }
+                  },
                 );
               },
-              { once: true }
+              { once: true },
             );
           }
           console.debug("⛵ A yacht appears in the distance...", {
@@ -7789,7 +9148,7 @@ document.addEventListener("DOMContentLoaded", function () {
               {
                 forcedWidth: innerImg.naturalWidth,
                 forcedHeight: innerImg.naturalHeight,
-              }
+              },
             );
           }
         }
@@ -7800,7 +9159,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Useful for testing without waiting for the timeline.
     window.spawnYachtNow = () => {
       try {
-        spawnYachtRandomly();
+        spawnYachtRandomly(0.5);
         console.debug("🔧 spawnYachtNow executed");
       } catch (e) {
         console.error("🔧 spawnYachtNow failed", e);
@@ -7850,8 +9209,8 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       const yachts = Array.from(
         document.querySelectorAll(
-          ".yacht-1-container, .yacht-2-container, .yacht-3-container"
-        )
+          ".yacht-1-container, .yacht-2-container, .yacht-3-container",
+        ),
       );
       if (yachts.length === 0) {
         console.warn("alignYachtsToShip: No yacht containers found");
@@ -7893,16 +9252,16 @@ document.addEventListener("DOMContentLoaded", function () {
     window.incYachtOffset = (delta = 10) => {
       const root = document.documentElement;
       let cur = parseFloat(
-        getComputedStyle(root).getPropertyValue("--yacht-offset") || "0"
+        getComputedStyle(root).getPropertyValue("--yacht-offset") || "0",
       );
       if (Number.isNaN(cur)) {
         // If we have a calc or non-numeric custom property, derive the current
         // offset from baseline - water-bottom so we can adjust numerically.
         const baseline = parseFloat(
-          getComputedStyle(root).getPropertyValue("--yacht-baseline") || "0"
+          getComputedStyle(root).getPropertyValue("--yacht-baseline") || "0",
         );
         const water = parseFloat(
-          getComputedStyle(root).getPropertyValue("--water-bottom") || "0"
+          getComputedStyle(root).getPropertyValue("--water-bottom") || "0",
         );
         cur = baseline - water;
       }
@@ -7949,7 +9308,7 @@ document.addEventListener("DOMContentLoaded", function () {
       // Setting the CSS variable for scale already in use by the stylesheet
       document.documentElement.style.setProperty(
         `--yacht-scale-${idx}`,
-        String(scale)
+        String(scale),
       );
       console.debug(`🚤 Yacht ${idx} scale set to`, scale);
     };
@@ -7957,7 +9316,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.resetYachtOffsets = () => {
       const root = document.documentElement;
       [1, 2, 3].forEach((i) =>
-        root.style.removeProperty(`--yacht-offset-${i}`)
+        root.style.removeProperty(`--yacht-offset-${i}`),
       );
       console.debug("↩️ Yacht offsets reset to default");
     };
@@ -7978,7 +9337,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.setCherbourgBrightness = (
       brightness = 1.35,
       saturation = 1.2,
-      contrast = 1.05
+      contrast = 1.05,
     ) => {
       try {
         const root = document.documentElement;
@@ -7986,7 +9345,7 @@ document.addEventListener("DOMContentLoaded", function () {
         root.style.setProperty("--cherbourg-saturation", String(saturation));
         root.style.setProperty("--cherbourg-contrast", String(contrast));
         console.debug(
-          `🌙 Cherbourg sprite tuned: brightness=${brightness} saturation=${saturation} contrast=${contrast}`
+          `🌙 Cherbourg sprite tuned: brightness=${brightness} saturation=${saturation} contrast=${contrast}`,
         );
       } catch (e) {
         console.error("Failed to set cherbourg brightness:", e);
@@ -8014,7 +9373,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const el = document.querySelector(".cherbourg-night");
         if (el) el.style.left = "";
         console.debug(
-          `📍 Cherbourg position set: left=${left}, bottom=${bottom}`
+          `📍 Cherbourg position set: left=${left}, bottom=${bottom}`,
         );
       } catch (e) {
         console.error("Failed to set cherbourg position:", e);
@@ -8075,7 +9434,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const root = document.documentElement;
       return [1, 2, 3].map((i) => {
         const v = getComputedStyle(root).getPropertyValue(
-          `--yacht-offset-${i}`
+          `--yacht-offset-${i}`,
         );
         let px = parseFloat(v);
         if (!Number.isFinite(px)) {
@@ -8140,7 +9499,7 @@ document.addEventListener("DOMContentLoaded", function () {
           } else {
             // read the CSS var as fallback
             const cssScale = getComputedStyle(root).getPropertyValue(
-              `--yacht-scale-${i}`
+              `--yacht-scale-${i}`,
             );
             scale = cssScale ? { approx: parseFloat(cssScale) } : null;
           }
@@ -8184,25 +9543,45 @@ document.addEventListener("DOMContentLoaded", function () {
       // Don't auto-align on resize; keep yachts positioned by CSS for natural placement
     }
 
-    // Schedule random yacht appearances
-    const scheduleNextYacht = () => {
-      const elapsed = Date.now() - startTime;
-      if (elapsed < NEEDLES_PASS) {
-        // Random interval between 20-40 seconds
-        const nextSpawn = 20000 + Math.random() * 20000;
-        const timer = setTimeout(() => {
-          spawnYachtRandomly();
-          scheduleNextYacht();
-        }, nextSpawn);
-        yachtTimers.push(timer);
+    // Schedule yacht spawns from pre-computed deterministic schedule
+    const scheduleNextYachtFromSchedule = () => {
+      if (!yachtSchedule || yachtScheduleIndex >= yachtSchedule.length) return;
+
+      const now = Date.now();
+      const elapsed = now - startTime;
+
+      // Skip past already-elapsed entries (late joiner catch-up)
+      while (
+        yachtScheduleIndex < yachtSchedule.length &&
+        yachtSchedule[yachtScheduleIndex].time <= elapsed
+      ) {
+        yachtScheduleIndex++;
       }
+
+      if (yachtScheduleIndex >= yachtSchedule.length) return;
+
+      const nextEntry = yachtSchedule[yachtScheduleIndex];
+      const delay = nextEntry.time - elapsed;
+      const timer = setTimeout(() => {
+        spawnYachtRandomly(nextEntry.selectionRandom);
+        yachtScheduleIndex++;
+        scheduleNextYachtFromSchedule();
+      }, delay);
+      yachtTimers.push(timer);
     };
 
-    // Start yacht spawning after Southampton Water
-    const elapsedSinceStart = Date.now() - startTime;
-    setTimeout(() => {
-      scheduleNextYacht();
-    }, Math.max(0, SOUTHAMPTON_WATER_END - elapsedSinceStart));
+    // Start yacht schedule from server-provided data
+    if (yachtSchedule) {
+      scheduleNextYachtFromSchedule();
+    } else {
+      // Wait for schedule to arrive from server, then start
+      const yachtWaitInterval = setInterval(() => {
+        if (yachtSchedule) {
+          clearInterval(yachtWaitInterval);
+          scheduleNextYachtFromSchedule();
+        }
+      }, 500);
+    }
 
     const interval = setInterval(() => {
       if (!departureStarted) {
@@ -8230,11 +9609,11 @@ document.addEventListener("DOMContentLoaded", function () {
         } else if (elapsedTime < BERTHING_COMPLETE) {
           const elapsedCherbourg = Math.max(
             0,
-            (elapsedTime - CHANNEL_COMPLETE) / 1000
+            (elapsedTime - CHANNEL_COMPLETE) / 1000,
           );
           targetSpeed = Math.max(
             0,
-            19 - elapsedCherbourg * CHERBOURG_DECEL_RATE
+            19 - elapsedCherbourg * CHERBOURG_DECEL_RATE,
           );
         } else {
           targetSpeed = 0; // Berthed - full stop
@@ -8268,7 +9647,7 @@ document.addEventListener("DOMContentLoaded", function () {
           // Do nothing; keep fallback to whichever speed was last seen
           console.warn(
             "⚠️ Wave fallback speed calculation failed:",
-            err.message
+            err.message,
           );
         }
       }
@@ -8281,12 +9660,12 @@ document.addEventListener("DOMContentLoaded", function () {
       if (currentSpeed < targetSpeed) {
         currentSpeed = Math.min(
           currentSpeed + acceleration * delta,
-          targetSpeed
+          targetSpeed,
         );
       } else if (currentSpeed > targetSpeed) {
         currentSpeed = Math.max(
           currentSpeed - acceleration * delta,
-          targetSpeed
+          targetSpeed,
         );
       }
 
@@ -8326,7 +9705,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const fallbackSpeed = Math.max(
             0,
             19 -
-              ((elapsedTime - CHANNEL_COMPLETE) / 1000) * CHERBOURG_DECEL_RATE
+              ((elapsedTime - CHANNEL_COMPLETE) / 1000) * CHERBOURG_DECEL_RATE,
           );
           if (fallbackSpeed > 6) {
             currentLocation = "Approaching Cherbourg";
@@ -8369,7 +9748,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (elapsedTime >= NEEDLES_PASS) {
           const fadeProgress = Math.min(
             (elapsedTime - NEEDLES_PASS) / 30000,
-            1
+            1,
           ); // Fade over 30 seconds
           landMiddle.style.opacity = Math.max(0, 1 - fadeProgress);
         }
@@ -8423,7 +9802,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // Ensure the position remains off-screen if not yet allowed to approach
             cherbourgPosition = Math.max(
               cherbourgPosition,
-              cherbourgOffscreenRight()
+              cherbourgOffscreenRight(),
             );
             cherbourg.style.left = `${Math.round(cherbourgPosition)}px`;
           }
@@ -8505,12 +9884,18 @@ document.addEventListener("DOMContentLoaded", function () {
           // 5 second grace period after departure
           console.info(
             `🚢 Departure already occurred (${Math.floor(
-              elapsedSeconds / 60
-            )} min elapsed) - skipping sequence`
+              elapsedSeconds / 60,
+            )} min elapsed) - skipping sequence`,
           );
           departureStarted = true; // Mark as started to prevent re-triggering
           // Start animation at current state without playing sounds/music/teleport
           animateDeparture();
+          const elapsedMs = Date.now() - voyageStartTime;
+          const leavingPortStartMs =
+            TIMELINE_SECONDS.DEPARTURE_DELAY * 1000 + LEAVING_PORT_OFFSET_MS;
+          if (elapsedMs >= leavingPortStartMs) {
+            playLeavingPortCue({ offsetMs: elapsedMs - leavingPortStartMs });
+          }
         } else {
           // Normal departure - play full sequence
           console.debug("🚢 Starting departure at server-synced 7 minute mark");

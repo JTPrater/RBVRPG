@@ -134,6 +134,12 @@
               <div class="smoke-container">
                 <!-- Smoke animation canvas will be added here -->
               </div>
+              <div class="bird-container-back">
+                <!-- Background bird animation canvas (behind ship) -->
+              </div>
+              <div class="bird-container">
+                <!-- Foreground bird animation canvas (in front of ship) -->
+              </div>
               <!-- Land formations now use CSS background-image for scrolling effects -->
               <div class="land-middle"></div>
               <div class="land-end"></div>
@@ -590,6 +596,7 @@
     <script src="/socket.io/socket.io.js"></script>
     <!-- DOMPurify for XSS protection -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.7/purify.min.js"></script>
-    <script src="../game/game.js?v=2"></script>
+    <script src="/game/pixi.min.js"></script>
+    <script src="/game/game.js?v=3"></script>
   </body>
 </html>
