@@ -46,12 +46,13 @@ function updateCountdown() {
   if (timeDifference <= 0) {
     countdownElement.style.display = "none";
     registerButton.style.display = "inline-block";
+    clearInterval(countdownInterval);
     return;
   }
 
   const days = Math.floor(timeDifference / (1000 * 60 * 60 * 24));
   const hours = Math.floor(
-    (timeDifference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)
+    (timeDifference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
   );
   const minutes = Math.floor((timeDifference % (1000 * 60 * 60)) / (1000 * 60));
   const seconds = Math.floor((timeDifference % (1000 * 60)) / 1000);
@@ -60,7 +61,7 @@ function updateCountdown() {
 }
 
 // Update the countdown every second
-setInterval(updateCountdown, 1000);
+const countdownInterval = setInterval(updateCountdown, 1000);
 
 document.addEventListener("DOMContentLoaded", () => {
   const climbAboardBtn = document.getElementById("climb-aboard-btn");

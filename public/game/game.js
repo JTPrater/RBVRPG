@@ -100,7 +100,7 @@ window.RBVLog = {
   },
   getLevel() {
     return Object.keys(RBV_LOG_LEVELS).find(
-      (key) => RBV_LOG_LEVELS[key] === activeLogLevel
+      (key) => RBV_LOG_LEVELS[key] === activeLogLevel,
     );
   },
   levels: Object.keys(RBV_LOG_LEVELS),
@@ -113,8 +113,8 @@ socket.on("voyage-start-time", (serverStartTime) => {
   pendingVoyageStartTime = serverStartTime;
   console.debug(
     `⏰ Received voyage start time from server: ${new Date(
-      voyageStartTime
-    ).toISOString()}`
+      voyageStartTime,
+    ).toISOString()}`,
   );
 
   // Try to sync immediately if functions are available
@@ -130,7 +130,7 @@ socket.on("voyage-start-time", (serverStartTime) => {
 socket.on("voyage-state", (currentVoyageState) => {
   console.debug(
     "🚢 Received current voyage state from server:",
-    currentVoyageState
+    currentVoyageState,
   );
 
   // Store for later if functions aren't ready yet
@@ -138,19 +138,17 @@ socket.on("voyage-state", (currentVoyageState) => {
   latestVoyageState = currentVoyageState;
 
   // Update info bar elements immediately
-  document.getElementById(
-    "location"
-  ).textContent = `Location: ${currentVoyageState.location}`;
-  document.getElementById(
-    "speed"
-  ).textContent = `Speed: ${currentVoyageState.speed}`;
+  document.getElementById("location").textContent =
+    `Location: ${currentVoyageState.location}`;
+  document.getElementById("speed").textContent =
+    `Speed: ${currentVoyageState.speed}`;
 
   // Set window.currentSpeed for visual effects (smoke, wind)
   window.currentSpeed = currentVoyageState.speedValue;
   // Set target speed for smooth acceleration/deceleration
   window.targetSpeed = currentVoyageState.targetSpeed;
   console.debug(
-    `💨 Set window.currentSpeed to ${window.currentSpeed} and targetSpeed to ${window.targetSpeed} for visual effects`
+    `💨 Set window.currentSpeed to ${window.currentSpeed} and targetSpeed to ${window.targetSpeed} for visual effects`,
   );
 
   // Update sky immediately with server-synced time if function is available
@@ -159,55 +157,55 @@ socket.on("voyage-state", (currentVoyageState) => {
     console.debug("🌤️ Updated sky with server voyage state");
   }
 
-  // Also listen for server narrative events — server will broadcast narrative events
-  socket.on("narrative-event", (data) => {
-    try {
-      console.debug("📣 Received narrative-event from server:", data);
-      const storyTextElement = document.getElementById("story-text");
-      if (storyTextElement) {
-        storyTextElement.style.opacity = "0";
-        setTimeout(() => {
-          storyTextElement.textContent = data.text;
-          storyTextElement.style.opacity = "1";
-        }, 500);
-      }
-
-      // Advance client's narrative index to avoid replaying
-      if (narrativeSystem) {
-        narrativeSystem.currentEventIndex = data.index + 1;
-        sessionStorage.setItem(
-          "narrativeEventIndex",
-          narrativeSystem.currentEventIndex.toString()
-        );
-      }
-    } catch (err) {
-      console.error("❌ Failed to process narrative-event:", err);
-    }
-  });
-
-  // Receive the current narrative index for this connection from the server
-  socket.on("narrative-current", (data) => {
-    console.debug("📣 Received narrative-current from server:", data);
-    const storyTextElement = document.getElementById("story-text");
-    if (storyTextElement && data && data.text) {
-      storyTextElement.textContent = data.text;
-      storyTextElement.style.opacity = "1";
-    }
-    if (narrativeSystem && data && typeof data.index === "number") {
-      narrativeSystem.currentEventIndex = data.index + 1;
-      sessionStorage.setItem(
-        "narrativeEventIndex",
-        narrativeSystem.currentEventIndex.toString()
-      );
-    }
-  });
-
   // Try to perform full sync if functions are available
   if (
     typeof updateInfoBar === "function" &&
     typeof updateSkyImage === "function"
   ) {
     performInitialSync();
+  }
+});
+
+// Listen for server narrative events (registered once at top level, NOT inside voyage-state)
+socket.on("narrative-event", (data) => {
+  try {
+    console.debug("📣 Received narrative-event from server:", data);
+    const storyTextElement = document.getElementById("story-text");
+    if (storyTextElement) {
+      storyTextElement.style.opacity = "0";
+      setTimeout(() => {
+        storyTextElement.textContent = data.text;
+        storyTextElement.style.opacity = "1";
+      }, 500);
+    }
+
+    // Advance client's narrative index to avoid replaying
+    if (narrativeSystem) {
+      narrativeSystem.currentEventIndex = data.index + 1;
+      sessionStorage.setItem(
+        "narrativeEventIndex",
+        narrativeSystem.currentEventIndex.toString(),
+      );
+    }
+  } catch (err) {
+    console.error("❌ Failed to process narrative-event:", err);
+  }
+});
+
+// Receive the current narrative index for this connection from the server
+socket.on("narrative-current", (data) => {
+  console.debug("📣 Received narrative-current from server:", data);
+  const storyTextElement = document.getElementById("story-text");
+  if (storyTextElement && data && data.text) {
+    storyTextElement.textContent = data.text;
+    storyTextElement.style.opacity = "1";
+  }
+  if (narrativeSystem && data && typeof data.index === "number") {
+    narrativeSystem.currentEventIndex = data.index + 1;
+    sessionStorage.setItem(
+      "narrativeEventIndex",
+      narrativeSystem.currentEventIndex.toString(),
+    );
   }
 });
 
@@ -240,7 +238,7 @@ function handleReconnectionRoomJoin() {
 
   if (!voyageAnchor) {
     console.warn(
-      "⚠️ Voyage start time not yet available; defaulting spawn to Southampton"
+      "⚠️ Voyage start time not yet available; defaulting spawn to Southampton",
     );
   }
 
@@ -248,15 +246,15 @@ function handleReconnectionRoomJoin() {
     // Voyage has departed - spawn on ship
     console.debug(
       `🚢 Voyage already departed (${Math.floor(
-        elapsedSeconds / 60
-      )} min elapsed) - auto-joining ship`
+        elapsedSeconds / 60,
+      )} min elapsed) - auto-joining ship`,
     );
 
     // Try to find player's cabin first, otherwise default to promenade
     const cabinRoom = findPlayerCabin();
     const defaultShipRoom =
       (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
-        (r) => r.id === "port_promenade_bd"
+        (r) => r.id === "port_promenade_bd",
       ) || deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd");
 
     const fallbackRoom =
@@ -274,11 +272,11 @@ function handleReconnectionRoomJoin() {
   } else {
     // Voyage hasn't departed yet - spawn at Southampton
     console.debug(
-      `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - auto-joining Southampton`
+      `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - auto-joining Southampton`,
     );
 
     const initialRoom = deckRooms.southampton?.find(
-      (r) => r.name === "Berth 44 Forward Docks"
+      (r) => r.name === "Berth 44 Forward Docks",
     );
     const fallbackRoom =
       initialRoom ||
@@ -291,7 +289,7 @@ function handleReconnectionRoomJoin() {
       console.debug(`🚪 Auto-joined Southampton room: ${fallbackRoom.name}`);
     } else {
       console.error(
-        "❌ Could not determine any spawn location during reconnection"
+        "❌ Could not determine any spawn location during reconnection",
       );
     }
   }
@@ -370,9 +368,9 @@ const narrativeSystem = {
     this.updateWeather();
 
     // Update narrative every 5 seconds
-    setInterval(() => this.updateNarrative(), 5000);
+    this._narrativeInterval = setInterval(() => this.updateNarrative(), 5000);
     // Update weather every 2 minutes
-    setInterval(() => this.updateWeather(), 120000);
+    this._weatherInterval = setInterval(() => this.updateWeather(), 120000);
 
     console.debug("✅ Narrative system initialized (waiting for server time)");
   },
@@ -398,7 +396,7 @@ const narrativeSystem = {
         // Save current event index to sessionStorage to prevent replaying on reconnect
         sessionStorage.setItem(
           "narrativeEventIndex",
-          this.currentEventIndex.toString()
+          this.currentEventIndex.toString(),
         );
 
         console.debug(`📖 Narrative event: ${nextEvent.text}`);
@@ -1445,7 +1443,7 @@ deckRooms.a_deck.push(
       image: "2nd class staircase1.jpg",
       chatRoom: "second_class_staircase_a",
     },
-  }
+  },
 );
 
 // Southampton location (off-ship)
@@ -2208,7 +2206,7 @@ const musicPlayer = {
 
             if (this.songs.length > 0) {
               this.currentSongIndex = Math.floor(
-                Math.random() * this.songs.length
+                Math.random() * this.songs.length,
               );
               this.loadCurrentSong();
               songSelect.value = this.currentSongIndex;
@@ -2277,7 +2275,7 @@ const musicPlayer = {
     console.debug(
       `🎵 Loading song index ${this.currentSongIndex}: ${
         this.songs[this.currentSongIndex]
-      }`
+      }`,
     );
     this.audio.src = this.songs[this.currentSongIndex];
     this.updateNowPlaying();
@@ -2332,7 +2330,7 @@ const musicPlayer = {
     this.currentSongIndex =
       (this.currentSongIndex - 1 + this.songs.length) % this.songs.length;
     console.debug(
-      `🔄 Playing previous song. New index: ${this.currentSongIndex}`
+      `🔄 Playing previous song. New index: ${this.currentSongIndex}`,
     );
     this.loadCurrentSong();
   },
@@ -2360,9 +2358,8 @@ const musicPlayer = {
       .split("/")
       .pop()
       .replace(".mp3", "");
-    document.getElementById(
-      "current-song"
-    ).textContent = `Now Playing: ${songName}`;
+    document.getElementById("current-song").textContent =
+      `Now Playing: ${songName}`;
     console.debug(`🆕 Now Playing updated to: ${songName}`);
   },
 
@@ -2533,8 +2530,8 @@ function updateStatusBars() {
   }
 }
 
-// Update status bars every minute
-setInterval(updateStatusBars, 1000);
+// Update status bars every second
+const statusBarsInterval = setInterval(updateStatusBars, 1000);
 
 // Function to save current stats to server
 function saveStatsToServer() {
@@ -2564,6 +2561,12 @@ window.addEventListener("beforeunload", () => {
   } catch (err) {
     console.warn("⚠️ Failed to persist stats on unload:", err);
   }
+  // Clean up intervals to prevent leaks
+  clearInterval(statusBarsInterval);
+  if (narrativeSystem._narrativeInterval)
+    clearInterval(narrativeSystem._narrativeInterval);
+  if (narrativeSystem._weatherInterval)
+    clearInterval(narrativeSystem._weatherInterval);
 });
 
 // Single DOMContentLoaded event listener
@@ -2588,7 +2591,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const characterData = JSON.parse(sessionStorage.getItem("character"));
   if (characterData) {
     console.debug(
-      `🔑 Retrieved character data: ${characterData.forename} ${characterData.surname}`
+      `🔑 Retrieved character data: ${characterData.forename} ${characterData.surname}`,
     );
     const avatarElement = document.getElementById("character-avatar");
     const nameElement = document.getElementById("character-name");
@@ -2682,7 +2685,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Seconds after actual departure (0 while still alongside)
     const elapsedSinceDeparture = Math.max(
       0,
-      elapsedSeconds - TIMELINE_SECONDS.DEPARTURE_DELAY
+      elapsedSeconds - TIMELINE_SECONDS.DEPARTURE_DELAY,
     );
 
     if (elapsedSeconds < TIMELINE_SECONDS.DEPARTURE_DELAY) {
@@ -2728,7 +2731,7 @@ document.addEventListener("DOMContentLoaded", function () {
       // Continuous slowdown from 19 → 0 knots across the Cherbourg sequence
       const elapsedSinceChannel = Math.max(
         0,
-        elapsedSinceDeparture - TIMELINE_SECONDS.CHANNEL_COMPLETE
+        elapsedSinceDeparture - TIMELINE_SECONDS.CHANNEL_COMPLETE,
       );
       speedValue = Math.max(0, 19 - elapsedSinceChannel * CHERBOURG_DECEL_RATE);
       targetSpeed = Math.max(0, speedValue - CHERBOURG_DECEL_RATE);
@@ -2802,7 +2805,7 @@ document.addEventListener("DOMContentLoaded", function () {
       window.setCloudTexture(targetTexture);
     } else {
       console.debug(
-        `⏳ Queued cloud texture ${targetTexture}.png until clouds initialize.`
+        `⏳ Queued cloud texture ${targetTexture}.png until clouds initialize.`,
       );
     }
   }
@@ -2818,7 +2821,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // 1. Determine active interval and show correct sky element
     const interval = imageIntervals.find(
-      (interval) => hours >= interval.start && hours <= interval.end
+      (interval) => hours >= interval.start && hours <= interval.end,
     );
 
     if (interval) {
@@ -2953,7 +2956,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (!currentRoom || !currentRoom.name) {
       console.debug(
-        "🔍 swapLocationImagesForSky: no currentRoom or name present"
+        "🔍 swapLocationImagesForSky: no currentRoom or name present",
       );
       return;
     }
@@ -2965,13 +2968,13 @@ document.addEventListener("DOMContentLoaded", function () {
     const roomData = roomImages[roomName];
     if (!roomData) {
       console.warn(
-        `🔍 swapLocationImagesForSky: roomData not found for ${roomName}`
+        `🔍 swapLocationImagesForSky: roomData not found for ${roomName}`,
       );
       return;
     }
     console.debug(
       `🔍 swapLocationImagesForSky: roomData variants:`,
-      roomData.variants
+      roomData.variants,
     );
 
     // Helper to draw the room's default image
@@ -3004,14 +3007,14 @@ document.addEventListener("DOMContentLoaded", function () {
           "britannic",
         ];
         const tryPaths = candidateFolders.map(
-          (f) => `/images/animations/locations/${f}/${msImage}`
+          (f) => `/images/animations/locations/${f}/${msImage}`,
         );
         let tried = 0;
         const tryNext = () => {
           if (tried >= tryPaths.length) {
             console.warn(
               `⚠️ All sunset variant paths failed for ${roomName}, reverting to default`,
-              tryPaths
+              tryPaths,
             );
             drawDefault();
             return;
@@ -3066,7 +3069,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (voyageStartTime) {
       const elapsedSeconds = Math.max(
         0,
-        Math.floor((Date.now() - voyageStartTime) / 1000)
+        Math.floor((Date.now() - voyageStartTime) / 1000),
       );
       const state = calculateVoyageState(elapsedSeconds);
       location = state.location;
@@ -3162,7 +3165,7 @@ document.addEventListener("DOMContentLoaded", function () {
     } else {
       // Standard interpolation based on intervals
       const intervalIndex = imageIntervals.findIndex(
-        (iv) => hours >= iv.start && hours <= iv.end
+        (iv) => hours >= iv.start && hours <= iv.end,
       );
 
       if (intervalIndex >= 0) {
@@ -3218,10 +3221,10 @@ document.addEventListener("DOMContentLoaded", function () {
           (c, idx) =>
             `${c} ${
               positions[idx] ?? Math.round((idx + 1) * (100 / stops.length))
-            }%`
+            }%`,
         );
         visibleSky.style.background = `linear-gradient(to bottom, ${parts.join(
-          ", "
+          ", ",
         )})`;
       }
     } catch (err) {
@@ -3285,7 +3288,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
           sessionStorage.setItem(
             "narrativeEventIndex",
-            narrativeSystem.currentEventIndex.toString()
+            narrativeSystem.currentEventIndex.toString(),
           );
 
           console.debug(`📖 Synced narrative: ${currentEvent.text}`);
@@ -3315,8 +3318,8 @@ document.addEventListener("DOMContentLoaded", function () {
     performInitialSync();
   }
 
-  setInterval(updateSkyImage, 1000); // Update every second
-  setInterval(updateInfoBar, 5000); // Update every 5 seconds for better sync
+  const skyImageInterval = setInterval(updateSkyImage, 1000); // Update every second
+  const infoBarInterval = setInterval(updateInfoBar, 5000); // Update every 5 seconds for better sync
 
   console.debug("✅ Initialized sky image and info bar updates.");
 
@@ -3462,7 +3465,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.forceCloudTextureMS = () => applyCloudTexture("ms");
     if (currentCloudTexture !== "ms") {
       console.debug(
-        `☁️ Applied queued cloud texture ${currentCloudTexture}.png after init.`
+        `☁️ Applied queued cloud texture ${currentCloudTexture}.png after init.`,
       );
     }
   }
@@ -3602,7 +3605,7 @@ document.addEventListener("DOMContentLoaded", function () {
         // As the particle ages, blend from initial vertical to horizontal wind
         const bendProgress = Math.min(
           particle.life / (particle.maxLife * 0.6),
-          1
+          1,
         ); // 0 to 1 over first 60% of life
         particle.vx =
           particle.initialVx * (1 - bendProgress) +
@@ -3628,7 +3631,7 @@ document.addEventListener("DOMContentLoaded", function () {
           // Last 30% of life: fade out faster
           particle.opacity = Math.max(
             0,
-            0.5 * (1 - ageRatio) * (1 - (ageRatio - 0.7) * 2.5)
+            0.5 * (1 - ageRatio) * (1 - (ageRatio - 0.7) * 2.5),
           );
         }
 
@@ -3653,7 +3656,7 @@ document.addEventListener("DOMContentLoaded", function () {
           -scaledWidth / 2,
           -scaledHeight / 2,
           scaledWidth,
-          scaledHeight
+          scaledHeight,
         );
         ctx.restore();
 
@@ -3752,7 +3755,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         clearInterval(waitForSpawn);
         const elapsedSeconds = Math.floor(
-          (Date.now() - voyageStartTime) / 1000
+          (Date.now() - voyageStartTime) / 1000,
         );
 
         // If ship has already departed (past 7 minutes), spawn on ship
@@ -3771,13 +3774,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (lastRoom) {
               console.debug(
-                `🔄 Restoring player to last room: ${lastRoom.name}`
+                `🔄 Restoring player to last room: ${lastRoom.name}`,
               );
               enterRoom(lastRoom);
               return; // Don't do the spawn logic below
             } else {
               console.debug(
-                `⚠️ Last room "${lastRoomName}" not found, proceeding with spawn logic`
+                `⚠️ Last room "${lastRoomName}" not found, proceeding with spawn logic`,
               );
               localStorage.removeItem("lastRoom"); // Clean up invalid data
             }
@@ -3787,7 +3790,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const cabinRoom = findPlayerCabin();
           const defaultShipRoom =
             (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
-              (r) => r.id === "port_promenade_bd"
+              (r) => r.id === "port_promenade_bd",
             ) || deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd");
 
           const spawnRoom = cabinRoom || defaultShipRoom;
@@ -3799,21 +3802,21 @@ document.addEventListener("DOMContentLoaded", function () {
         } else {
           // Ship hasn't departed yet - spawn at Southampton docks
           console.debug(
-            `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - spawning at Southampton`
+            `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - spawning at Southampton`,
           );
           localStorage.removeItem("lastRoom");
 
           const initialRoom = deckRooms.southampton.find(
-            (r) => r.name === "Berth 44 Forward Docks"
+            (r) => r.name === "Berth 44 Forward Docks",
           );
           if (initialRoom) {
             enterRoom(initialRoom);
           } else {
             console.error(
-              "❌ Initial room not found, defaulting to Berth 44 Forward Docks"
+              "❌ Initial room not found, defaulting to Berth 44 Forward Docks",
             );
             const defaultRoom = deckRooms.southampton.find(
-              (r) => r.name === "Berth 44 Forward Docks"
+              (r) => r.name === "Berth 44 Forward Docks",
             );
             if (defaultRoom) enterRoom(defaultRoom);
           }
@@ -3868,13 +3871,13 @@ document.addEventListener("DOMContentLoaded", function () {
       currentRoom.name = room.location.chatRoom;
       console.debug(`🔑 Set new room: ${currentRoom.name}`);
       console.debug(
-        `🏨 Entered room with currentRoom.name set to: ${currentRoom.name}`
+        `🏨 Entered room with currentRoom.name set to: ${currentRoom.name}`,
       );
       console.debug(
         `🖼️ Available room images:`,
         roomImages[currentRoom.name]
           ? roomImages[currentRoom.name].images.length
-          : "none"
+          : "none",
       );
 
       // Initialize room chat history and join via socket
@@ -3900,7 +3903,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const bstNow = getBSTTime();
       const bstHours = bstNow.getHours();
       const activeInterval = imageIntervals.find(
-        (iv) => bstHours >= iv.start && bstHours <= iv.end
+        (iv) => bstHours >= iv.start && bstHours <= iv.end,
       );
 
       if (roomImages[chatRoom]) {
@@ -3929,7 +3932,7 @@ document.addEventListener("DOMContentLoaded", function () {
         // If a sunset variant exists and we are in an ms-* interval show it
         if (isMsVariant) {
           imageSrc = `/images/animations/locations/${encodeURIComponent(
-            "britannic (sunset)"
+            "britannic (sunset)",
           )}/${imageToShow}`;
         } else {
           // Regular behaviour
@@ -4044,7 +4047,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Remove any existing Enter Britannic button
       const prevEnterBritannicBtn = document.getElementById(
-        "enter-britannic-btn"
+        "enter-britannic-btn",
       );
       if (prevEnterBritannicBtn) prevEnterBritannicBtn.remove();
 
@@ -4064,7 +4067,7 @@ document.addEventListener("DOMContentLoaded", function () {
         enterBritannicBtn.onclick = function () {
           // Find the D-Deck First Class Reception Room
           const receptionRoom = deckRooms.d_deck.find(
-            (r) => r.id === "first_class_reception_d"
+            (r) => r.id === "first_class_reception_d",
           );
           if (receptionRoom) {
             const message =
@@ -4175,7 +4178,7 @@ document.addEventListener("DOMContentLoaded", function () {
           interiorSound
             .play()
             .catch((error) =>
-              console.error("Error playing interior sound:", error)
+              console.error("Error playing interior sound:", error),
             );
         }
         exteriorSound.pause();
@@ -4185,7 +4188,7 @@ document.addEventListener("DOMContentLoaded", function () {
           exteriorSound
             .play()
             .catch((error) =>
-              console.error("Error playing exterior sound:", error)
+              console.error("Error playing exterior sound:", error),
             );
         }
       }
@@ -4276,7 +4279,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Only scroll to bottom if explicitly requested (not automatic on mode switch)
     // This prevents jarring scroll behavior when switching between local/global chat
     console.debug(
-      `✅ Updated chat display with ${messagesToShow.length} messages`
+      `✅ Updated chat display with ${messagesToShow.length} messages`,
     );
   }
 
@@ -4336,7 +4339,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (data.character && data.character.forename && data.character.surname) {
         addChatMessage(data);
         console.debug(
-          `✉️ Message from ${data.character.forename}: ${data.message}`
+          `✉️ Message from ${data.character.forename}: ${data.message}`,
         );
       } else {
         console.warn("⚠️ Received chat message without character data:", data);
@@ -4364,7 +4367,7 @@ document.addEventListener("DOMContentLoaded", function () {
   socket.on("room-message-history", (data) => {
     const { room, messages } = data;
     console.debug(
-      `📚 Received ${messages.length} messages from room history for: ${room}`
+      `📚 Received ${messages.length} messages from room history for: ${room}`,
     );
 
     // Add each historical message to chat
@@ -4404,6 +4407,10 @@ document.addEventListener("DOMContentLoaded", function () {
       chatHistory.rooms[data.room] = [];
     }
     chatHistory.rooms[data.room].push(data);
+    // Cap per-room history to prevent unbounded memory growth
+    if (chatHistory.rooms[data.room].length > 200) {
+      chatHistory.rooms[data.room].shift();
+    }
 
     // Update display if needed
     if (isGlobalChat || data.room === currentRoom.name) {
@@ -4447,8 +4454,8 @@ document.addEventListener("DOMContentLoaded", function () {
           messageDiv.appendChild(roomSpan);
           messageDiv.appendChild(
             document.createTextNode(
-              ` ${fullName}${isActionMessage ? " " : ": "}${data.message}`
-            )
+              ` ${fullName}${isActionMessage ? " " : ": "}${data.message}`,
+            ),
           );
         } else {
           // Local chat mode - just show name and message
@@ -4560,7 +4567,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (result.success) {
           alert(
-            "✅ Report submitted successfully! Thank you for helping keep the game safe."
+            "✅ Report submitted successfully! Thank you for helping keep the game safe.",
           );
           reportModal.style.display = "none";
           reportForm.reset();
@@ -4571,7 +4578,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       } catch (error) {
         alert(
-          "❌ Error submitting report. Please check your connection and try again."
+          "❌ Error submitting report. Please check your connection and try again.",
         );
         console.error("❌ Report submission error:", error);
       }
@@ -4631,7 +4638,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!titleEl) {
         titleEl = document.createElementNS(
           "http://www.w3.org/2000/svg",
-          "title"
+          "title",
         );
         el.appendChild(titleEl);
       }
@@ -4644,7 +4651,7 @@ document.addEventListener("DOMContentLoaded", function () {
     return (
       deckRooms.southampton &&
       deckRooms.southampton.some(
-        (r) => r.location.chatRoom === currentRoom.name
+        (r) => r.location.chatRoom === currentRoom.name,
       )
     );
   }
@@ -4662,7 +4669,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Remove existing Southampton category buttons if any
     const existingSouthamptonButtons = document.querySelector(
-      ".southampton-category-buttons"
+      ".southampton-category-buttons",
     );
     if (existingSouthamptonButtons) {
       existingSouthamptonButtons.remove();
@@ -4680,7 +4687,7 @@ document.addEventListener("DOMContentLoaded", function () {
     `;
     deckButtonsContainer.parentNode.insertBefore(
       southamptonButtonsDiv,
-      deckButtonsContainer.nextSibling
+      deckButtonsContainer.nextSibling,
     );
 
     // Add event listeners for Southampton category buttons
@@ -4738,17 +4745,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for the Southampton room
       const room = deckRooms.southampton.find(
-        (r) => r.id === "berth_44_walkaway"
+        (r) => r.id === "berth_44_walkaway",
       );
       if (room) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="berth_44_walkaway"]'
+          '.room-marker[data-room-id="berth_44_walkaway"]',
         );
         if (link) {
           link.setAttribute("data-room-name", room.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
@@ -4757,7 +4764,7 @@ document.addEventListener("DOMContentLoaded", function () {
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Southampton room area clicked: berth_44_walkaway`
+              `🔍 Southampton room area clicked: berth_44_walkaway`,
             );
             enterRoom(room);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -4837,30 +4844,30 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for Dockside Cafe
       const docksideCafe = deckRooms.southampton.find(
-        (r) => r.id === "dockside_cafe"
+        (r) => r.id === "dockside_cafe",
       );
       if (docksideCafe) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="dockside_cafe"]'
+          '.room-marker[data-room-id="dockside_cafe"]',
         );
         if (link) {
           link.setAttribute("data-room-name", docksideCafe.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             docksideCafe.location.chatRoom,
-            docksideCafe.name
+            docksideCafe.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 Ground room area clicked: dockside_cafe`
+              `🔍 Berth 44 Ground room area clicked: dockside_cafe`,
             );
             enterRoom(docksideCafe);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -4887,30 +4894,30 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for Berth 44 Forward Docks
       const berth44Forward = deckRooms.southampton.find(
-        (r) => r.id === "berth_44_forward"
+        (r) => r.id === "berth_44_forward",
       );
       if (berth44Forward) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="berth_44_forward"]'
+          '.room-marker[data-room-id="berth_44_forward"]',
         );
         if (link) {
           link.setAttribute("data-room-name", berth44Forward.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             berth44Forward.location.chatRoom,
-            berth44Forward.name
+            berth44Forward.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 Ground room area clicked: berth_44_forward`
+              `🔍 Berth 44 Ground room area clicked: berth_44_forward`,
             );
             enterRoom(berth44Forward);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -4937,30 +4944,30 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for First Class Gangway
       const firstClassGangway = deckRooms.southampton.find(
-        (r) => r.id === "first_class_gangway"
+        (r) => r.id === "first_class_gangway",
       );
       if (firstClassGangway) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="first_class_gangway"]'
+          '.room-marker[data-room-id="first_class_gangway"]',
         );
         if (link) {
           link.setAttribute("data-room-name", firstClassGangway.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             firstClassGangway.location.chatRoom,
-            firstClassGangway.name
+            firstClassGangway.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 Ground room area clicked: first_class_gangway`
+              `🔍 Berth 44 Ground room area clicked: first_class_gangway`,
             );
             enterRoom(firstClassGangway);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -4987,24 +4994,24 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for Crew Gangway
       const crewGangway = deckRooms.southampton.find(
-        (r) => r.id === "crew_gangway"
+        (r) => r.id === "crew_gangway",
       );
       if (crewGangway) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="crew_gangway"]'
+          '.room-marker[data-room-id="crew_gangway"]',
         );
         if (link) {
           link.setAttribute("data-room-name", crewGangway.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             crewGangway.location.chatRoom,
-            crewGangway.name
+            crewGangway.name,
           );
 
           link.addEventListener("click", (e) => {
@@ -5035,30 +5042,30 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for 3rd Class Gangway
       const thirdClassGangway = deckRooms.southampton.find(
-        (r) => r.id === "third_class_gangway"
+        (r) => r.id === "third_class_gangway",
       );
       if (thirdClassGangway) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="third_class_gangway"]'
+          '.room-marker[data-room-id="third_class_gangway"]',
         );
         if (link) {
           link.setAttribute("data-room-name", thirdClassGangway.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             thirdClassGangway.location.chatRoom,
-            thirdClassGangway.name
+            thirdClassGangway.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 Ground room area clicked: third_class_gangway`
+              `🔍 Berth 44 Ground room area clicked: third_class_gangway`,
             );
             enterRoom(thirdClassGangway);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -5085,24 +5092,24 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for Berth 44 Aft Docks
       const berth44Aft = deckRooms.southampton.find(
-        (r) => r.id === "berth_44_aft"
+        (r) => r.id === "berth_44_aft",
       );
       if (berth44Aft) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="berth_44_aft"]'
+          '.room-marker[data-room-id="berth_44_aft"]',
         );
         if (link) {
           link.setAttribute("data-room-name", berth44Aft.name);
           {
             const cached = roomCountsCache.get(
-              link.getAttribute("data-room-id")
+              link.getAttribute("data-room-id"),
             );
             link.setAttribute("data-user-count", String(cached ?? 0));
           }
           setMarkerCountAttr(
             link,
             berth44Aft.location.chatRoom,
-            berth44Aft.name
+            berth44Aft.name,
           );
 
           link.addEventListener("click", (e) => {
@@ -5162,11 +5169,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for 1st & 2nd Class Covered Walkway
       const coveredWalkway = deckRooms.southampton.find(
-        (r) => r.id === "covered_walkway"
+        (r) => r.id === "covered_walkway",
       );
       if (coveredWalkway) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="covered_walkway"]'
+          '.room-marker[data-room-id="covered_walkway"]',
         );
         if (link) {
           link.setAttribute("data-room-name", coveredWalkway.name);
@@ -5174,13 +5181,13 @@ document.addEventListener("DOMContentLoaded", function () {
           setMarkerCountAttr(
             link,
             coveredWalkway.location.chatRoom,
-            coveredWalkway.name
+            coveredWalkway.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 2nd Floor room area clicked: covered_walkway`
+              `🔍 Berth 44 2nd Floor room area clicked: covered_walkway`,
             );
             enterRoom(coveredWalkway);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -5207,11 +5214,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add event listener for 1st Class Boarding Tower
       const boardingTower = deckRooms.southampton.find(
-        (r) => r.id === "boarding_tower"
+        (r) => r.id === "boarding_tower",
       );
       if (boardingTower) {
         const link = document.querySelector(
-          '.room-marker[data-room-id="boarding_tower"]'
+          '.room-marker[data-room-id="boarding_tower"]',
         );
         if (link) {
           link.setAttribute("data-room-name", boardingTower.name);
@@ -5219,13 +5226,13 @@ document.addEventListener("DOMContentLoaded", function () {
           setMarkerCountAttr(
             link,
             boardingTower.location.chatRoom,
-            boardingTower.name
+            boardingTower.name,
           );
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
             console.debug(
-              `🔍 Berth 44 2nd Floor room area clicked: boarding_tower`
+              `🔍 Berth 44 2nd Floor room area clicked: boarding_tower`,
             );
             enterRoom(boardingTower);
             deckplansPopup.style.display = "none"; // Close popup on selection
@@ -5258,8 +5265,8 @@ document.addEventListener("DOMContentLoaded", function () {
       : [];
     emitRoomCountBatch(
       Array.from(southamptonMarkers || []).map((el) =>
-        el.getAttribute("data-room-id")
-      )
+        el.getAttribute("data-room-id"),
+      ),
     );
   } // Function to show Britannic deckplans
   function showBritannicDeckplans() {
@@ -5275,7 +5282,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Remove Southampton category buttons if they exist
     const existingSouthamptonButtons = document.querySelector(
-      ".southampton-category-buttons"
+      ".southampton-category-buttons",
     );
     if (existingSouthamptonButtons) {
       existingSouthamptonButtons.remove();
@@ -5291,7 +5298,8 @@ document.addEventListener("DOMContentLoaded", function () {
     for (const [deckName, rooms] of Object.entries(deckRooms)) {
       if (
         rooms.some(
-          (room) => room.location && room.location.chatRoom === currentRoom.name
+          (room) =>
+            room.location && room.location.chatRoom === currentRoom.name,
         )
       ) {
         currentDeck = deckName;
@@ -5583,7 +5591,7 @@ document.addEventListener("DOMContentLoaded", function () {
             link.setAttribute("data-room-name", room.name);
             {
               const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id")
+                link.getAttribute("data-room-id"),
               );
               link.setAttribute("data-user-count", String(cached ?? 0));
             }
@@ -5647,7 +5655,7 @@ document.addEventListener("DOMContentLoaded", function () {
             link.setAttribute("data-room-name", room.name);
             {
               const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id")
+                link.getAttribute("data-room-id"),
               );
               link.setAttribute("data-user-count", String(cached ?? 0));
             }
@@ -5794,7 +5802,7 @@ document.addEventListener("DOMContentLoaded", function () {
             link.setAttribute("data-room-name", room.name);
             {
               const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id")
+                link.getAttribute("data-room-id"),
               );
               link.setAttribute("data-user-count", String(cached ?? 0));
             }
@@ -6033,7 +6041,7 @@ document.addEventListener("DOMContentLoaded", function () {
             link.setAttribute("data-room-name", room.name);
             {
               const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id")
+                link.getAttribute("data-room-id"),
               );
               link.setAttribute("data-user-count", String(cached ?? 0));
             }
@@ -6077,7 +6085,7 @@ document.addEventListener("DOMContentLoaded", function () {
             console.debug(`ℹ️ Room ${room.name} is SVG, skipping marker`);
           } else if (room.x !== undefined && room.y !== undefined) {
             console.debug(
-              `📍 Creating marker for ${room.name} at ${room.x}%, ${room.y}%`
+              `📍 Creating marker for ${room.name} at ${room.x}%, ${room.y}%`,
             );
             const marker = document.createElement("div");
             marker.className = `room-marker ${room.type} ${room.id}`;
@@ -6087,7 +6095,7 @@ document.addEventListener("DOMContentLoaded", function () {
             marker.setAttribute("data-room-name", room.name);
             {
               const cached = roomCountsCache.get(
-                marker.getAttribute("data-room-id")
+                marker.getAttribute("data-room-id"),
               );
               marker.setAttribute("data-user-count", String(cached ?? 0));
             }
@@ -6120,7 +6128,7 @@ document.addEventListener("DOMContentLoaded", function () {
             roomsToRequest.add(room.location.chatRoom);
           } else {
             console.warn(
-              `🚫 Skipped adding marker for ${room.name} (no coordinates)`
+              `🚫 Skipped adding marker for ${room.name} (no coordinates)`,
             );
           }
         });
@@ -6200,12 +6208,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
       ctx.drawImage(renderImage, 0, 0, width, height);
       currentLocationImageSrc = imagePath;
+      // Release reference to help GC
+      renderImage.onload = null;
+      renderImage.onerror = null;
       if (typeof onLoad === "function") {
         onLoad({ imagePath, width, height });
       }
     };
     renderImage.onerror = (err) => {
       console.error("❌ Failed to draw location image", imagePath, err);
+      renderImage.onload = null;
+      renderImage.onerror = null;
       if (typeof onError === "function") {
         onError(err);
       }
@@ -6222,7 +6235,7 @@ document.addEventListener("DOMContentLoaded", function () {
       console.warn("Could not cache room count", roomId, e);
     }
     const markers = document.querySelectorAll(
-      `.room-marker[data-room-id="${roomId}"]`
+      `.room-marker[data-room-id="${roomId}"]`,
     );
     markers.forEach((marker) => {
       marker.setAttribute("data-user-count", count);
@@ -6256,7 +6269,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const updateMessagesForUser = (userIdentifier, color) => {
     if (!userIdentifier || !color) return;
     const userMessages = document.querySelectorAll(
-      `.chat-message[data-user-id="${userIdentifier}"]`
+      `.chat-message[data-user-id="${userIdentifier}"]`,
     );
     userMessages.forEach((msg) => {
       if (!msg.classList.contains("system")) {
@@ -6362,7 +6375,7 @@ document.addEventListener("DOMContentLoaded", function () {
     refreshBtn.addEventListener("click", () => {
       // Log the action for debugging
       console.debug(
-        `🔄 Refresh button clicked, currentRoom.name: ${currentRoom.name}`
+        `🔄 Refresh button clicked, currentRoom.name: ${currentRoom.name}`,
       );
 
       // Check if there's a current room and images available
@@ -6390,7 +6403,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!roomData) return console.warn(`No roomImages entry for ${roomName}`);
       const images = roomData.images || [];
       console.debug(
-        `🔎 testCycleRoomImages: testing ${images.length} images for ${roomName}`
+        `🔎 testCycleRoomImages: testing ${images.length} images for ${roomName}`,
       );
 
       for (let i = 0; i < images.length; i++) {
@@ -6417,7 +6430,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       console.debug(
         "✅ testCycleRoomImages: Completed testing images for",
-        roomName
+        roomName,
       );
     } catch (err) {
       console.error("❌ testCycleRoomImages error:", err);
@@ -6431,7 +6444,7 @@ document.addEventListener("DOMContentLoaded", function () {
       return console.warn(`No roomImages entry for ${roomName}`);
     console.debug(
       `📋 Images for ${roomName}:`,
-      roomImages[roomName].images || []
+      roomImages[roomName].images || [],
     );
     if (roomImages[roomName].variants)
       console.debug(`📋 Variants:`, roomImages[roomName].variants);
@@ -6446,9 +6459,17 @@ document.addEventListener("DOMContentLoaded", function () {
       const imageSet = roomImages[roomName].images;
       console.debug(`🖼️ Preloading ${imageSet.length} images for ${roomName}`);
 
-      if (!this.preloadedImages[roomName]) {
-        this.preloadedImages[roomName] = [];
+      // Skip if already preloaded for this room
+      if (this.preloadedImages[roomName]) return;
+
+      // Evict oldest rooms if cache exceeds 10 rooms to bound memory
+      const cachedRooms = Object.keys(this.preloadedImages);
+      if (cachedRooms.length >= 10) {
+        const oldest = cachedRooms[0];
+        delete this.preloadedImages[oldest];
       }
+
+      this.preloadedImages[roomName] = [];
 
       imageSet.forEach((imageName) => {
         const img = new Image();
@@ -6469,7 +6490,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const variants = roomImages[roomName].variants || {};
       console.debug(
         `🖼️ Preloading variant folders for ${roomName}:`,
-        Object.keys(variants)
+        Object.keys(variants),
       );
       Object.keys(variants).forEach((key) => {
         // Map variant key to folder name if necessary
@@ -6477,16 +6498,16 @@ document.addEventListener("DOMContentLoaded", function () {
           key === "ms"
             ? "britannic (sunset)"
             : key === "night"
-            ? "britannic (night)"
-            : "britannic";
+              ? "britannic (night)"
+              : "britannic";
         variants[key].forEach((vImage) => {
           const img = new Image();
           const vpath = `/images/animations/locations/${encodeURIComponent(
-            variantFolder
+            variantFolder,
           )}/${vImage}`;
           const vpathPlain = `/images/animations/locations/${variantFolder}/${vImage}`;
           console.debug(
-            `🖼️ Preloading variant path: ${vpath} (plain: ${vpathPlain})`
+            `🖼️ Preloading variant path: ${vpath} (plain: ${vpathPlain})`,
           );
           img.src = vpath; // prefer encoded
           // Also push a plain variant in case server expects non-encoded path
@@ -6508,7 +6529,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const currentBST = getBSTTime();
       const activeInterval = imageIntervals.find(
         (iv) =>
-          currentBST.getHours() >= iv.start && currentBST.getHours() <= iv.end
+          currentBST.getHours() >= iv.start && currentBST.getHours() <= iv.end,
       );
 
       let targetImages = roomData.images;
@@ -6533,7 +6554,7 @@ document.addEventListener("DOMContentLoaded", function () {
       console.debug(
         `🔄 Cycling room image to: ${newImage} (${roomData.currentIndex + 1}/${
           targetImages.length
-        })`
+        })`,
       );
 
       // Set new image source right away
@@ -6553,7 +6574,7 @@ document.addEventListener("DOMContentLoaded", function () {
           if (msTried >= candidateFolders.length) {
             console.warn(
               `⚠️ All MS variants failed for ${roomName}, leaving default`,
-              candidateFolders
+              candidateFolders,
             );
             // Revert index on error
             roomData.currentIndex = previousIndex;
@@ -6755,13 +6776,13 @@ document.addEventListener("DOMContentLoaded", function () {
       });
 
       const isFlush = this.hand.every(
-        (card) => card.suit === this.hand[0].suit
+        (card) => card.suit === this.hand[0].suit,
       );
 
       let isStraight = false;
       if (sortedHand.length === 5) {
         const rankIndices = sortedHand.map((card) =>
-          this.ranks.indexOf(card.rank)
+          this.ranks.indexOf(card.rank),
         );
         isStraight = rankIndices.every((val, i, arr) => {
           return i === 0 || val === arr[i - 1] + 1;
@@ -6815,7 +6836,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (
         Object.keys(rankCounts).find(
           (rank) =>
-            rankCounts[rank] === 2 && ["J", "Q", "K", "A"].includes(rank)
+            rankCounts[rank] === 2 && ["J", "Q", "K", "A"].includes(rank),
         )
       ) {
         return "Jacks or Better";
@@ -6856,7 +6877,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!this.isDraw) return; // Can only hold during draw phase
       this.held[index] = !this.held[index];
       const holdDisplay = document.querySelector(
-        `.card[data-index="${index}"] .hold`
+        `.card[data-index="${index}"] .hold`,
       );
       holdDisplay.style.display = this.held[index] ? "block" : "none";
     },
@@ -7066,7 +7087,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const categoryBtns = popup.querySelectorAll(".category-btn");
     const gridsContainer = popup.querySelector(".items-grid");
     const allGrids = popup.querySelectorAll(
-      ".food-grid, .drinks-grid, .alcohol-grid"
+      ".food-grid, .drinks-grid, .alcohol-grid",
     );
 
     categoryBtns.forEach((btn) => {
@@ -7083,7 +7104,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Show selected category grid
         const targetGrid = gridsContainer?.querySelector(
-          `[data-category="${category}"]`
+          `[data-category="${category}"]`,
         );
         if (targetGrid) {
           targetGrid.classList.add("active");
@@ -7129,7 +7150,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function eatSpecific(itemName, hungerIncrease) {
     statusBars.hunger.value = Math.min(
       100,
-      statusBars.hunger.value + hungerIncrease
+      statusBars.hunger.value + hungerIncrease,
     );
 
     console.debug(`🍽️ Ate ${itemName}, hunger increased by ${hungerIncrease}`);
@@ -7149,11 +7170,11 @@ document.addEventListener("DOMContentLoaded", function () {
   function drinkSpecific(itemName, thirstDecrease) {
     statusBars.thirst.value = Math.min(
       100,
-      statusBars.thirst.value + thirstDecrease
+      statusBars.thirst.value + thirstDecrease,
     );
 
     console.debug(
-      `🥤 Drank ${itemName}, thirst decreased by ${thirstDecrease}`
+      `🥤 Drank ${itemName}, thirst decreased by ${thirstDecrease}`,
     );
 
     // Update the thirst bar immediately
@@ -7172,11 +7193,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const hungerIncrease = 30 + Math.random() * 20; // Restore 30-50 hunger
     statusBars.hunger.value = Math.min(
       100,
-      statusBars.hunger.value + hungerIncrease
+      statusBars.hunger.value + hungerIncrease,
     );
 
     console.debug(
-      `🍽️ Ate food, hunger increased by ${hungerIncrease.toFixed(1)}`
+      `🍽️ Ate food, hunger increased by ${hungerIncrease.toFixed(1)}`,
     );
 
     // Update the hunger bar immediately
@@ -7193,11 +7214,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const thirstDecrease = 35 + Math.random() * 25; // Restore 35-60 thirst
     statusBars.thirst.value = Math.min(
       100,
-      statusBars.thirst.value + thirstDecrease
+      statusBars.thirst.value + thirstDecrease,
     );
 
     console.debug(
-      `🥤 Drank beverage, thirst decreased by ${thirstDecrease.toFixed(1)}`
+      `🥤 Drank beverage, thirst decreased by ${thirstDecrease.toFixed(1)}`,
     );
 
     // Update the thirst bar immediately
@@ -7227,7 +7248,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function requestRoomPlayers() {
     if (!socket || !currentRoom.name) {
       console.error(
-        "❌ Cannot request room players: socket or room not available"
+        "❌ Cannot request room players: socket or room not available",
       );
       return;
     }
@@ -7268,13 +7289,13 @@ document.addEventListener("DOMContentLoaded", function () {
       playerDiv.innerHTML = DOMPurify.sanitize(`
         <div class="player-avatar">
           <img src="${player.avatar || "/images/default-avatar.png"}" alt="${
-        player.name
-      }" />
+            player.name
+          }" />
         </div>
         <div class="player-info">
           <div class="player-name">${player.name}${
-        isCurrentPlayer ? " (You)" : ""
-      }</div>
+            isCurrentPlayer ? " (You)" : ""
+          }</div>
           <div class="player-class">Passenger</div>
           <div class="player-cabin">${
             player.cabin_number || player.cabin || "No cabin assigned"
@@ -7308,7 +7329,7 @@ document.addEventListener("DOMContentLoaded", function () {
         roomPlayersPopup.classList.add("open");
         console.debug("👥 Room players popup opened");
       },
-      true
+      true,
     ); // Use capture phase to run before games panel handler
   }
 
@@ -7379,7 +7400,7 @@ document.addEventListener("DOMContentLoaded", function () {
     } else if (window.currentRoom && deckRooms && deckRooms.southampton) {
       // currentRoom.name stores chatRoom; compare to Southampton rooms' chatRoom
       shouldTeleport = deckRooms.southampton.some(
-        (r) => r.location && r.location.chatRoom === currentRoom.name
+        (r) => r.location && r.location.chatRoom === currentRoom.name,
       );
     }
     console.debug("🧭 Teleport check:", { shouldTeleport, currentRoom });
@@ -7387,7 +7408,7 @@ document.addEventListener("DOMContentLoaded", function () {
       // Prefer using enterRoom with a real room object
       const target =
         (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
-          (r) => r.id === "port_promenade_bd"
+          (r) => r.id === "port_promenade_bd",
         ) ||
         deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd") ||
         null;
@@ -7478,12 +7499,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const maybeHideSouthamptonVisuals = (
       elapsedVoyageMs,
-      reason = "timeline-sync"
+      reason = "timeline-sync",
     ) => {
       if (southamptonElementsHidden) return;
       const elapsedSinceDepartureMs = Math.max(
         0,
-        elapsedVoyageMs - DEPARTURE_DELAY_MS
+        elapsedVoyageMs - DEPARTURE_DELAY_MS,
       );
       if (elapsedSinceDepartureMs >= SOUTHAMPTON_WATER_END) {
         hideSouthamptonVisuals(reason);
@@ -7505,12 +7526,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const maybeHideCoastalTerrain = (
       elapsedVoyageMs,
-      reason = "timeline-sync"
+      reason = "timeline-sync",
     ) => {
       if (coastalTerrainHidden) return;
       const elapsedSinceDepartureMs = Math.max(
         0,
-        elapsedVoyageMs - DEPARTURE_DELAY_MS
+        elapsedVoyageMs - DEPARTURE_DELAY_MS,
       );
       if (elapsedSinceDepartureMs >= NEEDLES_COMPLETE) {
         hideCoastalTerrain(reason);
@@ -7578,7 +7599,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (rectWidth > 0) return rectWidth / scale; // Return unscaled width
 
       const computedWidth = parseFloat(
-        window.getComputedStyle(cherbourg).width || ""
+        window.getComputedStyle(cherbourg).width || "",
       );
       if (!Number.isNaN(computedWidth) && computedWidth > 0) {
         return computedWidth; // computed style is already unscaled (CSS pixels)
@@ -7651,7 +7672,7 @@ document.addEventListener("DOMContentLoaded", function () {
           if (currentSpeed > CHERBOURG_SHOW_KNOTS) {
             cherbourgPosition = Math.max(
               cherbourgPosition,
-              cherbourgOffscreenRight()
+              cherbourgOffscreenRight(),
             );
           } else {
             // Slow progress-based placement for late joiners when speed already below threshold
@@ -7684,10 +7705,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
       console.debug(
         `🎬 Starting animation from position: ${departurePosition.toFixed(
-          1
+          1,
         )}px (${Math.floor(
-          elapsedSinceDeparture / 60
-        )}min since departure, speed=${currentSpeed.toFixed(1)}kts)`
+          elapsedSinceDeparture / 60,
+        )}min since departure, speed=${currentSpeed.toFixed(1)}kts)`,
       );
     }
     // startTime already defined above - using server voyage time
@@ -7707,7 +7728,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (elapsed > SOUTHAMPTON_WATER_END && elapsed < NEEDLES_PASS) {
         // Pick a random yacht that isn't already active
         const availableYachts = yachtElements.filter(
-          (yacht) => yacht && !activeYachts.find((a) => a.element === yacht)
+          (yacht) => yacht && !activeYachts.find((a) => a.element === yacht),
         );
 
         if (availableYachts.length > 0) {
@@ -7742,7 +7763,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // Image says it's complete but reports zero natural size - that is unusual
             console.warn(
               "⚠️ Yacht image reports complete but natural size 0 — forcing a re-layout check",
-              innerImg.src
+              innerImg.src,
             );
           }
           if (innerImg && !innerImg.complete) {
@@ -7756,10 +7777,10 @@ document.addEventListener("DOMContentLoaded", function () {
                     naturalWidth: innerImg.naturalWidth,
                     naturalHeight: innerImg.naturalHeight,
                     rectAfterLoad: innerImg.getBoundingClientRect(),
-                  }
+                  },
                 );
               },
-              { once: true }
+              { once: true },
             );
           }
           console.debug("⛵ A yacht appears in the distance...", {
@@ -7789,7 +7810,7 @@ document.addEventListener("DOMContentLoaded", function () {
               {
                 forcedWidth: innerImg.naturalWidth,
                 forcedHeight: innerImg.naturalHeight,
-              }
+              },
             );
           }
         }
@@ -7850,8 +7871,8 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       const yachts = Array.from(
         document.querySelectorAll(
-          ".yacht-1-container, .yacht-2-container, .yacht-3-container"
-        )
+          ".yacht-1-container, .yacht-2-container, .yacht-3-container",
+        ),
       );
       if (yachts.length === 0) {
         console.warn("alignYachtsToShip: No yacht containers found");
@@ -7893,16 +7914,16 @@ document.addEventListener("DOMContentLoaded", function () {
     window.incYachtOffset = (delta = 10) => {
       const root = document.documentElement;
       let cur = parseFloat(
-        getComputedStyle(root).getPropertyValue("--yacht-offset") || "0"
+        getComputedStyle(root).getPropertyValue("--yacht-offset") || "0",
       );
       if (Number.isNaN(cur)) {
         // If we have a calc or non-numeric custom property, derive the current
         // offset from baseline - water-bottom so we can adjust numerically.
         const baseline = parseFloat(
-          getComputedStyle(root).getPropertyValue("--yacht-baseline") || "0"
+          getComputedStyle(root).getPropertyValue("--yacht-baseline") || "0",
         );
         const water = parseFloat(
-          getComputedStyle(root).getPropertyValue("--water-bottom") || "0"
+          getComputedStyle(root).getPropertyValue("--water-bottom") || "0",
         );
         cur = baseline - water;
       }
@@ -7949,7 +7970,7 @@ document.addEventListener("DOMContentLoaded", function () {
       // Setting the CSS variable for scale already in use by the stylesheet
       document.documentElement.style.setProperty(
         `--yacht-scale-${idx}`,
-        String(scale)
+        String(scale),
       );
       console.debug(`🚤 Yacht ${idx} scale set to`, scale);
     };
@@ -7957,7 +7978,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.resetYachtOffsets = () => {
       const root = document.documentElement;
       [1, 2, 3].forEach((i) =>
-        root.style.removeProperty(`--yacht-offset-${i}`)
+        root.style.removeProperty(`--yacht-offset-${i}`),
       );
       console.debug("↩️ Yacht offsets reset to default");
     };
@@ -7978,7 +7999,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.setCherbourgBrightness = (
       brightness = 1.35,
       saturation = 1.2,
-      contrast = 1.05
+      contrast = 1.05,
     ) => {
       try {
         const root = document.documentElement;
@@ -7986,7 +8007,7 @@ document.addEventListener("DOMContentLoaded", function () {
         root.style.setProperty("--cherbourg-saturation", String(saturation));
         root.style.setProperty("--cherbourg-contrast", String(contrast));
         console.debug(
-          `🌙 Cherbourg sprite tuned: brightness=${brightness} saturation=${saturation} contrast=${contrast}`
+          `🌙 Cherbourg sprite tuned: brightness=${brightness} saturation=${saturation} contrast=${contrast}`,
         );
       } catch (e) {
         console.error("Failed to set cherbourg brightness:", e);
@@ -8014,7 +8035,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const el = document.querySelector(".cherbourg-night");
         if (el) el.style.left = "";
         console.debug(
-          `📍 Cherbourg position set: left=${left}, bottom=${bottom}`
+          `📍 Cherbourg position set: left=${left}, bottom=${bottom}`,
         );
       } catch (e) {
         console.error("Failed to set cherbourg position:", e);
@@ -8075,7 +8096,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const root = document.documentElement;
       return [1, 2, 3].map((i) => {
         const v = getComputedStyle(root).getPropertyValue(
-          `--yacht-offset-${i}`
+          `--yacht-offset-${i}`,
         );
         let px = parseFloat(v);
         if (!Number.isFinite(px)) {
@@ -8140,7 +8161,7 @@ document.addEventListener("DOMContentLoaded", function () {
           } else {
             // read the CSS var as fallback
             const cssScale = getComputedStyle(root).getPropertyValue(
-              `--yacht-scale-${i}`
+              `--yacht-scale-${i}`,
             );
             scale = cssScale ? { approx: parseFloat(cssScale) } : null;
           }
@@ -8200,9 +8221,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Start yacht spawning after Southampton Water
     const elapsedSinceStart = Date.now() - startTime;
-    setTimeout(() => {
-      scheduleNextYacht();
-    }, Math.max(0, SOUTHAMPTON_WATER_END - elapsedSinceStart));
+    setTimeout(
+      () => {
+        scheduleNextYacht();
+      },
+      Math.max(0, SOUTHAMPTON_WATER_END - elapsedSinceStart),
+    );
 
     const interval = setInterval(() => {
       if (!departureStarted) {
@@ -8230,11 +8254,11 @@ document.addEventListener("DOMContentLoaded", function () {
         } else if (elapsedTime < BERTHING_COMPLETE) {
           const elapsedCherbourg = Math.max(
             0,
-            (elapsedTime - CHANNEL_COMPLETE) / 1000
+            (elapsedTime - CHANNEL_COMPLETE) / 1000,
           );
           targetSpeed = Math.max(
             0,
-            19 - elapsedCherbourg * CHERBOURG_DECEL_RATE
+            19 - elapsedCherbourg * CHERBOURG_DECEL_RATE,
           );
         } else {
           targetSpeed = 0; // Berthed - full stop
@@ -8268,7 +8292,7 @@ document.addEventListener("DOMContentLoaded", function () {
           // Do nothing; keep fallback to whichever speed was last seen
           console.warn(
             "⚠️ Wave fallback speed calculation failed:",
-            err.message
+            err.message,
           );
         }
       }
@@ -8281,12 +8305,12 @@ document.addEventListener("DOMContentLoaded", function () {
       if (currentSpeed < targetSpeed) {
         currentSpeed = Math.min(
           currentSpeed + acceleration * delta,
-          targetSpeed
+          targetSpeed,
         );
       } else if (currentSpeed > targetSpeed) {
         currentSpeed = Math.max(
           currentSpeed - acceleration * delta,
-          targetSpeed
+          targetSpeed,
         );
       }
 
@@ -8326,7 +8350,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const fallbackSpeed = Math.max(
             0,
             19 -
-              ((elapsedTime - CHANNEL_COMPLETE) / 1000) * CHERBOURG_DECEL_RATE
+              ((elapsedTime - CHANNEL_COMPLETE) / 1000) * CHERBOURG_DECEL_RATE,
           );
           if (fallbackSpeed > 6) {
             currentLocation = "Approaching Cherbourg";
@@ -8369,7 +8393,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (elapsedTime >= NEEDLES_PASS) {
           const fadeProgress = Math.min(
             (elapsedTime - NEEDLES_PASS) / 30000,
-            1
+            1,
           ); // Fade over 30 seconds
           landMiddle.style.opacity = Math.max(0, 1 - fadeProgress);
         }
@@ -8423,7 +8447,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // Ensure the position remains off-screen if not yet allowed to approach
             cherbourgPosition = Math.max(
               cherbourgPosition,
-              cherbourgOffscreenRight()
+              cherbourgOffscreenRight(),
             );
             cherbourg.style.left = `${Math.round(cherbourgPosition)}px`;
           }
@@ -8505,8 +8529,8 @@ document.addEventListener("DOMContentLoaded", function () {
           // 5 second grace period after departure
           console.info(
             `🚢 Departure already occurred (${Math.floor(
-              elapsedSeconds / 60
-            )} min elapsed) - skipping sequence`
+              elapsedSeconds / 60,
+            )} min elapsed) - skipping sequence`,
           );
           departureStarted = true; // Mark as started to prevent re-triggering
           // Start animation at current state without playing sounds/music/teleport
