@@ -59,7 +59,7 @@ io.use((socket, next) => {
 
 // Global voyage start time (set when server starts)
 // Begin from Southampton (real-time progression)
-const voyageStartTime = Date.now(); // Start at Southampton (12:00 PM)
+const voyageStartTime = Date.now() - 18360 * 1000; // DEBUG: 1 min before Cherbourg approach
 console.debug("⏰ Voyage start time initialized at Southampton (BST 12:00).");
 
 // Narrative events for server-side synchronization (times are seconds)
@@ -1220,8 +1220,21 @@ io.on("connection", async (socket) => {
       console.info(`🎮 Game client count increased: ${gameClientCount}`);
     }
     if (allowedRooms.includes(room)) {
+      // Leave old room if switching rooms
+      if (currentRoom && currentRoom !== room) {
+        socket.leave(currentRoom);
+        socket.to(currentRoom).emit("user-left", {
+          character: currentCharacter,
+          socketId: socket.id,
+          roomId: currentRoom,
+        });
+        emitRoomCount(currentRoom);
+      }
+
       socket.join(room);
       socket.character = character; // Store character data on socket
+      currentRoom = room;
+      currentCharacter = character;
       socket
         .to(room)
         .emit("user-joined", { character, socketId: socket.id, roomId: room });
@@ -1333,6 +1346,10 @@ io.on("connection", async (socket) => {
         .to(room)
         .emit("user-left", { character, socketId: socket.id, roomId: room });
       emitRoomCount(room);
+      if (currentRoom === room) {
+        currentRoom = null;
+        currentCharacter = null;
+      }
     }
   });
 

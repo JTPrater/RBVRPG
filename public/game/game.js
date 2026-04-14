@@ -16,6 +16,9 @@ let voyageStartTime = null;
 // Store pending sync data until functions are ready
 let pendingVoyageState = null;
 let pendingVoyageStartTime = null;
+let initialSyncDone = false;
+let lastServerElapsed = 0;
+let lastServerElapsedAt = 0;
 let latestVoyageState = null; // Track most recent server-authoritative snapshot
 
 // Mirror the server-side voyage timeline so refreshes show the same speed/location
@@ -35,6 +38,18 @@ const CHERBOURG_DECEL_RATE =
 const CHERBOURG_SHOW_KNOTS = 10; // show when ship slowed to 10 knots or below
 // Factor applied to ship speed once Cherbourg begins to drift in. Keep low for a gentle motion.
 const CHERBOURG_SLOW_MOVE_FACTOR = 0.15; // 15% of ship speed (clamped with a minimum)
+
+// Seeded PRNG (mulberry32) — deterministic random from voyageStartTime so all clients match
+function createSeededRng(seed) {
+  let s = seed | 0;
+  return function () {
+    s |= 0;
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 // Logging control
 const RBV_LOG_LEVELS = {
@@ -136,6 +151,12 @@ socket.on("voyage-state", (currentVoyageState) => {
   // Store for later if functions aren't ready yet
   pendingVoyageState = currentVoyageState;
   latestVoyageState = currentVoyageState;
+
+  // Track server elapsed time for clock-skew-free interpolation
+  if (typeof currentVoyageState.elapsedSeconds === "number") {
+    lastServerElapsed = currentVoyageState.elapsedSeconds;
+    lastServerElapsedAt = Date.now();
+  }
 
   // Update info bar elements immediately
   document.getElementById("location").textContent =
@@ -367,8 +388,7 @@ const narrativeSystem = {
     this.updateNarrative();
     this.updateWeather();
 
-    // Update narrative every 5 seconds
-    this._narrativeInterval = setInterval(() => this.updateNarrative(), 5000);
+    // Server pushes narrative-event every 5 seconds — no local narrative timer needed
     // Update weather every 2 minutes
     this._weatherInterval = setInterval(() => this.updateWeather(), 120000);
 
@@ -378,7 +398,7 @@ const narrativeSystem = {
   updateNarrative() {
     if (!this.startTime) return;
 
-    const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+    const elapsed = getElapsedSeconds();
     const storyTextElement = document.getElementById("story-text");
 
     if (!storyTextElement) return;
@@ -2406,6 +2426,89 @@ const musicPlayer = {
     }
     return array;
   },
+
+  // Smoothly fade the regular music volume to a target over a duration (ms)
+  fadeTo(targetVolume, duration = 2000) {
+    return new Promise((resolve) => {
+      if (this._fadeInterval) clearInterval(this._fadeInterval);
+      const startVolume = this.audio.volume;
+      const steps = 30; // ~30 steps for smooth fade
+      const stepTime = duration / steps;
+      const volumeStep = (targetVolume - startVolume) / steps;
+      let currentStep = 0;
+
+      this._fadeInterval = setInterval(() => {
+        currentStep++;
+        if (currentStep >= steps) {
+          this.audio.volume = targetVolume;
+          clearInterval(this._fadeInterval);
+          this._fadeInterval = null;
+          resolve();
+        } else {
+          this.audio.volume = Math.max(
+            0,
+            Math.min(1, startVolume + volumeStep * currentStep),
+          );
+        }
+      }, stepTime);
+    });
+  },
+
+  // Play event music: fade out regular music, play the event track, then fade back in
+  async playEventMusic(
+    src,
+    {
+      fallbackSrc = null,
+      volume = 0.5,
+      fadeOutMs = 2000,
+      fadeInMs = 3000,
+    } = {},
+  ) {
+    // Remember volume to restore later
+    const savedVolume = this.audio.volume;
+    const wasPlaying = this.isPlaying && !this.audio.paused;
+
+    // Fade out regular music
+    if (wasPlaying) {
+      await this.fadeTo(0, fadeOutMs);
+      this.audio.pause();
+    }
+
+    // Play the event track
+    const eventAudio = new Audio(src);
+    eventAudio.volume = volume;
+
+    const tryPlay = (audioSrc) => {
+      return new Promise((resolve) => {
+        eventAudio.src = audioSrc;
+        eventAudio.addEventListener("ended", resolve, { once: true });
+        eventAudio
+          .play()
+          .then(() => console.debug(`🎵 Playing event music: ${audioSrc}`))
+          .catch((e) => {
+            console.warn(`⚠️ Error playing event music: ${e}`);
+            resolve(); // Don't block if playback fails
+          });
+      });
+    };
+
+    try {
+      await tryPlay(src);
+    } catch {
+      if (fallbackSrc) {
+        console.warn("⚠️ Primary event track failed, trying fallback.");
+        await tryPlay(fallbackSrc);
+      }
+    }
+
+    // Fade regular music back in
+    if (wasPlaying) {
+      this.audio.volume = 0;
+      this.audio.play().catch(() => {});
+      await this.fadeTo(savedVolume, fadeInMs);
+    }
+    console.debug("🎵 Event music finished, regular music restored.");
+  },
 };
 
 console.debug("✅ Defined musicPlayer object.");
@@ -2758,9 +2861,26 @@ document.addEventListener("DOMContentLoaded", function () {
     };
   }
 
+  // Returns elapsed voyage seconds using server-provided time to avoid clock skew.
+  // Interpolates locally between 3-second server broadcasts.
+  function getElapsedSeconds() {
+    if (lastServerElapsedAt > 0) {
+      return (
+        lastServerElapsed +
+        Math.floor((Date.now() - lastServerElapsedAt) / 1000)
+      );
+    }
+    // Fallback before first server broadcast
+    if (voyageStartTime) {
+      return Math.floor((Date.now() - voyageStartTime) / 1000);
+    }
+    return 0;
+  }
+
   function getBSTTime() {
-    // Use server voyage time for synchronization
-    if (!voyageStartTime) {
+    // Use server-synced elapsed time for synchronization
+    const elapsedSeconds = getElapsedSeconds();
+    if (elapsedSeconds === 0 && !voyageStartTime) {
       // Fallback if server time not yet received
       const now = new Date();
       const fixed = new Date(now);
@@ -2768,12 +2888,8 @@ document.addEventListener("DOMContentLoaded", function () {
       return fixed;
     }
 
-    // Calculate elapsed time since voyage started
-    const elapsedMs = Date.now() - voyageStartTime;
-    const elapsedSeconds = Math.floor(elapsedMs / 1000);
-    const elapsedMinutes = Math.floor(elapsedSeconds / 60);
-
     // Calculate game time starting from 12:00
+    const elapsedMinutes = Math.floor(elapsedSeconds / 60);
     const totalGameMinutes = elapsedMinutes;
     const gameHours = (12 + Math.floor(totalGameMinutes / 60)) % 24;
     const gameMinutes = totalGameMinutes % 60;
@@ -3067,10 +3183,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let speed = "0 knots";
 
     if (voyageStartTime) {
-      const elapsedSeconds = Math.max(
-        0,
-        Math.floor((Date.now() - voyageStartTime) / 1000),
-      );
+      const elapsedSeconds = getElapsedSeconds();
       const state = calculateVoyageState(elapsedSeconds);
       location = state.location;
       speed = state.speed;
@@ -3251,6 +3364,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Function to perform initial sync with server data
   function performInitialSync() {
+    if (initialSyncDone) return;
+    initialSyncDone = true;
     console.debug("🔄 Performing initial sync with server data...");
 
     // Initialize narrative system with server time
@@ -3377,6 +3492,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const clouds = [];
     let currentCloudTexture = desiredCloudTexture || "ms";
+    let lastCloudSlot = -1; // Track last processed 30-second cloud slot
+    const CLOUD_SLOT_SEC = 30; // Check cloud spawns every 30 voyage-seconds
     const cloudImages = {
       day: new Image(),
       ms: new Image(),
@@ -3404,24 +3521,77 @@ document.addEventListener("DOMContentLoaded", function () {
       console.debug(`☁️ Cloud texture forced to ${type}.png`);
     }
 
-    function spawnCloud(forceType = null) {
+    function spawnCloud(forceType = null, rng = null, spawnElapsed = null) {
+      const r = rng || Math.random;
       const cloudType = forceType || currentCloudTexture;
-      // historic spawn: start exactly offscreen to the right, keep clouds higher in the sky
+      const elapsed =
+        spawnElapsed !== null
+          ? spawnElapsed
+          : typeof getElapsedSeconds === "function"
+            ? getElapsedSeconds()
+            : 0;
       clouds.push({
-        x: canvas.width, // Start from right edge
-        y: Math.random() * (canvas.height * 0), // Keep clouds near top of canvas
-        speed: 0.1 + Math.random() * 0.1, // Slower base speed for gentle cloud travel
+        startX: canvas.width,
+        y: r() * (canvas.height * 0), // Keep clouds near top of canvas
+        speed: 0.1 + r() * 0.1, // pixels per frame at 60fps → convert to px/sec
+        spawnElapsed: elapsed, // voyage-seconds when this cloud was created
         image: cloudImages[cloudType],
       });
+    }
+
+    // Deterministic cloud spawn check for a given time slot
+    function checkCloudSlots() {
+      const elapsed =
+        typeof getElapsedSeconds === "function" ? getElapsedSeconds() : 0;
+      const currentSlot = Math.floor(elapsed / CLOUD_SLOT_SEC);
+      if (currentSlot <= lastCloudSlot) return;
+
+      // On first run (lastCloudSlot === -1), only look back far enough for
+      // clouds that could still be on screen. A cloud crosses ~1920px at
+      // speed 0.1-0.2 * 60 = 6-12 px/sec → max ~320 seconds on screen.
+      const maxCloudAge = 320; // seconds
+      const lookbackSlots = Math.ceil(maxCloudAge / CLOUD_SLOT_SEC);
+      const startSlot =
+        lastCloudSlot === -1
+          ? Math.max(0, currentSlot - lookbackSlots)
+          : lastCloudSlot + 1;
+
+      for (let slot = startSlot; slot <= currentSlot; slot++) {
+        const seed = ((voyageStartTime || 12345) ^ (slot * 4919)) | 0;
+        const rng = createSeededRng(seed);
+        // ~30% chance per 30-second window
+        if (rng() < 0.3) {
+          spawnCloud(null, rng, slot * CLOUD_SLOT_SEC);
+        }
+      }
+      lastCloudSlot = currentSlot;
+    }
+
+    // Sub-second elapsed for smooth rendering (not floored like getElapsedSeconds)
+    function getElapsedSmooth() {
+      if (lastServerElapsedAt > 0) {
+        return lastServerElapsed + (Date.now() - lastServerElapsedAt) / 1000;
+      }
+      if (voyageStartTime) {
+        return (Date.now() - voyageStartTime) / 1000;
+      }
+      return 0;
     }
 
     function animate() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      const elapsed = getElapsedSmooth();
+
       clouds.forEach((cloud, index) => {
         if (!cloud.image.complete) return; // Skip if image not loaded
         const scaledHeight = cloud.image.height;
         const scaledWidth = cloud.image.width;
+
+        // Compute position from elapsed time — identical on all clients
+        // speed is ~0.1-0.2 px/frame at 60fps = ~6-12 px/sec
+        const age = elapsed - cloud.spawnElapsed;
+        const x = cloud.startX - cloud.speed * 60 * age;
 
         ctx.save();
         const activeInterval = imageIntervals.find((interval) => {
@@ -3432,27 +3602,28 @@ document.addEventListener("DOMContentLoaded", function () {
         const isDayInterval = activeInterval?.className === "day";
         ctx.globalAlpha = isDayInterval ? 1 : 0.92;
         ctx.filter = isDayInterval ? "brightness(1)" : "brightness(0.88)";
-        ctx.drawImage(cloud.image, cloud.x, cloud.y, scaledWidth, scaledHeight);
+        ctx.drawImage(cloud.image, x, cloud.y, scaledWidth, scaledHeight);
         ctx.restore();
 
-        cloud.x -= cloud.speed;
-
-        if (cloud.x + scaledWidth < 0) {
+        if (x + scaledWidth < 0) {
           clouds.splice(index, 1);
         }
       });
 
-      // Historic spawn behavior: very infrequent, natural clouds
-      if (Math.random() < 0.0001) spawnCloud();
+      // Deterministic cloud spawning synced across clients
+      checkCloudSlots();
 
       requestAnimationFrame(animate);
     }
 
-    // Initial spawn to populate the sky
+    // Initial spawn to populate the sky using seeded positions
+    const initCloudRng = createSeededRng((voyageStartTime || 12345) ^ 99991);
+    const initElapsed =
+      typeof getElapsedSeconds === "function" ? getElapsedSeconds() : 0;
     for (let i = 0; i < 3; i++) {
-      spawnCloud(currentCloudTexture);
-      // Spread initial clouds across the canvas so they don't clump
-      clouds[i].x = Math.random() * canvas.width;
+      // Spawn with a fake earlier time so they appear spread across the sky
+      const fakeAge = initCloudRng() * 200; // pretend they spawned 0-200s ago
+      spawnCloud(currentCloudTexture, initCloudRng, initElapsed - fakeAge);
     }
 
     applyCloudTexture(currentCloudTexture);
@@ -3472,6 +3643,299 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize clouds
   initClouds();
+
+  // ---- Bird sprite system ----
+  const birdSystem = {
+    SPRITE_SRC: "../images/animations/bird_sprite (1).png",
+    FRAME_W: 7, // Each frame width in the sprite sheet
+    FRAME_H: 7, // Each frame height in the sprite sheet
+    COLS: 4, // Columns in the sprite sheet
+    ROWS: 4, // Rows in the sprite sheet
+    SCALE: 1, // Original sprite size
+    ANIM_SPEED: 150, // ms per frame
+    MIN_SPEED: 30, // px/sec flight speed min
+    MAX_SPEED: 60, // px/sec flight speed max
+    MIN_Y_PCT: 2, // min vertical % in scene (top of sky)
+    MAX_Y_PCT: 22, // max vertical % in scene (above city/water)
+    SPAWN_INTERVAL: 2, // Check spawns every 2 voyage-seconds
+    spriteImg: null,
+    container: null,
+    birds: [],
+    spawnTimer: null,
+    animFrame: null,
+    lastTick: 0,
+    lastSpawnSlot: -1, // Last processed 2-second slot
+
+    // Returns a spawn probability (0–1) based on proximity to land
+    getLandFactor(elapsed) {
+      const dep = TIMELINE_SECONDS.DEPARTURE_DELAY;
+      const swEnd = TIMELINE_SECONDS.SOUTHAMPTON_WATER_END + dep;
+      const needles = TIMELINE_SECONDS.NEEDLES_COMPLETE + dep;
+      const channel = TIMELINE_SECONDS.CHANNEL_COMPLETE + dep;
+      const berthing = TIMELINE_SECONDS.BERTHING_COMPLETE + dep;
+
+      if (elapsed < dep) return 1.0; // At port — max birds
+      if (elapsed < swEnd) return 0.8; // Southampton Water
+      if (elapsed < needles) {
+        // Solent → Needles, taper off
+        const t = (elapsed - swEnd) / (needles - swEnd);
+        return Math.max(0, 0.8 - t * 0.8); // 0.8 → 0
+      }
+      if (elapsed < channel) return 0; // Open channel — no birds
+      if (elapsed < berthing) {
+        // Approaching Cherbourg — ramp up
+        const t = (elapsed - channel) / (berthing - channel);
+        return Math.min(1.0, t * 1.0);
+      }
+      return 1.0; // At Cherbourg
+    },
+
+    // Generate deterministic spawn data for a given 2-second slot
+    getSlotSpawnData(slot) {
+      // Seed = voyageStartTime XOR slot index → same for all clients
+      const seed = ((voyageStartTime || 0) ^ (slot * 7919)) | 0;
+      const rng = createSeededRng(seed);
+
+      const elapsed = slot * this.SPAWN_INTERVAL;
+      const factor = this.getLandFactor(elapsed);
+      if (factor <= 0) return null;
+
+      // Decide whether to spawn anything
+      if (rng() > factor * 0.6) return null;
+
+      const sceneW = this.container?.parentElement?.offsetWidth || 1920;
+      const sceneH = this.container?.parentElement?.offsetHeight || 1080;
+
+      // Decide flock vs lone bird
+      const isFlock = rng() < 0.4;
+      const maxBirds = Math.ceil(factor * 8);
+      const goRight = rng() > 0.5;
+      const renderW = this.FRAME_W * this.SCALE;
+      const startX = goRight ? -renderW : sceneW + renderW;
+      const baseY =
+        (sceneH *
+          (this.MIN_Y_PCT + rng() * (this.MAX_Y_PCT - this.MIN_Y_PCT))) /
+        100;
+      const baseSpeed =
+        this.MIN_SPEED + rng() * (this.MAX_SPEED - this.MIN_SPEED);
+      const frameStart = Math.floor(rng() * (this.COLS * this.ROWS));
+
+      const spawns = [];
+      if (isFlock) {
+        const flockSize = Math.min(2 + Math.floor(rng() * 3), maxBirds);
+        for (let i = 0; i < flockSize; i++) {
+          const offsetX = (goRight ? -1 : 1) * i * (15 + rng() * 20);
+          const offsetY = (rng() - 0.5) * 30 + Math.abs(i) * 8;
+          const speedVar = (rng() - 0.5) * 6;
+          spawns.push({
+            x: startX + offsetX,
+            y: Math.max(0, baseY + offsetY),
+            speed: baseSpeed + speedVar,
+            goRight,
+            frameIndex: (frameStart + i) % (this.COLS * this.ROWS),
+          });
+        }
+      } else {
+        spawns.push({
+          x: startX,
+          y: baseY,
+          speed: baseSpeed,
+          goRight,
+          frameIndex: frameStart,
+        });
+      }
+
+      return { elapsed, spawns };
+    },
+
+    init() {
+      const sceneLayer = document.querySelector(".scene-layer");
+      if (!sceneLayer) {
+        console.warn("⚠️ No .scene-layer for birds");
+        return;
+      }
+
+      this.container = document.createElement("div");
+      this.container.className = "bird-container";
+      sceneLayer.appendChild(this.container);
+
+      this.spriteImg = new Image();
+      this.spriteImg.src = this.SPRITE_SRC;
+      this.spriteImg.onload = () => {
+        console.debug("🐦 Bird sprite loaded");
+        this.start();
+      };
+      this.spriteImg.onerror = () =>
+        console.warn("⚠️ Failed to load bird sprite");
+    },
+
+    start() {
+      this.lastTick = performance.now();
+      this._tick = this._tick.bind(this);
+      this.animFrame = requestAnimationFrame(this._tick);
+
+      // Wait for voyageStartTime before spawning so seeds are correct
+      const tryStart = () => {
+        if (!voyageStartTime) {
+          setTimeout(tryStart, 500);
+          return;
+        }
+        this.catchUp();
+        this.spawnTimer = setInterval(() => this.checkSpawns(), 1000);
+        console.debug("🐦 Bird spawning synced to voyageStartTime");
+      };
+      tryStart();
+    },
+
+    catchUp() {
+      const now =
+        typeof getElapsedSeconds === "function" ? getElapsedSeconds() : 0;
+      const currentSlot = Math.floor(now / this.SPAWN_INTERVAL);
+      const sceneW = this.container?.parentElement?.offsetWidth || 1920;
+      const renderW = this.FRAME_W * this.SCALE;
+
+      // Look back through recent slots to find birds still on screen
+      // A bird takes at most sceneW / MIN_SPEED seconds to cross
+      const maxFlightSec = Math.ceil((sceneW + renderW * 4) / this.MIN_SPEED);
+      const lookbackSlots = Math.ceil(maxFlightSec / this.SPAWN_INTERVAL);
+      const startSlot = Math.max(0, currentSlot - lookbackSlots);
+
+      for (let slot = startSlot; slot <= currentSlot; slot++) {
+        const data = this.getSlotSpawnData(slot);
+        if (!data) continue;
+
+        const age = now - data.elapsed; // seconds since this batch spawned
+        for (const s of data.spawns) {
+          // Calculate where this bird would be now
+          const currentX = s.x + (s.goRight ? 1 : -1) * s.speed * age;
+          // Only add if still on screen
+          if (currentX > -renderW * 2 && currentX < sceneW + renderW * 2) {
+            this.addBird(currentX, s.y, s.goRight, s.speed, s.frameIndex);
+          }
+        }
+      }
+
+      this.lastSpawnSlot = currentSlot;
+      console.debug(
+        `🐦 Bird catch-up complete: ${this.birds.length} birds on screen`,
+      );
+    },
+
+    checkSpawns() {
+      const now =
+        typeof getElapsedSeconds === "function" ? getElapsedSeconds() : 0;
+      const currentSlot = Math.floor(now / this.SPAWN_INTERVAL);
+
+      // Process any new slots since last check
+      for (let slot = this.lastSpawnSlot + 1; slot <= currentSlot; slot++) {
+        const data = this.getSlotSpawnData(slot);
+        if (!data) continue;
+
+        const maxBirds = Math.ceil(this.getLandFactor(now) * 8);
+        if (this.birds.length >= maxBirds) break;
+
+        for (const s of data.spawns) {
+          if (this.birds.length >= maxBirds) break;
+          this.addBird(s.x, s.y, s.goRight, s.speed, s.frameIndex);
+        }
+      }
+
+      this.lastSpawnSlot = currentSlot;
+    },
+
+    addBird(x, y, goRight, speed, frameIndex) {
+      const canvas = document.createElement("canvas");
+      const renderW = this.FRAME_W * this.SCALE;
+      const renderH = this.FRAME_H * this.SCALE;
+      canvas.width = renderW;
+      canvas.height = renderH;
+      canvas.className = "bird-sprite";
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
+
+      canvas.style.left = x + "px";
+      canvas.style.top = y + "px";
+      if (!goRight) canvas.style.transform = "scaleX(-1)";
+
+      this.container.appendChild(canvas);
+
+      this.birds.push({
+        canvas,
+        ctx,
+        x,
+        y,
+        speed,
+        goRight,
+        frameIndex,
+        frameTimer: 0,
+        sceneW: this.container.parentElement?.offsetWidth || 1920,
+      });
+    },
+
+    destroy() {
+      if (this.spawnTimer) {
+        clearInterval(this.spawnTimer);
+        this.spawnTimer = null;
+      }
+      if (this.animFrame) {
+        cancelAnimationFrame(this.animFrame);
+        this.animFrame = null;
+      }
+      this.birds.forEach((b) => b.canvas.remove());
+      this.birds = [];
+    },
+
+    _tick(now) {
+      const dt = (now - this.lastTick) / 1000;
+      this.lastTick = now;
+
+      for (let i = this.birds.length - 1; i >= 0; i--) {
+        const b = this.birds[i];
+
+        // Move
+        b.x += (b.goRight ? 1 : -1) * b.speed * dt;
+        b.canvas.style.left = b.x + "px";
+
+        // Remove if offscreen
+        const renderW = this.FRAME_W * this.SCALE;
+        if (
+          (b.goRight && b.x > b.sceneW + renderW) ||
+          (!b.goRight && b.x < -renderW * 2)
+        ) {
+          b.canvas.remove();
+          this.birds.splice(i, 1);
+          continue;
+        }
+
+        // Animate frame
+        b.frameTimer += dt * 1000;
+        if (b.frameTimer >= this.ANIM_SPEED) {
+          b.frameTimer -= this.ANIM_SPEED;
+          b.frameIndex = (b.frameIndex + 1) % (this.COLS * this.ROWS);
+        }
+
+        // Draw current frame
+        const col = b.frameIndex % this.COLS;
+        const row = Math.floor(b.frameIndex / this.COLS);
+        b.ctx.clearRect(0, 0, b.canvas.width, b.canvas.height);
+        b.ctx.drawImage(
+          this.spriteImg,
+          col * this.FRAME_W,
+          row * this.FRAME_H,
+          this.FRAME_W,
+          this.FRAME_H,
+          0,
+          0,
+          b.canvas.width,
+          b.canvas.height,
+        );
+      }
+
+      this.animFrame = requestAnimationFrame(this._tick);
+    },
+  };
+
+  birdSystem.init();
 
   function initSmoke() {
     const canvas = document.createElement("canvas");
@@ -3754,9 +4218,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!voyageStartTime) return; // Wait for server time
 
         clearInterval(waitForSpawn);
-        const elapsedSeconds = Math.floor(
-          (Date.now() - voyageStartTime) / 1000,
-        );
+        const elapsedSeconds = getElapsedSeconds();
 
         // If ship has already departed (past 7 minutes), spawn on ship
         if (elapsedSeconds >= 420) {
@@ -7440,23 +7902,12 @@ document.addEventListener("DOMContentLoaded", function () {
       const fallbackSrc =
         "/sounds/music/[TITANIC] - Leaving Port (Complete Score _ Film Version) - RadioKidCharlemagne (youtube).mp3";
 
-      const leavingPortMusic = new Audio(primarySrc);
-      leavingPortMusic.volume = 0.5;
-      const tryFallback = () => {
-        console.warn("⚠️ Primary Leaving Port track failed, trying fallback.");
-        leavingPortMusic.src = fallbackSrc;
-        leavingPortMusic.play().then(() => {
-          console.debug("🎵 Playing Leaving Port music (fallback)...");
-        });
-      };
-      leavingPortMusic.addEventListener("error", tryFallback, { once: true });
-      leavingPortMusic
-        .play()
-        .then(() => console.debug("🎵 Playing Leaving Port music..."))
-        .catch((e) => {
-          console.warn("⚠️ Error playing primary Leaving Port:", e);
-          tryFallback();
-        });
+      musicPlayer.playEventMusic(primarySrc, {
+        fallbackSrc,
+        volume: 0.5,
+        fadeOutMs: 2000,
+        fadeInMs: 3000,
+      });
     }, 1500); // 1.5 seconds into whistle
 
     // Start ship movement animation
@@ -7558,7 +8009,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Use server voyage time for synchronization
     const startTime = voyageStartTime || Date.now(); // Use server time if available
-    const elapsedAtStart = voyageStartTime ? Date.now() - voyageStartTime : 0; // How much time has already passed
+    const elapsedAtStart = voyageStartTime ? getElapsedSeconds() * 1000 : 0; // How much time has already passed
     maybeHideSouthamptonVisuals(elapsedAtStart, "late-join bootstrap");
     maybeHideCoastalTerrain(elapsedAtStart, "late-join bootstrap");
 
@@ -8518,7 +8969,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const checkDepartureTime = setInterval(() => {
       if (!voyageStartTime) return; // Wait for server time
 
-      const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
+      const elapsedSeconds = getElapsedSeconds();
 
       // If we're past departure time but haven't started yet
       if (elapsedSeconds >= 420) {
