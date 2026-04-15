@@ -1,3 +1,17 @@
+@font-face {
+  font-family: "Vetro";
+  src: url("/css/Vetro.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Nothing Anymore";
+  src: url("/css/NothingAnymore.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+}
+
 /* Cabin action buttons (shower, toilet, sleep) */
 .cabin-action-btn {
   background: linear-gradient(135deg, #f4e4bc 60%, #e6d7b8 100%);
@@ -84,11 +98,15 @@
   box-sizing: border-box;
 }
 
-html,
-body {
+html {
   height: 100%;
   width: 100%;
   overflow: hidden;
+}
+
+body {
+  height: 100%;
+  width: 100%;
   min-width: 1280px;
   min-height: 720px;
 }
@@ -131,13 +149,14 @@ body {
   --yacht-left-2: 1152px;
   --yacht-left-3: 768px;
   --bottom-bar-height: calc(130px * var(--scale));
-  --hud-panel-height: clamp(220px, 40vh, 360px);
+  /* HUD panel grows with scale so it stays proportional at 4K and above */
+  --hud-panel-height: clamp(220px, calc(360px * var(--scale)), 720px);
   --location-panel-width: clamp(
     360px,
     calc((16 / 9) * var(--hud-panel-height)),
-    720px
+    1280px
   );
-  --player-row-width: clamp(240px, 25vw, 420px);
+  --player-row-width: clamp(240px, calc(420px * var(--scale)), 840px);
   --smoke-offset: -90px; /* Negative = move smoke down; adjust as needed */
   /* Yacht scale variables — slightly larger so they read better at distance */
   --yacht-scale-1: 1; /* forward yacht */
@@ -1303,6 +1322,31 @@ body {
   padding: 0;
 }
 
+.room-name-label {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  font-family: "Nothing Anymore", serif;
+  font-size: calc(29px * var(--scale));
+  color: #ffffff;
+  text-shadow:
+    0 0 6px rgba(0, 0, 0, 0.9),
+    0 0 12px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+  z-index: 12;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  display: none;
+}
+
+.room-name-label::selection {
+  background: rgba(192, 147, 43, 0.45);
+  color: #fff7da;
+}
+
 .location-canvas {
   width: 100%;
   height: 100%;
@@ -2019,8 +2063,7 @@ body {
   box-sizing: border-box;
 }
 
-html,
-body {
+html {
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -2506,231 +2549,250 @@ body {
   }
 }
 
-/* Eat & Drink Menu Styling - 1910s Britannic Aesthetic */
+/* Eat & Drink Menu - overlays inside location-display */
 .eat-drink-popup {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 560px;
-  min-height: 200px;
-  max-height: 310px;
-  height: 310px;
-  background: linear-gradient(180deg, #fdf1dc 0%, #f3d4a2 100%);
-  border: 2px solid #b4834f;
-  border-radius: 12px;
-  box-shadow: 0 18px 30px rgba(0, 0, 0, 0.45);
+  top: 44px;
+  left: 22px;
+  right: 22px;
+  bottom: 50px;
+  background: linear-gradient(
+    180deg,
+    rgba(253, 241, 220, 0.88) 0%,
+    rgba(243, 212, 162, 0.85) 100%
+  );
+  border: 1px solid rgba(180, 131, 79, 0.6);
+  border-radius: 8px;
   font-family: "Times New Roman", serif;
   display: flex;
   flex-direction: column;
   padding: 0;
   overflow: hidden;
-  z-index: 1000;
+  z-index: 14;
 }
 
-.eat-drink-popup::before {
-  content: "";
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
-  border: 1px solid rgba(191, 141, 81, 0.3);
-  pointer-events: none;
-}
-
-.eat-drink-popup::after {
-  content: "";
-}
-
-/* Sidebar Categories */
-.eat-drink-sidebar {
+/* Body: sidebar + content, fills remaining space */
+.edm-body {
   display: flex;
-  justify-content: center;
-  gap: 10px;
-  padding: 12px 16px 10px;
-  background: #dfc392;
-  border-bottom: 1px solid #b4834f;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.category-btn {
-  flex: 1;
-  margin: 0;
-  padding: 8px 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+/* Left Sidebar */
+.edm-sidebar {
+  width: 140px;
+  min-width: 140px;
+  background: rgba(210, 185, 145, 0.45);
+  border-right: 1px solid rgba(180, 131, 79, 0.4);
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.edm-sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.edm-sidebar::-webkit-scrollbar-thumb {
+  background: #b58a56;
+  border-radius: 3px;
+}
+
+/* Category Accordion */
+.edm-category-header {
   font-family: "Julius Sans One", serif;
-  background: linear-gradient(180deg, #fff3de 0%, #f2d4a7 100%);
-  border: 1px solid #c88f56;
-  border-radius: 8px;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
   color: #2e1608;
+  padding: 7px 10px;
   cursor: pointer;
-  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.1);
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    transform 0.2s ease;
+  user-select: none;
+  transition: background 0.15s ease;
   display: flex;
   align-items: center;
-  justify-content: center;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+  gap: 5px;
 }
 
-.category-btn:hover {
-  background: #ffeecc;
-  border-color: #d29b5a;
+.edm-category-header:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
-.category-btn.active {
-  background: #fff8ea;
-  border-color: #d09448;
-  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.15);
-  transform: translateY(1px);
+.edm-arrow {
+  font-size: 9px;
+  display: inline-block;
+  width: 10px;
+  text-align: center;
 }
 
-/* Content Area */
-.eat-drink-content {
-  flex: 1;
-  background: #fdfaf1;
-  padding: 16px 18px 18px;
-  overflow-y: auto;
-  border-radius: 0 0 10px 10px;
-  max-height: calc(310px - 68px);
+/* Subcategory Buttons */
+.edm-subcategories {
+  display: none;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 8px 6px 22px;
 }
 
-.eat-drink-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.eat-drink-content::-webkit-scrollbar-track {
-  background: rgba(191, 141, 81, 0.2);
-}
-
-.eat-drink-content::-webkit-scrollbar-thumb {
-  background: #b58a56;
+.edm-subcat-btn {
+  font-family: "Julius Sans One", serif;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: #4a3c28;
+  padding: 3px 7px;
   border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+  user-select: none;
 }
 
-.eat-drink-content::-webkit-scrollbar-thumb:hover {
-  background: #cf9f64;
+.edm-subcat-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.edm-subcat-btn.active {
+  background: linear-gradient(180deg, #fff3de 0%, #f2d4a7 100%);
+  border: 1px solid #c88f56;
+  color: #2e1608;
+  font-weight: bold;
+}
+
+/* Right Content Area */
+.edm-content {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  overflow-y: auto;
+}
+
+.edm-content::-webkit-scrollbar {
+  width: 5px;
+}
+
+.edm-content::-webkit-scrollbar-track {
+  background: rgba(191, 141, 81, 0.15);
+}
+
+.edm-content::-webkit-scrollbar-thumb {
+  background: #b58a56;
+  border-radius: 3px;
 }
 
 /* Items Grid */
-.items-grid {
+.edm-items-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 8px;
   align-content: start;
 }
 
-/* Menu Items */
-.menu-item {
-  width: 70px;
-  height: 70px;
-  background: #fef6e6;
-  border: 1px solid #cda46c;
-  border-radius: 10px;
+/* Room Passengers Drawer */
+.players-drawer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  width: min(245px, calc(100% - 10px));
+  max-height: 30px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 10px 0 0 0;
+  background: rgba(0, 0, 0, 0.88);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+  transition:
+    max-height 0.3s ease,
+    background 0.22s ease,
+    border-color 0.22s ease;
+}
+
+.players-drawer.open {
+  height: 62%;
+  max-height: 62%;
+}
+
+#players-btn.players-toggle-btn {
+  position: relative;
+  bottom: auto;
+  right: auto;
+  z-index: 1001;
+  width: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 32px;
-  box-shadow: 0 6px 10px rgba(0, 0, 0, 0.12);
-  cursor: pointer;
-  position: relative;
-  transition:
-    transform 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.menu-item:hover {
-  transform: translateY(-2px);
-  border-color: #e3b87a;
-}
-
-.menu-item:active {
-  transform: translateY(0);
-}
-
-/* Food and Beverage Grids */
-.food-grid,
-.drinks-grid,
-.alcohol-grid {
-  display: none;
-  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  justify-content: space-between;
   gap: 10px;
+  min-width: 0;
+  padding: 4px 12px;
+  border: none;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #fff;
+  font-family: "Julius Sans One", serif;
+  font-size: 13px;
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition:
+    background 0.22s ease,
+    border-color 0.22s ease;
 }
 
-.food-grid.active,
-.drinks-grid.active,
-.alcohol-grid.active {
-  display: grid;
+#players-btn.players-toggle-btn:hover {
+  background: rgba(20, 20, 20, 0.96);
 }
 
-/* Room Players Popup Styling */
+#players-btn.players-toggle-btn.open {
+  border-bottom-color: rgba(255, 255, 255, 0.15);
+}
+
+#players-btn.players-toggle-btn.open .players-toggle-arrow {
+  transform: rotate(180deg);
+}
+
+#players-btn .players-toggle-arrow {
+  font-size: 12px;
+  transition: transform 0.22s ease;
+}
+
 #players-popup {
-  display: none;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  position: relative;
+  right: auto;
+  bottom: auto;
   z-index: 1000;
-  width: calc(100% - 40px);
-  max-width: 520px;
-  height: auto;
-  max-height: 500px;
-  background-color: rgba(26, 26, 26, 0.95);
-  border: 3px solid #c0932b;
-  border-radius: 5px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-  padding: 0;
+  width: 100%;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: transparent;
+  box-shadow: none;
   overflow: hidden;
-  flex-direction: column;
+  transition:
+    max-height 0.3s ease,
+    opacity 0.2s ease,
+    padding 0.3s ease;
+  padding: 0 10px;
 }
 
 #players-popup.open {
-  display: flex;
-}
-
-#players-popup .players-header {
-  position: relative;
-  font-family: "Julius Sans One", serif;
-  color: #f5f5dc;
-  font-size: 18px;
-  font-weight: bold;
-  text-align: center;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-  padding: 12px 15px;
-  background-color: rgba(192, 147, 43, 0.2);
-  border-bottom: 2px solid #c0932b;
-  letter-spacing: 1px;
-}
-
-#players-popup .close-room-players {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  font-size: 20px;
-  cursor: pointer;
-  color: #c0932b;
-  background: none;
-  border: none;
-  padding: 0;
-  transition: color 0.2s ease;
-}
-
-#players-popup .close-room-players:hover {
-  color: #e0b13d;
+  max-height: calc(100% - 30px);
+  height: calc(100% - 30px);
+  opacity: 1;
+  pointer-events: auto;
+  padding: 8px 10px 10px;
 }
 
 #players-popup .players-list {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 10px;
   overflow-y: auto;
-  max-height: 420px;
-  padding: 12px;
+  height: 100%;
+  max-height: 100%;
+  padding: 0;
 }
 
 #players-popup .players-list::-webkit-scrollbar {
@@ -2753,32 +2815,39 @@ body {
 
 #players-popup .room-player-item {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
+  align-items: flex-start;
+  align-self: start;
   gap: 8px;
-  padding: 12px;
-  background-color: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(192, 147, 43, 0.5);
-  border-radius: 4px;
-  text-align: center;
+  padding: 6px;
+  background-color: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(192, 147, 43, 0.45);
+  border-radius: 3px;
+  text-align: left;
   transition: all 0.2s ease;
 }
 
 #players-popup .room-player-item:hover {
-  background-color: rgba(192, 147, 43, 0.2);
+  background-color: rgba(192, 147, 43, 0.16);
   border-color: #c0932b;
 }
 
 #players-popup .player-avatar {
-  width: 80px;
-  height: 80px;
-  border-radius: 2px;
-  border: 2px solid #c0932b;
+  width: 40px;
+  height: 40px;
+  border-radius: 1px;
+  border: 1px solid #c0932b;
   overflow: hidden;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+#players-popup .player-avatar-button {
+  padding: 0;
+  background: none;
+  cursor: pointer;
 }
 
 #players-popup .player-avatar img {
@@ -2792,32 +2861,35 @@ body {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
+  min-width: 0;
 }
 
 #players-popup .player-name {
   font-family: "Julius Sans One", serif;
   font-weight: bold;
-  font-size: 12px;
+  font-size: 9px;
   color: #f5f5dc;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.6);
   word-break: break-word;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 #players-popup .player-class {
   font-family: "Julius Sans One", serif;
-  font-size: 10px;
+  font-size: 8px;
   color: #ddd;
   text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+  line-height: 1.1;
 }
 
 #players-popup .player-cabin {
   font-family: "Julius Sans One", serif;
-  font-size: 10px;
+  font-size: 8px;
   color: #c0932b;
   text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
   word-break: break-word;
+  line-height: 1.1;
 }
 
 #players-popup .no-players {
@@ -2828,6 +2900,98 @@ body {
   font-family: "Julius Sans One", serif;
   font-size: 14px;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.player-info-popup {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 20px;
+}
+
+.player-info-card {
+  position: relative;
+  max-width: 640px;
+  width: min(88vw, 640px);
+  max-height: 85vh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #f5f1e8 0%, #ece5d7 100%);
+  color: #1f1a14;
+  border: 3px solid #5f3b14;
+  border-radius: 18px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+  padding: 18px;
+}
+
+#player-content {
+  font-family: Georgia, serif;
+}
+
+.player-popup-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.player-popup-avatar {
+  width: 120px;
+  height: 120px;
+  border: 2px solid #3e2b17;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #d8d0c0;
+}
+
+.player-popup-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.player-popup-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.player-popup-name {
+  font-family: "Julius Sans One", serif;
+  font-size: 22px;
+  color: #24180d;
+  margin-bottom: 4px;
+}
+
+.player-popup-birthdate {
+  font-size: 18px;
+  color: #2d2218;
+  margin-bottom: 4px;
+}
+
+.player-popup-bio {
+  font-size: 16px;
+  line-height: 1.55;
+  color: #241d15;
+  white-space: pre-wrap;
+}
+
+.close-player-info {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(120, 90, 30, 0.2);
+  color: #6d4a18;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
 }
 
 /* Report Modal Styles */

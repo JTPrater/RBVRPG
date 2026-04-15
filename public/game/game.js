@@ -122,6 +122,14 @@ window.RBVLog = {
   originalConsole,
 };
 
+// ── DEV-ONLY: North Atlantic override ──────────────────────────────
+// Flip to true to freeze the voyage in open ocean. Change DEV_HOUR
+// to test any time of day (0-23, fractional OK e.g. 17.5 = 5:30 PM).
+// Set back to false when done.
+const DEV_NORTH_ATLANTIC = true;
+const DEV_HOUR = 12; // 0 = midnight, 6 = sunrise, 12 = noon, 17 = sunset, 22 = night
+// ── end dev override ───────────────────────────────────────────────
+
 // Listen for voyage start time from server
 socket.on("voyage-start-time", (serverStartTime) => {
   voyageStartTime = serverStartTime;
@@ -159,15 +167,22 @@ socket.on("voyage-state", (currentVoyageState) => {
   }
 
   // Update info bar elements immediately
-  document.getElementById("location").textContent =
-    `Location: ${currentVoyageState.location}`;
-  document.getElementById("speed").textContent =
-    `Speed: ${currentVoyageState.speed}`;
-
-  // Set window.currentSpeed for visual effects (smoke, wind)
-  window.currentSpeed = currentVoyageState.speedValue;
-  // Set target speed for smooth acceleration/deceleration
-  window.targetSpeed = currentVoyageState.targetSpeed;
+  if (DEV_NORTH_ATLANTIC) {
+    document.getElementById("location").textContent =
+      "Location: North Atlantic";
+    document.getElementById("speed").textContent = "Speed: 22.0 knots";
+    window.currentSpeed = 22;
+    window.targetSpeed = 22;
+  } else {
+    document.getElementById("location").textContent =
+      `Location: ${currentVoyageState.location}`;
+    document.getElementById("speed").textContent =
+      `Speed: ${currentVoyageState.speed}`;
+    // Set window.currentSpeed for visual effects (smoke, wind)
+    window.currentSpeed = currentVoyageState.speedValue;
+    // Set target speed for smooth acceleration/deceleration
+    window.targetSpeed = currentVoyageState.targetSpeed;
+  }
   console.debug(
     `💨 Set window.currentSpeed to ${window.currentSpeed} and targetSpeed to ${window.targetSpeed} for visual effects`,
   );
@@ -190,6 +205,14 @@ socket.on("voyage-state", (currentVoyageState) => {
 // Listen for server narrative events (registered once at top level, NOT inside voyage-state)
 socket.on("narrative-event", (data) => {
   try {
+    // Suppress narrative events in dev North Atlantic mode — show our own text
+    if (DEV_NORTH_ATLANTIC) {
+      const el = document.getElementById("story-text");
+      if (el)
+        el.textContent =
+          "We are now deep in the North Atlantic, making steady progress. The open ocean stretches to every horizon.";
+      return;
+    }
     console.debug("📣 Received narrative-event from server:", data);
     const storyTextElement = document.getElementById("story-text");
     if (storyTextElement) {
@@ -508,7 +531,7 @@ const deckRooms = {
       type: "grand-staircase",
       isSVG: true,
       location: {
-        image: "Grand Staircase.jpg",
+        image: "grand stair1.png",
         chatRoom: "grand_staircase_bd",
       },
     },
@@ -520,7 +543,7 @@ const deckRooms = {
       type: "gymnasium",
       isSVG: true,
       location: {
-        image: "1st Class Gymnasium.jpg",
+        image: "1st gym1.png",
         chatRoom: "gymnasium_bd",
       },
     },
@@ -544,7 +567,7 @@ const deckRooms = {
       type: "promenade",
       isSVG: true,
       location: {
-        image: "first class port promenade.webp", // Using same image
+        image: "BD first starb prom1.png",
         chatRoom: "starboard_promenade_bd",
       },
     },
@@ -556,7 +579,7 @@ const deckRooms = {
       type: "playroom",
       isSVG: true,
       location: {
-        image: "Childrens Playroom.jpg", // Ensure this image exists in your assets
+        image: "Childrens Playroom.png",
         chatRoom: "childrens_playroom_bd",
       },
     },
@@ -568,7 +591,7 @@ const deckRooms = {
       type: "promenade",
       isSVG: true,
       location: {
-        image: "Port Officer's Promenade.jpg", // Ensure this exists
+        image: "Port Officer's Promenade.png", // Ensure this exists
         chatRoom: "port_officers_promenade_bd",
       },
     },
@@ -580,7 +603,7 @@ const deckRooms = {
       type: "promenade",
       isSVG: true,
       location: {
-        image: "Starboard Officer's Promenade.jpg", // Ensure this image exists
+        image: "Starboard Officer's Promenade.png", // Ensure this image exists
         chatRoom: "starboard_officers_promenade_bd",
       },
     },
@@ -592,7 +615,7 @@ const deckRooms = {
       type: "bridge_wing",
       isSVG: true,
       location: {
-        image: "Port Bridge Wing.jpg", // First image
+        image: "Port Bridge Wing.png", // First image
         chatRoom: "port_bridge_wing_bd",
       },
     },
@@ -604,7 +627,7 @@ const deckRooms = {
       type: "bridge_wing",
       isSVG: true,
       location: {
-        image: "Starboard Bridge Wing.jpg", // First image
+        image: "Starboard Bridge Wing.png", // First image
         chatRoom: "starboard_bridge_wing_bd",
       },
     },
@@ -616,7 +639,7 @@ const deckRooms = {
       type: "bridge",
       isSVG: true,
       location: {
-        image: "Bridge.jpg", // First image
+        image: "Bridge.png", // First image
         chatRoom: "bridge_bd",
       },
     },
@@ -628,7 +651,7 @@ const deckRooms = {
       type: "wheelhouse",
       isSVG: true,
       location: {
-        image: "wheelhouse1.jpg", // First image
+        image: "wheelhouse1.png", // First image
         chatRoom: "wheelhouse_bd",
       },
     },
@@ -638,7 +661,7 @@ const deckRooms = {
       type: "promenade",
       isSVG: true,
       location: {
-        image: "starb engineers prom1.jpg", // First image
+        image: "starb engineers prom1.png", // First image
         chatRoom: "starboard_engineers_promenade_bd",
       },
     },
@@ -648,7 +671,7 @@ const deckRooms = {
       type: "promenade",
       isSVG: true,
       location: {
-        image: "port engineers prom1.jpg", // First image
+        image: "port engineers prom1.png", // First image
         chatRoom: "port_engineers_promenade_bd",
       },
     },
@@ -658,7 +681,7 @@ const deckRooms = {
       type: "promenade",
       isSVG: true,
       location: {
-        image: "starb 2nd class prom1.jpg", // First image
+        image: "starb 2nd class prom1.png", // First image
         chatRoom: "starboard_2nd_class_promenade_bd",
       },
     },
@@ -668,7 +691,7 @@ const deckRooms = {
       type: "promenade",
       isSVG: true,
       location: {
-        image: "port 2nd class prom1.jpg", // First image
+        image: "port 2nd class prom1.png", // First image
         chatRoom: "port_2nd_class_promenade_bd",
       },
     },
@@ -678,7 +701,7 @@ const deckRooms = {
       type: "staircase",
       isSVG: true,
       location: {
-        image: "2nd class staircasebd1.jpg", // First image
+        image: "2nd class staircasebd1.png", // First image
         chatRoom: "2nd_class_staircase_bd",
       },
     },
@@ -690,7 +713,7 @@ const deckRooms = {
       type: "forecastle",
       isSVG: true,
       location: {
-        image: "forecastle1.jpg",
+        image: "forecastle1.png",
         chatRoom: "forecastle_b",
       },
     },
@@ -701,12 +724,12 @@ const deckRooms = {
       isSVG: true,
       location: {
         images: [
-          "1C B overlook prom1.jpg",
-          "1C B overlook prom2.jpg",
-          "1C B overlook prom3.jpg",
-          "1C B overlook prom4.jpg",
-          "1C B overlook prom5.jpg",
-          "1C B overlook prom6.jpg",
+          "1C B overlook prom1.png",
+          "1C B overlook prom2.png",
+          "1C B overlook prom3.png",
+          "1C B overlook prom4.png",
+          "1C B overlook prom5.png",
+          "1C B overlook prom6.png",
         ],
         chatRoom: "first_class_b_forward_overlooking_promenade",
       },
@@ -827,7 +850,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b81.png",
+        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
         chatRoom: "cabin_b81",
       },
     },
@@ -837,7 +860,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b83.png",
+        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
         chatRoom: "cabin_b83",
       },
     },
@@ -847,7 +870,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b79.png",
+        image: "ROOM PIC FOR B49 B55 B67 B79.png",
         chatRoom: "cabin_b79",
       },
     },
@@ -857,7 +880,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b77.png",
+        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
         chatRoom: "cabin_b77",
       },
     },
@@ -867,7 +890,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b75.png",
+        image: "ROOM PIC FOR B75.png",
         chatRoom: "cabin_b75",
       },
     },
@@ -877,7 +900,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b73.png",
+        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
         chatRoom: "cabin_b73",
       },
     },
@@ -887,7 +910,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b71.png",
+        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
         chatRoom: "cabin_b71",
       },
     },
@@ -897,7 +920,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b69.png",
+        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
         chatRoom: "cabin_b69",
       },
     },
@@ -907,7 +930,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b67.png",
+        image: "ROOM PIC FOR B49 B55 B67 B79.png",
         chatRoom: "cabin_b67",
       },
     },
@@ -917,7 +940,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b63.png",
+        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
         chatRoom: "cabin_b63",
       },
     },
@@ -927,7 +950,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b65.png",
+        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
         chatRoom: "cabin_b65",
       },
     },
@@ -937,7 +960,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b61.png",
+        image: "ROOM PIC FOR B61.png",
         chatRoom: "cabin_b61",
       },
     },
@@ -947,7 +970,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b57.png",
+        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
         chatRoom: "cabin_b57",
       },
     },
@@ -957,7 +980,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b59.png",
+        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
         chatRoom: "cabin_b59",
       },
     },
@@ -967,7 +990,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b55.png",
+        image: "ROOM PIC FOR B49 B55 B67 B79.png",
         chatRoom: "cabin_b55",
       },
     },
@@ -977,7 +1000,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b53.png",
+        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
         chatRoom: "cabin_b53",
       },
     },
@@ -987,7 +1010,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b51.png",
+        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
         chatRoom: "cabin_b51",
       },
     },
@@ -997,7 +1020,7 @@ const deckRooms = {
       type: "cabin",
       isSVG: true,
       location: {
-        image: "b49.png",
+        image: "ROOM PIC FOR B49 B55 B67 B79.png",
         chatRoom: "cabin_b49",
       },
     },
@@ -1019,7 +1042,7 @@ const deckRooms = {
       type: "corridor",
       isSVG: true,
       location: {
-        image: "Corridor.jpg", // Adjust image name as needed
+        image: "Corridor.png", // Adjust image name as needed
         chatRoom: "corridor_a",
       },
     },
@@ -1029,7 +1052,7 @@ const deckRooms = {
       type: "corridor",
       isSVG: true,
       location: {
-        image: "a corridor1.jpg",
+        image: "a corridor1.png",
         chatRoom: "corridor",
       },
     },
@@ -1077,7 +1100,7 @@ deckRooms.a_deck.push({
   type: "grand-staircase",
   isSVG: true,
   location: {
-    image: "Grand Staircase A Deck.jpg",
+    image: "gsc A1.png",
     chatRoom: "grand_staircase_a",
   },
 });
@@ -1099,7 +1122,7 @@ deckRooms.a_deck.push({
   type: "grand-staircase",
   isSVG: true,
   location: {
-    image: "Aft Grand Staircase.jpg", // Fallback image
+    image: "Aft Grand Staircase.png", // Fallback image
     chatRoom: "aft_grand_staircase_a",
   },
 });
@@ -1110,7 +1133,7 @@ deckRooms.a_deck.push({
   type: "smoking-room",
   isSVG: true,
   location: {
-    image: "First Class Smoking Room.jpg", // Fallback image
+    image: "First Class Smoking.png", // Fallback image
     chatRoom: "first_class_smoking_room_a",
   },
 });
@@ -1123,7 +1146,7 @@ deckRooms.a_deck.push({
   type: "palm-court",
   isSVG: true,
   location: {
-    image: "Palm Court.jpg",
+    image: "Palm Court.png",
     chatRoom: "verandah_palm_court_a",
   },
 });
@@ -1134,7 +1157,7 @@ deckRooms.a_deck.push({
   type: "promenade",
   isSVG: true,
   location: {
-    image: "1st starb A enclosed prom1.jpg",
+    image: "1st starb A enclosed prom1.png",
     chatRoom: "first_class_starboard_enclosed_promenade_a",
   },
 });
@@ -1145,7 +1168,7 @@ deckRooms.a_deck.push({
   type: "promenade",
   isSVG: true,
   location: {
-    image: "1st port A enclosed prom1.jpg",
+    image: "1st port A enclosed prom1.png",
     chatRoom: "first_class_port_enclosed_promenade_a",
   },
 });
@@ -1156,7 +1179,7 @@ deckRooms.a_deck.push({
   type: "promenade",
   isSVG: true,
   location: {
-    image: "1st A port promenade1.jpg",
+    image: "1st A port prom1.png",
     chatRoom: "first_class_port_promenade_a",
   },
 });
@@ -1167,7 +1190,7 @@ deckRooms.a_deck.push({
   type: "promenade",
   isSVG: true,
   location: {
-    image: "1st A starb promenade1.jpg",
+    image: "1st A starb prom1.png",
     chatRoom: "first_class_starboard_promenade_a",
   },
 });
@@ -1178,7 +1201,7 @@ deckRooms.a_deck.push({
   type: "corridor",
   isSVG: true,
   location: {
-    image: "1st A corridor1.jpg",
+    image: "1st A corridor1.png",
     chatRoom: "first_a_corridor",
   },
 });
@@ -1190,7 +1213,7 @@ deckRooms.a_deck.push(
     type: "cabin",
     isSVG: true,
     location: {
-      image: "Cabin A1.jpg",
+      image: "Cabin A1.png",
       chatRoom: "cabin_a1",
     },
   },
@@ -1200,7 +1223,7 @@ deckRooms.a_deck.push(
     type: "cabin",
     isSVG: true,
     location: {
-      image: "Cabin A2.jpg",
+      image: "Cabin A2.png",
       chatRoom: "cabin_a2",
     },
   },
@@ -1410,7 +1433,7 @@ deckRooms.a_deck.push(
     type: "cabin",
     isSVG: true,
     location: {
-      image: "A30.jpg",
+      image: "A30.png",
       chatRoom: "cabin_a30",
     },
   },
@@ -1420,7 +1443,7 @@ deckRooms.a_deck.push(
     type: "cabin",
     isSVG: true,
     location: {
-      image: "A32.jpg",
+      image: "A32.png",
       chatRoom: "cabin_a32",
     },
   },
@@ -1430,7 +1453,7 @@ deckRooms.a_deck.push(
     type: "cabin",
     isSVG: true,
     location: {
-      image: "A34.jpg",
+      image: "A34.png",
       chatRoom: "cabin_a34",
     },
   },
@@ -1440,7 +1463,7 @@ deckRooms.a_deck.push(
     type: "cabin",
     isSVG: true,
     location: {
-      image: "A36.jpg",
+      image: "A36.png",
       chatRoom: "cabin_a36",
     },
   },
@@ -1450,7 +1473,7 @@ deckRooms.a_deck.push(
     type: "promenade",
     isSVG: true,
     location: {
-      image: "1C overlook prom1.jpg",
+      image: "1st A overlook prom1.png",
       chatRoom: "first_class_forward_overlooking_promenade_a",
     },
   },
@@ -1460,7 +1483,7 @@ deckRooms.a_deck.push(
     type: "staircase",
     isSVG: true,
     location: {
-      image: "2nd class staircase1.jpg",
+      image: "2nd class staircase1.png",
       chatRoom: "second_class_staircase_a",
     },
   },
@@ -1557,26 +1580,42 @@ console.debug("✅ Defined deckRooms:", deckRooms);
 const roomImages = {
   grand_staircase_bd: {
     images: [
-      "Grand Staircase.jpg",
-      "Grand Staircase2.jpg",
-      "Grand Staircase3.jpg",
-      "Grand Staircase4.jpg",
+      "grand stair1.png",
+      "grand stair2.png",
+      "grand stair3.png",
+      "grand stair4.png",
+      "grand stair5.png",
+      "grand stair6.png",
+      "grand stair7.png",
+      "grand stair8.png",
+      "grand stair9.png",
+      "grand stair10.png",
     ],
     currentIndex: 0,
   },
   childrens_playroom_bd: {
     images: [
-      "Childrens Playroom.jpg",
-      "Childrens Playroom2.jpg",
-      "Childrens Playroom3.jpg",
+      "Childrens Playroom.png",
+      "Childrens Playroom2.png",
+      "Childrens Playroom3.png",
+    ],
+    currentIndex: 0,
+  },
+  gymnasium_bd: {
+    images: [
+      "1st gym1.png",
+      "1st gym2.png",
+      "1st gym3.png",
+      "1st gym4.png",
+      "1st gym5.png",
     ],
     currentIndex: 0,
   },
   port_officers_promenade_bd: {
     images: [
-      "Port Officer's Promenade.jpg",
-      "Port Officer's Promenade2.jpg",
-      "Port Officer's Promenade3.jpg",
+      "Port Officer's Promenade.png",
+      "Port Officer's Promenade2.png",
+      "Port Officer's Promenade3.png",
     ],
     variants: {
       ms: [
@@ -1589,9 +1628,9 @@ const roomImages = {
   },
   starboard_officers_promenade_bd: {
     images: [
-      "Starboard Officer's Promenade.jpg",
-      "Starboard Officer's Promenade2.jpg",
-      "Starboard Officer's Promenade3.jpg",
+      "Starboard Officer's Promenade.png",
+      "Starboard Officer's Promenade2.png",
+      "Starboard Officer's Promenade3.png",
     ],
     variants: {
       ms: [
@@ -1604,11 +1643,11 @@ const roomImages = {
   },
   port_bridge_wing_bd: {
     images: [
-      "Port Bridge Wing.jpg",
-      "Port Bridge Wing2.jpg",
-      "Port Bridge Wing3.jpg",
-      "Port Bridge Wing4.jpg",
-      "Port Bridge Wing5.jpg",
+      "Port Bridge Wing.png",
+      "Port Bridge Wing2.png",
+      "Port Bridge Wing3.png",
+      "Port Bridge Wing4.png",
+      "Port Bridge Wing5.png",
     ],
     variants: {
       ms: [
@@ -1623,11 +1662,11 @@ const roomImages = {
   },
   starboard_bridge_wing_bd: {
     images: [
-      "Starboard Bridge Wing.jpg",
-      "Starboard Bridge Wing2.jpg",
-      "Starboard Bridge Wing3.jpg",
-      "Starboard Bridge Wing4.jpg",
-      "Starboard Bridge Wing5.jpg",
+      "Starboard Bridge Wing.png",
+      "Starboard Bridge Wing2.png",
+      "Starboard Bridge Wing3.png",
+      "Starboard Bridge Wing4.png",
+      "Starboard Bridge Wing5.png",
     ],
     variants: {
       ms: [
@@ -1642,12 +1681,12 @@ const roomImages = {
   },
   bridge_bd: {
     images: [
-      "Bridge.jpg",
-      "Bridge2.jpg",
-      "Bridge3.jpg",
-      "Bridge4.jpg",
-      "Bridge5.jpg",
-      "Bridge6.jpg",
+      "Bridge.png",
+      "Bridge2.png",
+      "Bridge3.png",
+      "Bridge4.png",
+      "Bridge5.png",
+      "Bridge6.png",
     ],
     variants: {
       ms: [
@@ -1663,75 +1702,82 @@ const roomImages = {
   },
   first_class_lounge_a: {
     images: [
-      "First Class Lounge.jpg",
-      "First Class Lounge2.jpg",
-      "First Class Lounge3.jpg",
-      "First Class Lounge4.jpg",
-      "First Class Lounge5.jpg",
-      "First Class Lounge6.jpg",
-      "First Class Lounge7.jpg",
-      "First Class Lounge8.jpg",
-      "First Class Lounge9.jpg",
-      "First Class Lounge10.jpg",
-      "First Class Lounge11.jpg",
-      "First Class Lounge12.jpg",
+      "First Class Lounge1.png",
+      "First Class Lounge2.png",
+      "First Class Lounge3.png",
+      "First Class Lounge4.png",
+      "First Class Lounge5.png",
+      "First Class Lounge6.png",
+      "First Class Lounge7.png",
+      "First Class Lounge8.png",
+      "First Class Lounge9.png",
+      "First Class Lounge10.png",
+      "First Class Lounge11.png",
+      "First Class Lounge12.png",
+      "First Class Lounge13.png",
     ],
     currentIndex: 0,
   },
   corridor_a: {
-    images: ["Corridor.jpg", "Corridor2.jpg", "Corridor3.jpg", "Corridor4.jpg"],
+    images: ["Corridor.png", "Corridor2.png", "Corridor3.png", "Corridor4.png"],
     currentIndex: 0,
   },
   corridor: {
     images: [
-      "a corridor1.jpg",
-      "a corridor2.jpg",
-      "a corridor3.jpg",
-      "a corridor4.jpg",
+      "a corridor1.png",
+      "a corridor2.png",
+      "a corridor3.png",
+      "a corridor4.png",
     ],
     currentIndex: 0,
   },
   grand_staircase_a: {
     images: [
-      "Grand Staircase A Deck.jpg",
-      "Grand Staircase A Deck2.jpg",
-      "Grand Staircase A Deck3.jpg",
-      "Grand Staircase A Deck4.jpg",
-      "Grand Staircase A Deck5.jpg",
-      "Grand Staircase A Deck6.jpg",
+      "gsc A1.png",
+      "gsc A2.png",
+      "gsc A3.png",
+      "gsc A4.png",
+      "gsc A5.png",
+      "gsc A6.png",
+      "gsc A7.png",
+      "gsc A8.png",
+      "gsc A9.png",
     ],
     currentIndex: 0,
   },
   aft_grand_staircase_a: {
     images: [
-      "Aft Grand Staircase.jpg",
-      "Aft Grand Staircase2.jpg",
-      "Aft Grand Staircase3.jpg",
-      "Aft Grand Staircase4.jpg",
+      "Aft Grand Staircase.png",
+      "Aft Grand Staircase2.png",
+      "Aft Grand Staircase3.png",
+      "Aft Grand Staircase4.png",
     ],
     currentIndex: 0,
   },
   first_class_smoking_room_a: {
     images: [
-      "First Class Smoking Room.jpg",
-      "First Class Smoking Room2.jpg",
-      "First Class Smoking Room3.jpg",
-      "First Class Smoking Room4.jpg",
-      "First Class Smoking Room5.jpg",
-      "First Class Smoking Room6.jpg",
-      "First Class Smoking Room7.jpg",
-      "First Class Smoking Room8.jpg",
-      "First Class Smoking Room9.jpg",
+      "First Class Smoking.png",
+      "First Class Smoking2.png",
+      "First Class Smoking3.png",
+      "First Class Smoking4.png",
+      "First Class Smoking5.png",
+      "First Class Smoking6.png",
+      "First Class Smoking7.png",
+      "First Class Smoking8.png",
+      "First Class Smoking9.png",
+      "First Class Smoking10.png",
+      "First Class Smoking11.png",
     ],
     currentIndex: 0,
   },
 };
 roomImages.verandah_palm_court_a = {
   images: [
-    "Palm Court.jpg",
-    "Palm Court2.jpg",
-    "Palm Court3.jpg",
-    // Add more images as needed, e.g., "Palm Court4.jpg"
+    "Palm Court.png",
+    "Palm Court2.png",
+    "Palm Court3.png",
+    "Palm Court4.png",
+    "Palm Court5.png",
   ],
   currentIndex: 0,
 };
@@ -1746,33 +1792,36 @@ roomImages.first_class_reception_d = {
     "First Class Reception6.png",
     "First Class Reception7.png",
     "First Class Reception8.png",
+    "First Class Reception9.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.first_class_dining_room_d = {
   images: [
-    "First Class Dining1.jpg",
-    "First Class Dining2.jpg",
-    "First Class Dining3.jpg",
-    "First Class Dining4.jpg",
-    "First Class Dining5.jpg",
-    "First Class Dining6.jpg",
-    "First Class Dining7.jpg",
-    "First Class Dining8.jpg",
-    "First Class Dining9.jpg",
-    "First Class Dining10.jpg",
-    "First Class Dining11.jpg",
-    "First Class Dining12.jpg",
-    "First Class Dining13.jpg",
-    "First Class Dining14.jpg",
-    "First Class Dining15.jpg",
-    "First Class Dining16.jpg",
-    "First Class Dining17.jpg",
-    "First Class Dining18.jpg",
-    "First Class Dining19.jpg",
-    "First Class Dining20.jpg",
-    "First Class Dining21.jpg",
+    "First Class Dining1.png",
+    "First Class Dining2.png",
+    "First Class Dining3.png",
+    "First Class Dining4.png",
+    "First Class Dining5.png",
+    "First Class Dining6.png",
+    "First Class Dining7.png",
+    "First Class Dining8.png",
+    "First Class Dining9.png",
+    "First Class Dining10.png",
+    "First Class Dining11.png",
+    "First Class Dining12.png",
+    "First Class Dining13.png",
+    "First Class Dining14.png",
+    "First Class Dining15.png",
+    "First Class Dining16.png",
+    "First Class Dining17.png",
+    "First Class Dining18.png",
+    "First Class Dining19.png",
+    "First Class Dining20.png",
+    "First Class Dining21.png",
+    "First Class Dining22.png",
+    "First Class Dining23.png",
   ],
   currentIndex: 0,
 };
@@ -1825,37 +1874,38 @@ roomImages.boarding_tower = {
 
 roomImages.first_class_starboard_enclosed_promenade_a = {
   images: [
-    "1st starb A enclosed prom1.jpg",
-    "1st starb A enclosed prom2.jpg",
-    "1st starb A enclosed prom3.jpg",
-    "1st starb A enclosed prom4.jpg",
-    "1st starb A enclosed prom5.jpg",
+    "1st starb A enclosed prom1.png",
+    "1st starb A enclosed prom2.png",
+    "1st starb A enclosed prom3.png",
+    "1st starb A enclosed prom4.png",
+    "1st starb A enclosed prom5.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.first_class_port_enclosed_promenade_a = {
   images: [
-    "1st port A enclosed prom1.jpg",
-    "1st port A enclosed prom2.jpg",
-    "1st port A enclosed prom3.jpg",
-    "1st port A enclosed prom4.jpg",
-    "1st port A enclosed prom5.jpg",
+    "1st port A enclosed prom1.png",
+    "1st port A enclosed prom2.png",
+    "1st port A enclosed prom3.png",
+    "1st port A enclosed prom4.png",
+    "1st port A enclosed prom5.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.first_class_port_promenade_a = {
   images: [
-    "1st A port promenade1.jpg",
-    "1st A port promenade2.jpg",
-    "1st A port promenade3.jpg",
-    "1st A port promenade4.jpg",
-    "1st A port promenade6.jpg",
-    "1st A port promenade7.jpg",
-    "1st A port promenade8.jpg",
-    "1st A port promenade9.jpg",
-    "1st A port promenade10.jpg",
+    "1st A port prom1.png",
+    "1st A port prom2.png",
+    "1st A port prom3.png",
+    "1st A port prom4.png",
+    "1st A port prom5.png",
+    "1st A port prom6.png",
+    "1st A port prom7.png",
+    "1st A port prom8.png",
+    "1st A port prom9.png",
+    "1st A port prom10.png",
   ],
   variants: {
     ms: ["1st Class Port Promenade (ms).png"],
@@ -1865,16 +1915,16 @@ roomImages.first_class_port_promenade_a = {
 
 roomImages.first_class_starboard_promenade_a = {
   images: [
-    "1st A starb promenade1.jpg",
-    "1st A starb promenade2.jpg",
-    "1st A starb promenade3.jpg",
-    "1st A starb promenade4.jpg",
-    "1st A starb promenade5.jpg",
-    "1st A starb promenade6.jpg",
-    "1st A starb promenade7.jpg",
-    "1st A starb promenade8.jpg",
-    "1st A starb promenade9.jpg",
-    "1st A starb promenade10.jpg",
+    "1st A starb prom1.png",
+    "1st A starb prom2.png",
+    "1st A starb prom3.png",
+    "1st A starb prom4.png",
+    "1st A starb prom5.png",
+    "1st A starb prom6.png",
+    "1st A starb prom7.png",
+    "1st A starb prom8.png",
+    "1st A starb prom9.png",
+    "1st A starb prom10.png",
   ],
   variants: {
     ms: ["1st Class Starboard Promenade (ms).png"],
@@ -1883,58 +1933,58 @@ roomImages.first_class_starboard_promenade_a = {
 };
 
 roomImages.first_a_corridor = {
-  images: ["1st A corridor1.jpg", "1st A corridor2.jpg", "1st A corridor3.jpg"],
+  images: ["1st A corridor1.png", "1st A corridor2.png", "1st A corridor3.png"],
   currentIndex: 0,
 };
 
 roomImages.first_class_forward_overlooking_promenade_a = {
   images: [
-    "1C overlook prom1.jpg",
-    "1C overlook prom2.jpg",
-    "1C overlook prom3.jpg",
-    "1C overlook prom4.jpg",
-    "1C overlook prom5.jpg",
-    "1C overlook prom6.jpg",
+    "1st A overlook prom1.png",
+    "1st A overlook prom2.png",
+    "1st A overlook prom3.png",
+    "1st A overlook prom4.png",
+    "1st A overlook prom5.png",
+    "1st A overlook prom6.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.second_class_staircase_a = {
   images: [
-    "2nd class staircase1.jpg",
-    "2nd class staircase2.jpg",
-    "2nd class staircase3.jpg",
+    "2nd class staircase1.png",
+    "2nd class staircase2.png",
+    "2nd class staircase3.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.first_class_b_forward_overlooking_promenade = {
   images: [
-    "1C B overlook prom1.jpg",
-    "1C B overlook prom2.jpg",
-    "1C B overlook prom3.jpg",
-    "1C B overlook prom4.jpg",
-    "1C B overlook prom5.jpg",
-    "1C B overlook prom6.jpg",
+    "1C B overlook prom1.png",
+    "1C B overlook prom2.png",
+    "1C B overlook prom3.png",
+    "1C B overlook prom4.png",
+    "1C B overlook prom5.png",
+    "1C B overlook prom6.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.wheelhouse_bd = {
   images: [
-    "wheelhouse1.jpg",
-    "wheelhouse2.jpg",
-    "wheelhouse3.jpg",
-    "wheelhouse4.jpg",
-    "wheelhouse5.jpg",
+    "wheelhouse1.png",
+    "wheelhouse2.png",
+    "wheelhouse3.png",
+    "wheelhouse4.png",
+    "wheelhouse5.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.starboard_engineers_promenade_bd = {
   images: [
-    "starb engineers prom1.jpg",
-    "starb engineers prom2.jpg",
+    "starb engineers prom1.png",
+    "starb engineers prom2.png",
     "starb engineers prom3.jpg",
     "starb engineers prom4.jpg",
     "starb engineers prom5.jpg",
@@ -1947,9 +1997,9 @@ roomImages.starboard_engineers_promenade_bd = {
 
 roomImages.port_engineers_promenade_bd = {
   images: [
-    "port engineers prom1.jpg",
-    "port engineers prom2.jpg",
-    "port engineers prom3.jpg",
+    "port engineers prom1.png",
+    "port engineers prom2.png",
+    "port engineers prom3.png",
   ],
   variants: {
     ms: [
@@ -1963,10 +2013,10 @@ roomImages.port_engineers_promenade_bd = {
 
 roomImages.starboard_2nd_class_promenade_bd = {
   images: [
-    "starb 2nd class prom1.jpg",
-    "starb 2nd class prom2.jpg",
-    "starb 2nd class prom3.jpg",
-    "starb 2nd class prom4.jpg",
+    "starb 2nd class prom1.png",
+    "starb 2nd class prom2.png",
+    "starb 2nd class prom3.png",
+    "starb 2nd class prom4.png",
   ],
   variants: {
     ms: [
@@ -1981,10 +2031,10 @@ roomImages.starboard_2nd_class_promenade_bd = {
 
 roomImages.port_2nd_class_promenade_bd = {
   images: [
-    "port 2nd class prom1.jpg",
-    "port 2nd class prom2.jpg",
-    "port 2nd class prom3.jpg",
-    "port 2nd class prom4.jpg",
+    "port 2nd class prom1.png",
+    "port 2nd class prom2.png",
+    "port 2nd class prom3.png",
+    "port 2nd class prom4.png",
   ],
   variants: {
     ms: [
@@ -1998,7 +2048,15 @@ roomImages.port_2nd_class_promenade_bd = {
 
 // Boat Deck - First Class Port Promenade (bd) defaults and sunset variant
 roomImages.port_promenade_bd = {
-  images: ["first class promenade.webp"],
+  images: [
+    "BD first port prom1.png",
+    "BD first port prom2.png",
+    "BD first port prom3.png",
+    "BD first port prom4.png",
+    "BD first port prom5.png",
+    "BD first port prom6.png",
+    "BD first port prom7.png",
+  ],
   currentIndex: 0,
   variants: {
     ms: ["1st Class Port Promenade (ms).png"],
@@ -2006,22 +2064,35 @@ roomImages.port_promenade_bd = {
   },
 };
 
+// Boat Deck - First Class Starboard Promenade replacement set
+roomImages.starboard_promenade_bd = {
+  images: [
+    "BD first starb prom1.png",
+    "BD first starb prom2.png",
+    "BD first starb prom3.png",
+    "BD first starb prom4.png",
+    "BD first starb prom5.png",
+    "BD first starb prom6.png",
+  ],
+  currentIndex: 0,
+};
+
 roomImages["2nd_class_staircase_bd"] = {
   images: [
-    "2nd class staircasebd1.jpg",
-    "2nd class staircasebd2.jpg",
-    "2nd class staircasebd3.jpg",
-    "2nd class staircasebd4.jpg",
+    "2nd class staircasebd1.png",
+    "2nd class staircasebd2.png",
+    "2nd class staircasebd3.png",
+    "2nd class staircasebd4.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.forecastle_b = {
   images: [
-    "forecastle1.jpg",
-    "forecastle2.jpg",
-    "forecastle3.jpg",
-    "forecastle4.jpg",
+    "forecastle1.png",
+    "forecastle2.png",
+    "forecastle3.png",
+    "forecastle4.png",
   ],
   variants: {
     ms: [
@@ -2036,11 +2107,11 @@ roomImages.forecastle_b = {
 
 roomImages.first_class_port_b_enclosed_promenade = {
   images: [
-    "1st B port enclosed prom1.jpg",
-    "1st B port enclosed prom2.jpg",
-    "1st B port enclosed prom3.jpg",
-    "1st B port enclosed prom4.jpg",
-    "1st B port enclosed prom5.jpg",
+    "1st B port enclosed prom1.png",
+    "1st B port enclosed prom2.png",
+    "1st B port enclosed prom3.png",
+    "1st B port enclosed prom4.png",
+    "1st B port enclosed prom5.png",
   ],
   variants: {
     ms: [
@@ -2056,11 +2127,11 @@ roomImages.first_class_port_b_enclosed_promenade = {
 
 roomImages.first_class_starboard_b_enclosed_promenade = {
   images: [
-    "1st B starb enclosed prom1.jpg",
-    "1st B starb enclosed prom2.jpg",
-    "1st B starb enclosed prom3.jpg",
-    "1st B starb enclosed prom4.jpg",
-    "1st B starb enclosed prom5.jpg",
+    "1st B starb enclosed prom1.png",
+    "1st B starb enclosed prom2.png",
+    "1st B starb enclosed prom3.png",
+    "1st B starb enclosed prom4.png",
+    "1st B starb enclosed prom5.png",
   ],
   variants: {
     ms: [
@@ -2075,37 +2146,48 @@ roomImages.first_class_starboard_b_enclosed_promenade = {
 
 roomImages.poop_deck = {
   images: [
-    "poop1.jpg",
-    "poop2.jpg",
-    "poop3.jpg",
-    "poop4.jpg",
-    "poop5.jpg",
-    "poop6.jpg",
+    "poop1.png",
+    "poop2.png",
+    "poop3.png",
+    "poop4.png",
+    "poop5.png",
+    "poop6.png",
+    "poop7.png",
+    "poop8.png",
+    "poop9.png",
+    "poop10.png",
+    "poop11.png",
+    "poop12.png",
+    "poop13.png",
+    "poop14.png",
+    "poop15.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.grand_staircase_b = {
   images: [
-    "B deck gd2.jpg",
-    "B deck gd3.jpg",
-    "B deck gd4.jpg",
-    "B deck gd5.jpg",
-    "B deck gd6.jpg",
-    "B deck gd7.jpg",
-    "B deck gd8.jpg",
+    "B deck gd1.png",
+    "B deck gd2.png",
+    "B deck gd3.png",
+    "B deck gd4.png",
+    "B deck gd5.png",
+    "B deck gd6.png",
+    "B deck gd7.png",
+    "B deck gd8.png",
+    "B deck gd9.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.third_class_smoke_room_b = {
   images: [
-    "3rd class SR1.jpg",
-    "3rd class SR2.jpg",
-    "3rd class SR3.jpg",
-    "3rd class SR4.jpg",
-    "3rd class SR5.jpg",
-    "3rd class SR6.jpg",
+    "3rd class SR1.png",
+    "3rd class SR2.png",
+    "3rd class SR3.png",
+    "3rd class SR4.png",
+    "3rd class SR5.png",
+    "3rd class SR6.png",
   ],
   currentIndex: 0,
 };
@@ -2123,65 +2205,67 @@ roomImages.second_class_smoke_room_b = {
 
 roomImages.second_class_starboard_promenade_b = {
   images: [
-    "2nd class b starb prom1.jpg",
-    "2nd class b starb prom2.jpg",
-    "2nd class b starb prom3.jpg",
-    "2nd class b starb prom4.jpg",
-    "2nd class b starb prom5.jpg",
-    "2nd class b starb prom6.jpg",
+    "2nd class b starb prom1.png",
+    "2nd class b starb prom2.png",
+    "2nd class b starb prom3.png",
+    "2nd class b starb prom4.png",
+    "2nd class b starb prom5.png",
+    "2nd class b starb prom6.png",
+    "2nd class b starb prom7.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.second_class_port_promenade_b = {
   images: [
-    "2nd class b prom1.jpg",
-    "2nd class b prom2.jpg",
-    "2nd class b prom3.jpg",
-    "2nd class b prom4.jpg",
-    "2nd class b prom5.jpg",
-    "2nd class b prom6.jpg",
-    "2nd class b prom7.jpg",
+    "2nd class b prom1.png",
+    "2nd class b prom2.png",
+    "2nd class b prom3.png",
+    "2nd class b prom4.png",
+    "2nd class b prom5.png",
+    "2nd class b prom6.png",
+    "2nd class b prom7.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.b_deck_aft_staircase = {
   images: [
-    "b aft staircase1.jpg",
-    "b aft staircase2.jpg",
-    "b aft staircase3.jpg",
-    "b aft staircase4.jpg",
+    "b aft staircase1.png",
+    "b aft staircase2.png",
+    "b aft staircase3.png",
+    "b aft staircase4.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.restaurant_reception_room = {
   images: [
-    "reception room1.jpg",
-    "reception room2.jpg",
-    "reception room3.jpg",
-    "reception room4.jpg",
-    "reception room5.jpg",
+    "reception room1.png",
+    "reception room2.png",
+    "reception room3.png",
+    "reception room4.png",
+    "reception room5.png",
   ],
   currentIndex: 0,
 };
 
 roomImages.a_la_carte_restaurant = {
   images: [
-    "carte1.jpg",
-    "carte2.jpg",
-    "carte3.jpg",
+    "carte1.png",
+    "carte2.png",
+    "carte3.png",
     "carte4.jpg",
-    "carte5.jpg",
-    "carte6.jpg",
-    "carte7.jpg",
-    "carte8.jpg",
-    "carte9.jpg",
-    "carte10.jpg",
-    "carte11.jpg",
-    "carte12.jpg",
-    "carte13.jpg",
+    "carte5.png",
+    "carte6.png",
+    "carte7.png",
+    "carte8.png",
+    "carte9.png",
+    "carte10.png",
+    "carte11.png",
+    "carte12.png",
+    "carte13.png",
+    "carte14.png",
   ],
   currentIndex: 0,
 };
@@ -2878,6 +2962,15 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   function getBSTTime() {
+    // DEV override: return the frozen hour when North Atlantic mode is active
+    if (DEV_NORTH_ATLANTIC) {
+      const h = Math.floor(DEV_HOUR);
+      const m = Math.round((DEV_HOUR - h) * 60);
+      const t = new Date();
+      t.setHours(h, m, 0, 0);
+      return t;
+    }
+
     // Use server-synced elapsed time for synchronization
     const elapsedSeconds = getElapsedSeconds();
     if (elapsedSeconds === 0 && !voyageStartTime) {
@@ -2923,6 +3016,11 @@ document.addEventListener("DOMContentLoaded", function () {
       console.debug(
         `⏳ Queued cloud texture ${targetTexture}.png until clouds initialize.`,
       );
+    }
+
+    // Sync smoke particles with the same day/ms/night texture
+    if (typeof window.setSmokeTexture === "function") {
+      window.setSmokeTexture(targetTexture);
     }
   }
 
@@ -3182,7 +3280,12 @@ document.addEventListener("DOMContentLoaded", function () {
     let location = "Southampton";
     let speed = "0 knots";
 
-    if (voyageStartTime) {
+    if (DEV_NORTH_ATLANTIC) {
+      location = "North Atlantic";
+      speed = "22.0 knots";
+      window.currentSpeed = 22;
+      window.targetSpeed = 22;
+    } else if (voyageStartTime) {
       const elapsedSeconds = getElapsedSeconds();
       const state = calculateVoyageState(elapsedSeconds);
       location = state.location;
@@ -3372,6 +3475,17 @@ document.addEventListener("DOMContentLoaded", function () {
     if (narrativeSystem && pendingVoyageStartTime) {
       narrativeSystem.startTime = pendingVoyageStartTime;
       console.debug("✅ Narrative system synchronized with server time");
+    }
+
+    // In dev mode, set our own narrative and skip timeline sync
+    if (DEV_NORTH_ATLANTIC) {
+      const el = document.getElementById("story-text");
+      if (el) {
+        el.textContent =
+          "We are now deep in the North Atlantic, making steady progress. The open ocean stretches to every horizon.";
+        el.style.opacity = "1";
+      }
+      return;
     }
 
     // Sync narrative with elapsed time if available
@@ -3978,8 +4092,17 @@ document.addEventListener("DOMContentLoaded", function () {
     const smokeParticles = [];
     const smokeImage = new Image();
     smokeImage.src = "/images/animations/smoke/day.png";
+    let currentSmokeTexture = "day";
 
     smokeImage.onload = () => console.debug("✅ Loaded smoke image: day.png");
+
+    // Expose a setter so the sky system can swap the smoke sprite at dusk/night
+    window.setSmokeTexture = (type = "day") => {
+      if (type === currentSmokeTexture) return;
+      currentSmokeTexture = type;
+      smokeImage.src = `/images/animations/smoke/${type}.png`;
+      console.debug(`💨 Smoke texture changed to ${type}.png`);
+    };
 
     // Define the positions of the three funnels as simple percentages since container is now positioned like ship
     function getFunnelPositions() {
@@ -4332,6 +4455,96 @@ document.addEventListener("DOMContentLoaded", function () {
       // Set new room
       currentRoom.name = room.location.chatRoom;
       console.debug(`🔑 Set new room: ${currentRoom.name}`);
+
+      // Show room name label for rooms with replaced images
+      const roomDisplayNames = {
+        grand_staircase_bd: "Grand Staircase",
+        gymnasium_bd: "1st Class Gymnasium",
+        port_promenade_bd: "First Class Port Promenade",
+        starboard_promenade_bd: "First Class Starboard Promenade",
+        childrens_playroom_bd: "Children's Playroom",
+        port_officers_promenade_bd: "Port Officer's Promenade",
+        starboard_officers_promenade_bd: "Starboard Officer's Promenade",
+        port_bridge_wing_bd: "Port Bridge Wing",
+        starboard_bridge_wing_bd: "Starboard Bridge Wing",
+        bridge_bd: "The Bridge",
+        wheelhouse_bd: "The Wheelhouse",
+        starboard_engineers_promenade_bd: "Starboard Engineer's Promenade",
+        port_engineers_promenade_bd: "Port Engineer's Promenade",
+        starboard_2nd_class_promenade_bd: "Starboard 2nd Class Promenade",
+        port_2nd_class_promenade_bd: "Port 2nd Class Promenade",
+        "2nd_class_staircase_bd": "2nd Class Staircase",
+        forecastle_b: "Forecastle",
+        first_class_b_forward_overlooking_promenade:
+          "1st Class Forward Overlooking Promenade",
+        first_class_port_b_enclosed_promenade:
+          "1st Class Port Enclosed Promenade",
+        first_class_starboard_b_enclosed_promenade:
+          "1st Class Starboard Enclosed Promenade",
+        poop_deck: "Poop Deck",
+        grand_staircase_b: "Grand Staircase",
+        third_class_smoke_room_b: "3rd Class Smoke Room",
+        second_class_smoke_room_b: "2nd Class Smoke Room",
+        second_class_starboard_promenade_b: "2nd Class Starboard Promenade",
+        second_class_port_promenade_b: "2nd Class Port Promenade",
+        b_deck_aft_staircase: "B Deck Aft Staircase",
+        restaurant_reception_room: "Restaurant Reception Room",
+        a_la_carte_restaurant: "À La Carte Restaurant",
+        corridor_a: "The Corridor",
+        corridor: "Corridor",
+        grand_staircase_a: "Grand Staircase",
+        aft_grand_staircase_a: "Aft Grand Staircase",
+        first_class_smoking_room_a: "First Class Smoking Room",
+        verandah_palm_court_a: "Palm Court",
+        first_class_starboard_enclosed_promenade_a:
+          "1st Class Starboard Enclosed Promenade",
+        first_class_port_enclosed_promenade_a:
+          "1st Class Port Enclosed Promenade",
+        first_class_port_promenade_a: "1st Class Port Promenade",
+        first_class_starboard_promenade_a: "1st Class Starboard Promenade",
+        first_a_corridor: "1st A Corridor",
+        first_class_forward_overlooking_promenade_a:
+          "1st Class Forward Overlooking Promenade",
+        second_class_staircase_a: "2nd Class Staircase",
+        first_class_lounge_a: "First Class Lounge",
+        first_class_reception_d: "First Class Reception Room",
+        first_class_dining_room_d: "First Class Dining Room",
+        cabin_a1: "A-1",
+        cabin_a2: "A-2",
+        cabin_a30: "A-30",
+        cabin_a32: "A-32",
+        cabin_a34: "A-34",
+        cabin_a36: "A-36",
+        cabin_b49: "B-49",
+        cabin_b51: "B-51",
+        cabin_b53: "B-53",
+        cabin_b55: "B-55",
+        cabin_b57: "B-57",
+        cabin_b59: "B-59",
+        cabin_b61: "B-61",
+        cabin_b63: "B-63",
+        cabin_b65: "B-65",
+        cabin_b67: "B-67",
+        cabin_b69: "B-69",
+        cabin_b71: "B-71",
+        cabin_b73: "B-73",
+        cabin_b75: "B-75",
+        cabin_b77: "B-77",
+        cabin_b79: "B-79",
+        cabin_b81: "B-81",
+        cabin_b83: "B-83",
+      };
+      const roomNameLabel = document.getElementById("room-name-label");
+      if (roomNameLabel) {
+        const displayName = roomDisplayNames[currentRoom.name];
+        if (displayName) {
+          roomNameLabel.textContent = displayName;
+          roomNameLabel.style.display = "block";
+        } else {
+          roomNameLabel.textContent = "";
+          roomNameLabel.style.display = "none";
+        }
+      }
       console.debug(
         `🏨 Entered room with currentRoom.name set to: ${currentRoom.name}`,
       );
@@ -4342,10 +4555,8 @@ document.addEventListener("DOMContentLoaded", function () {
           : "none",
       );
 
-      // Initialize room chat history and join via socket
-      if (!chatHistory.rooms[currentRoom.name]) {
-        chatHistory.rooms[currentRoom.name] = [];
-      }
+      // Always start a newly entered room with a fresh local chat buffer.
+      chatHistory.rooms[currentRoom.name] = [];
       socket.emit("join-room", {
         room: currentRoom.name,
         character: characterData,
@@ -4832,10 +5043,10 @@ document.addEventListener("DOMContentLoaded", function () {
       `📚 Received ${messages.length} messages from room history for: ${room}`,
     );
 
-    // Add each historical message to chat
-    messages.forEach((message) => {
-      addChatMessage(message);
-    });
+    // Intentionally ignore replayed room history so entering a room starts fresh.
+    if (!chatHistory.rooms[room]) {
+      chatHistory.rooms[room] = [];
+    }
   });
 
   socket.on("user-joined", (data) => {
@@ -4898,6 +5109,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Check if this is an action message (/me command)
         const isActionMessage = data.isAction || false;
+        const isInlineMe = data.inlineMe || false;
+
+        // Build the display text
+        let displayText;
+        if (isInlineMe) {
+          // Inline /me: name is already in the message, no prefix needed
+          displayText = data.message;
+        } else if (isActionMessage) {
+          // Prefix /me: name + space + message (no colon)
+          displayText = `${fullName} ${data.message}`;
+        } else {
+          // Normal message: name + colon + message
+          displayText = `${fullName}: ${data.message}`;
+        }
 
         // Only show room name if in global chat mode
         if (isGlobalChat) {
@@ -4914,16 +5139,10 @@ document.addEventListener("DOMContentLoaded", function () {
             }
           });
           messageDiv.appendChild(roomSpan);
-          messageDiv.appendChild(
-            document.createTextNode(
-              ` ${fullName}${isActionMessage ? " " : ": "}${data.message}`,
-            ),
-          );
+          messageDiv.appendChild(document.createTextNode(` ${displayText}`));
         } else {
-          // Local chat mode - just show name and message
-          messageDiv.textContent = `${fullName}${isActionMessage ? " " : ": "}${
-            data.message
-          }`;
+          // Local chat mode
+          messageDiv.textContent = displayText;
         }
         messageDiv.style.color = messageColor;
       }
@@ -6696,6 +6915,14 @@ document.addEventListener("DOMContentLoaded", function () {
     } catch (e) {
       console.warn("Could not cache room count", roomId, e);
     }
+
+    if (
+      roomId === currentRoom.name &&
+      typeof setRoomPlayersCount === "function"
+    ) {
+      setRoomPlayersCount(count);
+    }
+
     const markers = document.querySelectorAll(
       `.room-marker[data-room-id="${roomId}"]`,
     );
@@ -7469,143 +7696,93 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Function to show eat/drink options
   function showEatDrinkOptions() {
-    // Create a sophisticated dining menu popup that matches the reference image
     const popup = document.createElement("div");
     popup.className = "eat-drink-popup";
 
     popup.innerHTML = `
-      <!-- Left Sidebar with Categories -->
-      <div class="eat-drink-sidebar">
-        <div class="category-btn active" data-category="food">
-          Food
-        </div>
-        <div class="category-btn" data-category="drinks">
-          Drinks
-        </div>
-        <div class="category-btn" data-category="alcohol">
-          Alcohol
-        </div>
-      </div>
-
-      <!-- Right Content Area with Grid -->
-      <div class="eat-drink-content">
-        <div id="items-grid" class="items-grid">
-          <!-- Food Items Grid (all food items in one grid) -->
-          <div class="food-grid active" data-category="food">
-            <div class="menu-item" data-type="food" data-hunger="15" title="Oysters Rockefeller">🦪</div>
-            <div class="menu-item" data-type="food" data-hunger="12" title="Caviar & Crackers">�</div>
-            <div class="menu-item" data-type="food" data-hunger="18" title="Shrimp Cocktail">🍤</div>
-            <div class="menu-item" data-type="food" data-hunger="16" title="Pâté de Foie Gras">�</div>
-            <div class="menu-item" data-type="food" data-hunger="14" title="Consommé">🍲</div>
-            <div class="menu-item" data-type="food" data-hunger="20" title="Smoked Salmon">🐟</div>
-            <div class="menu-item" data-type="food" data-hunger="35" title="Roast Beef Wellington">🥩</div>
-            <div class="menu-item" data-type="food" data-hunger="40" title="Poached Salmon">🐟</div>
-            <div class="menu-item" data-type="food" data-hunger="38" title="Roasted Duck">🦆</div>
-            <div class="menu-item" data-type="food" data-hunger="32" title="Lamb Chops">🍖</div>
-            <div class="menu-item" data-type="food" data-hunger="36" title="Filet Mignon">🥩</div>
-            <div class="menu-item" data-type="food" data-hunger="34" title="Chicken à la King">🍗</div>
-            <div class="menu-item" data-type="food" data-hunger="42" title="Lobster Thermidor">🦞</div>
-            <div class="menu-item" data-type="food" data-hunger="30" title="Veal Cutlet">🥩</div>
-            <div class="menu-item" data-type="food" data-hunger="20" title="Charlotte Russe">🍰</div>
-            <div class="menu-item" data-type="food" data-hunger="18" title="Peaches in Chartreuse Jelly">🧁</div>
-            <div class="menu-item" data-type="food" data-hunger="22" title="Ice Cream">🍨</div>
-            <div class="menu-item" data-type="food" data-hunger="16" title="Crème Brûlée">🍮</div>
-            <div class="menu-item" data-type="food" data-hunger="24" title="Chocolate Soufflé">🍫</div>
-            <div class="menu-item" data-type="food" data-hunger="19" title="Fruit Tart">🥧</div>
+      <div class="edm-body">
+        <div class="edm-sidebar">
+          <div class="edm-category" data-category="food">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▼</span> Food
+            </div>
+            <div class="edm-subcategories" style="display:flex">
+              <div class="edm-subcat-btn active" data-subcategory="all">All</div>
+              <div class="edm-subcat-btn" data-subcategory="light-meal">Light Meal</div>
+              <div class="edm-subcat-btn" data-subcategory="side">Side</div>
+              <div class="edm-subcat-btn" data-subcategory="entree">Entrée</div>
+            </div>
           </div>
-
-          <!-- Drinks Grid (hidden by default) -->
-          <div class="drinks-grid" data-category="drinks">
-            <div class="menu-item" data-type="drink" data-thirst="15" title="Mineral Water">🥤</div>
-            <div class="menu-item" data-type="drink" data-thirst="25" title="Coffee">☕</div>
-            <div class="menu-item" data-type="drink" data-thirst="20" title="Earl Grey Tea">🫖</div>
-            <div class="menu-item" data-type="drink" data-thirst="22" title="Hot Chocolate">☕</div>
-            <div class="menu-item" data-type="drink" data-thirst="18" title="Lemonade">🍋</div>
+          <div class="edm-category" data-category="beverages">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▶</span> Soft Beverages
+            </div>
+            <div class="edm-subcategories">
+              <div class="edm-subcat-btn active" data-subcategory="all">All</div>
+              <div class="edm-subcat-btn" data-subcategory="common-drinks">Common Drinks</div>
+              <div class="edm-subcat-btn" data-subcategory="tea">Tea</div>
+              <div class="edm-subcat-btn" data-subcategory="coffee">Coffee</div>
+              <div class="edm-subcat-btn" data-subcategory="hot-beverages">Hot Beverages</div>
+            </div>
           </div>
-
-          <!-- Alcohol Grid (hidden by default) -->
-          <div class="alcohol-grid" data-category="alcohol">
-            <div class="menu-item" data-type="drink" data-thirst="30" title="Bordeaux Wine">🍷</div>
-            <div class="menu-item" data-type="drink" data-thirst="35" title="Fine Whiskey">🥃</div>
-            <div class="menu-item" data-type="drink" data-thirst="28" title="Champagne">🍾</div>
-            <div class="menu-item" data-type="drink" data-thirst="32" title="Port Wine">🍷</div>
-            <div class="menu-item" data-type="drink" data-thirst="26" title="Sherry">�</div>
-          </div>
+        </div>
+        <div class="edm-content">
+          <div class="edm-items-grid"></div>
         </div>
       </div>
     `;
 
     // Remove any existing popup
     const existingPopup = document.querySelector(".eat-drink-popup");
-    if (existingPopup) {
-      existingPopup.remove();
-    }
+    if (existingPopup) existingPopup.remove();
 
-    // Add popup to location display
     const locationDisplay = document.querySelector(".location-display");
     locationDisplay.appendChild(popup);
 
-    // Handle category switching
-    const categoryBtns = popup.querySelectorAll(".category-btn");
-    const gridsContainer = popup.querySelector(".items-grid");
-    const allGrids = popup.querySelectorAll(
-      ".food-grid, .drinks-grid, .alcohol-grid",
-    );
+    // Food category starts open
+    const foodCat = popup.querySelector('[data-category="food"]');
+    if (foodCat) foodCat.classList.add("open");
 
-    categoryBtns.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        // Remove active state from all category buttons
-        categoryBtns.forEach((b) => b.classList.remove("active"));
-        // Set active state
-        btn.classList.add("active");
+    // Accordion category toggling
+    const categories = popup.querySelectorAll(".edm-category");
+    categories.forEach((cat) => {
+      const header = cat.querySelector(".edm-category-header");
+      const arrow = cat.querySelector(".edm-arrow");
+      const subcats = cat.querySelector(".edm-subcategories");
 
-        const category = btn.getAttribute("data-category");
+      header.addEventListener("click", () => {
+        const isOpen = cat.classList.contains("open");
 
-        // Hide all grids
-        allGrids.forEach((grid) => grid.classList.remove("active"));
+        // Close all categories
+        categories.forEach((c) => {
+          c.classList.remove("open");
+          c.querySelector(".edm-arrow").textContent = "▶";
+          c.querySelector(".edm-subcategories").style.display = "none";
+        });
 
-        // Show selected category grid
-        const targetGrid = gridsContainer?.querySelector(
-          `[data-category="${category}"]`,
-        );
-        if (targetGrid) {
-          targetGrid.classList.add("active");
+        // Toggle clicked category
+        if (!isOpen) {
+          cat.classList.add("open");
+          arrow.textContent = "▼";
+          subcats.style.display = "flex";
+
+          // Reset subcategory filter to "All"
+          const subBtns = subcats.querySelectorAll(".edm-subcat-btn");
+          subBtns.forEach((b) => b.classList.remove("active"));
+          subBtns[0].classList.add("active");
         }
       });
-    });
 
-    // Add event listeners for menu items
-    const menuItems = popup.querySelectorAll(".menu-item");
-    menuItems.forEach((item) => {
-      item.addEventListener("mouseenter", () => {
-        item.style.transform = "scale(1.1) translateY(-2px)";
-        item.style.boxShadow =
-          "0 4px 8px rgba(0,0,0,0.3), inset 0 1px 3px rgba(255,255,255,0.4)";
-        item.style.borderColor = "#B8860B";
-      });
-
-      item.addEventListener("mouseleave", () => {
-        item.style.transform = "scale(1) translateY(0)";
-        item.style.boxShadow =
-          "0 2px 4px rgba(0,0,0,0.2), inset 0 1px 2px rgba(255,255,255,0.3)";
-        item.style.borderColor = "#8B7355";
-      });
-
-      item.addEventListener("click", () => {
-        const type = item.getAttribute("data-type");
-        const hungerValue = parseInt(item.getAttribute("data-hunger")) || 0;
-        const thirstValue = parseInt(item.getAttribute("data-thirst")) || 0;
-        const itemName = item.getAttribute("title");
-
-        if (type === "food") {
-          eatSpecific(itemName, hungerValue);
-        } else if (type === "drink") {
-          drinkSpecific(itemName, thirstValue);
-        }
+      // Subcategory filtering
+      const subBtns = cat.querySelectorAll(".edm-subcat-btn");
+      subBtns.forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          subBtns.forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+        });
       });
     });
-
-    // No close button event needed
   }
 
   // Function to handle eating specific food items
@@ -7695,16 +7872,86 @@ document.addEventListener("DOMContentLoaded", function () {
   // Room Player List functionality
   const roomPlayersBtn = document.getElementById("players-btn");
   const roomPlayersPopup = document.getElementById("players-popup");
+  const roomPlayersDrawer = document.getElementById("players-drawer");
   const locationDisplay = document.querySelector(".location-display");
 
   if (
     locationDisplay &&
-    roomPlayersPopup &&
-    roomPlayersPopup.parentElement !== locationDisplay
+    roomPlayersDrawer &&
+    roomPlayersDrawer.parentElement !== locationDisplay
   ) {
-    locationDisplay.appendChild(roomPlayersPopup);
+    locationDisplay.appendChild(roomPlayersDrawer);
   }
-  const closeRoomPlayersBtn = document.querySelector(".close-room-players");
+
+  function setRoomPlayersCount(count = 0) {
+    if (!roomPlayersBtn) return;
+    const total = Math.max(0, Number(count) || 0);
+    const label = `${total} Passenger${total === 1 ? "" : "s"}`;
+    const countText = roomPlayersBtn.querySelector(".players-count-text");
+
+    if (countText) {
+      countText.textContent = label;
+    } else {
+      roomPlayersBtn.textContent = label;
+    }
+
+    roomPlayersBtn.setAttribute("aria-label", label);
+  }
+
+  function formatPassengerBirthdate(birthdate) {
+    if (!birthdate) return "";
+    const date = new Date(birthdate);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  }
+
+  function calculatePassengerAge(birthdate) {
+    if (!birthdate) return null;
+    const born = new Date(birthdate);
+    if (Number.isNaN(born.getTime())) return null;
+    const voyageDate = new Date("1912-04-10T12:00:00Z");
+    let age = voyageDate.getUTCFullYear() - born.getUTCFullYear();
+    const monthDiff = voyageDate.getUTCMonth() - born.getUTCMonth();
+    if (
+      monthDiff < 0 ||
+      (monthDiff === 0 && voyageDate.getUTCDate() < born.getUTCDate())
+    ) {
+      age--;
+    }
+    return age;
+  }
+
+  function openPlayerInfo(player) {
+    const playerInfoPopup = document.getElementById("player-info");
+    const playerContent = document.getElementById("player-content");
+    if (!playerInfoPopup || !playerContent || !player) return;
+
+    const birthdateText = formatPassengerBirthdate(player.birthdate);
+    const age = calculatePassengerAge(player.birthdate);
+    const ageText = Number.isFinite(age) ? ` (${age})` : "";
+    const bioText =
+      player.bio || "No biography available for this passenger yet.";
+
+    playerContent.innerHTML = DOMPurify.sanitize(`
+      <div class="player-popup-header">
+        <div class="player-popup-avatar">
+          <img src="${player.avatar || "/images/default-avatar.png"}" alt="${player.name}" />
+        </div>
+        <div class="player-popup-meta">
+          <div class="player-popup-name">${player.name}${ageText}</div>
+          ${birthdateText ? `<div class="player-popup-birthdate">${birthdateText}</div>` : ""}
+        </div>
+      </div>
+      <div class="player-popup-bio">${bioText}</div>
+    `);
+
+    playerInfoPopup.style.display = "flex";
+  }
 
   // Function to request room players from server
   function requestRoomPlayers() {
@@ -7727,12 +7974,15 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
+    const playerCount = Array.isArray(players) ? players.length : 0;
+    setRoomPlayersCount(playerCount);
+
     // Clear existing content
     playersList.innerHTML = "";
 
     if (!players || players.length === 0) {
       playersList.innerHTML =
-        "<div class='no-players'>No other players in this room</div>";
+        "<div class='no-players'>No passengers in this room</div>";
       return;
     }
 
@@ -7749,11 +7999,11 @@ document.addEventListener("DOMContentLoaded", function () {
           player.name;
 
       playerDiv.innerHTML = DOMPurify.sanitize(`
-        <div class="player-avatar">
+        <button type="button" class="player-avatar player-avatar-button" aria-label="View bio for ${player.name}">
           <img src="${player.avatar || "/images/default-avatar.png"}" alt="${
             player.name
           }" />
-        </div>
+        </button>
         <div class="player-info">
           <div class="player-name">${player.name}${
             isCurrentPlayer ? " (You)" : ""
@@ -7765,12 +8015,12 @@ document.addEventListener("DOMContentLoaded", function () {
         </div>
       `);
 
-      // Add click handler for player interaction (future feature)
-      if (!isCurrentPlayer) {
-        playerDiv.style.cursor = "pointer";
-        playerDiv.addEventListener("click", () => {
-          // Future: Open player profile or interaction menu
-          console.debug(`👤 Clicked on player: ${player.name}`);
+      const avatarButton = playerDiv.querySelector(".player-avatar-button");
+      if (avatarButton) {
+        avatarButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openPlayerInfo(player);
         });
       }
 
@@ -7780,37 +8030,62 @@ document.addEventListener("DOMContentLoaded", function () {
     console.debug(`👥 Displayed ${players.length} players in room`);
   }
 
+  setRoomPlayersCount(0);
+
   // Event listeners for room players button
-  if (roomPlayersBtn) {
+  if (roomPlayersBtn && roomPlayersPopup) {
     roomPlayersBtn.addEventListener(
       "click",
       (event) => {
-        event.stopPropagation(); // Prevent event bubbling to games panel handler
-        event.preventDefault(); // Prevent any default behavior
-        requestRoomPlayers();
-        roomPlayersPopup.classList.add("open");
-        console.debug("👥 Room players popup opened");
+        event.stopPropagation();
+        event.preventDefault();
+
+        const willOpen = !roomPlayersPopup.classList.contains("open");
+        roomPlayersDrawer?.classList.toggle("open", willOpen);
+        roomPlayersDrawer?.setAttribute(
+          "aria-expanded",
+          willOpen ? "true" : "false",
+        );
+        roomPlayersPopup.classList.toggle("open", willOpen);
+        roomPlayersPopup.setAttribute(
+          "aria-hidden",
+          willOpen ? "false" : "true",
+        );
+        roomPlayersBtn.classList.toggle("open", willOpen);
+        roomPlayersBtn.setAttribute(
+          "aria-expanded",
+          willOpen ? "true" : "false",
+        );
+
+        if (willOpen) {
+          requestRoomPlayers();
+        }
+
+        console.debug(
+          `👥 Room players panel ${willOpen ? "opened" : "closed"}`,
+        );
       },
       true,
-    ); // Use capture phase to run before games panel handler
-  }
-
-  // Close room players popup
-  if (closeRoomPlayersBtn) {
-    closeRoomPlayersBtn.addEventListener("click", () => {
-      roomPlayersPopup.classList.remove("open");
-      console.debug("👥 Room players popup closed");
-    });
+    );
   }
 
   // Close player info popup
   const closePlayerInfoBtn = document.querySelector(".close-player-info");
+  const playerInfoPopup = document.getElementById("player-info");
   if (closePlayerInfoBtn) {
     closePlayerInfoBtn.addEventListener("click", () => {
-      const playerInfoPopup = document.getElementById("player-info");
       if (playerInfoPopup) {
         playerInfoPopup.style.display = "none";
         console.debug("👤 Player info popup closed");
+      }
+    });
+  }
+
+  if (playerInfoPopup) {
+    playerInfoPopup.addEventListener("click", (event) => {
+      if (event.target === playerInfoPopup) {
+        playerInfoPopup.style.display = "none";
+        console.debug("👤 Player info popup closed from backdrop");
       }
     });
   }
@@ -7820,10 +8095,14 @@ document.addEventListener("DOMContentLoaded", function () {
     if (
       roomPlayersPopup &&
       roomPlayersPopup.classList.contains("open") &&
-      !roomPlayersPopup.contains(event.target) &&
-      event.target !== roomPlayersBtn
+      !(roomPlayersDrawer && roomPlayersDrawer.contains(event.target))
     ) {
+      roomPlayersDrawer?.classList.remove("open");
+      roomPlayersDrawer?.setAttribute("aria-expanded", "false");
       roomPlayersPopup.classList.remove("open");
+      roomPlayersPopup.setAttribute("aria-hidden", "true");
+      roomPlayersBtn?.classList.remove("open");
+      roomPlayersBtn?.setAttribute("aria-expanded", "false");
       console.debug("👥 Room players popup closed by clicking outside");
     }
   });

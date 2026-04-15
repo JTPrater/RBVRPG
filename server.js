@@ -59,7 +59,7 @@ io.use((socket, next) => {
 
 // Global voyage start time (set when server starts)
 // Begin from Southampton (real-time progression)
-const voyageStartTime = Date.now() - 18360 * 1000; // DEBUG: 1 min before Cherbourg approach
+const voyageStartTime = Date.now() - 14400 * 1000; // DEBUG: 1 hour before Cherbourg arrival (mid-channel)
 console.debug("⏰ Voyage start time initialized at Southampton (BST 12:00).");
 
 // Narrative events for server-side synchronization (times are seconds)
@@ -1280,8 +1280,20 @@ io.on("connection", async (socket) => {
       activeCharacter.cabinNumber ||
       null;
 
-    // Strip /me prefix if present for action messages
-    const processedMessage = text.startsWith("/me ") ? text.substring(4) : text;
+    // Handle /me: build the display name for inline substitution
+    const meName =
+      [safeCharacter.forename, safeCharacter.surname]
+        .filter(Boolean)
+        .join(" ") || "Passenger";
+    const startsWithMe = text.startsWith("/me ");
+    let processedMessage;
+    if (startsWithMe) {
+      // Strip leading /me, then also replace any further inline /me
+      processedMessage = text.substring(4).replaceAll("/me", meName);
+    } else {
+      // Replace all inline /me with the player's name
+      processedMessage = text.replaceAll("/me", meName);
+    }
 
     const outboundMessage = {
       room: roomId,
@@ -1292,7 +1304,8 @@ io.on("connection", async (socket) => {
       color: userChatColors[socket.id] || data.color || "#c0932b",
       character: safeCharacter,
       cabin: cabinRef,
-      isAction: text.startsWith("/me "),
+      isAction: startsWithMe || text.includes("/me"),
+      inlineMe: !startsWithMe && text.includes("/me"),
     };
 
     addMessageToRoomHistory(roomId, outboundMessage);
@@ -1418,6 +1431,8 @@ io.on("connection", async (socket) => {
                   id: socketId,
                   name: `${userSocket.character.forename} ${userSocket.character.surname}`,
                   avatar: userSocket.character.avatar,
+                  birthdate: userSocket.character.birthdate,
+                  bio: userSocket.character.bio,
                   // Provide both cabin type and cabin number to client
                   cabin: userSocket.character.cabin,
                   cabin_number: userSocket.character.cabin_number,

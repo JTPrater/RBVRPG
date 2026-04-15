@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <title>Britannic Voyage - Game</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=1280" />
     <link rel="stylesheet" href="../game/game.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -410,15 +410,23 @@
             height="540"
             aria-label="Current Location"
           ></canvas>
+          <div id="room-name-label" class="room-name-label"></div>
           <button id="refresh-location-btn" class="location-control-btn">
             <span class="material-icons">refresh</span>
           </button>
-          <button
-            id="players-btn"
-            style="position: absolute; bottom: 10px; right: 10px"
-          >
-            👥
-          </button>
+          <div id="players-drawer" class="players-drawer" aria-expanded="false">
+            <button
+              id="players-btn"
+              class="players-toggle-btn"
+              aria-expanded="false"
+            >
+              <span class="players-count-text">0 Passengers</span>
+              <span class="players-toggle-arrow">▾</span>
+            </button>
+            <div id="players-popup" aria-hidden="true">
+              <div id="players-list" class="players-list"></div>
+            </div>
+          </div>
           <button
             id="eat-drink-btn"
             class="eat-drink-button"
@@ -446,31 +454,13 @@
           </div>
         </div>
 
-        <div id="players-popup">
-          <div class="players-header">
-            <strong>Room Passengers</strong>
-            <button class="close-room-players">×</button>
+        <div id="player-info" class="player-info-popup">
+          <div class="player-info-card">
+            <button class="close-player-info" aria-label="Close passenger bio">
+              ×
+            </button>
+            <div id="player-content"></div>
           </div>
-          <div id="players-list" class="players-list"></div>
-        </div>
-
-        <div
-          id="player-info"
-          style="
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            border: 1px solid #ccc;
-            padding: 20px;
-          "
-        >
-          <div id="player-content"></div>
-          <button class="close-player-info" style="margin-top: 10px">
-            Close
-          </button>
         </div>
 
         <div id="eat-drink-popup" class="settings-popup">
