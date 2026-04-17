@@ -460,9 +460,6 @@ app.post("/api/register", authLimiter, async (req, res) => {
 
     cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
     io.emit("new-passenger", newUser.character);
-    // Broadcast updated passenger count to all clients
-    const totalPassengers = await User.countDocuments();
-    io.emit("game-user-count", totalPassengers);
     console.info(
       `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`,
     );
@@ -1349,20 +1346,8 @@ io.on("connection", async (socket) => {
 
   // Send the assigned color to the connected client
   socket.emit("assign-chat-color", assignedColor);
+  socket.emit("game-user-count", gameClientCount);
   console.debug(`📩 Sent assigned chat color to ${socket.id}`);
-
-  // Send registered passenger count from DB as the "People Onboard" count
-  User.countDocuments()
-    .then((totalPassengers) => {
-      socket.emit("game-user-count", totalPassengers);
-      console.debug(
-        `👥 Sent DB passenger count to ${socket.id}: ${totalPassengers}`,
-      );
-    })
-    .catch((err) => {
-      console.error("❌ Error counting passengers:", err);
-      socket.emit("game-user-count", 0);
-    });
 
   // Send existing passengers to ALL new connections (public feature)
   User.find({}, "character")
@@ -1407,6 +1392,7 @@ io.on("connection", async (socket) => {
     if (!socket.isGameClient) {
       socket.isGameClient = true;
       gameClientCount++;
+      io.emit("game-user-count", gameClientCount);
       console.info(`🎮 Game client count increased: ${gameClientCount}`);
     }
     if (allowedRooms.includes(room)) {
@@ -1867,6 +1853,7 @@ io.on("connection", async (socket) => {
 
       if (socket.isGameClient) {
         gameClientCount = Math.max(0, gameClientCount - 1);
+        io.emit("game-user-count", gameClientCount);
         console.info(`🎮 Game client count decremented: ${gameClientCount}`);
       }
 
