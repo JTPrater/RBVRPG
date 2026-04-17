@@ -228,13 +228,21 @@
             </div>
 
             <div class="character-display">
-              <div class="avatar-frame">
-                <img id="character-avatar" alt="Character Avatar" />
-              </div>
-              <div class="character-info">
-                <div id="character-name"></div>
-                <div id="character-class"></div>
-                <a id="character-cabin" href="#"></a>
+              <div class="character-card">
+                <div class="avatar-frame">
+                  <img id="character-avatar" alt="Character Avatar" />
+                </div>
+                <div class="character-info">
+                  <div id="character-name"></div>
+                  <div id="character-class"></div>
+                  <div class="character-cabin-row">
+                    <span class="character-cabin-label">Cabin:</span>
+                    <a id="character-cabin" href="#"></a>
+                  </div>
+                </div>
+                <div class="character-card-money">
+                  <span id="character-money">£0.00</span>
+                </div>
               </div>
             </div>
           </div>
@@ -436,22 +444,11 @@
           </button>
           <button
             id="games-toggle-btn"
-            class="location-action-btn"
-            style="display: none"
+            class="eat-drink-button"
+            style="position: absolute; top: 10px; right: 10px; display: none"
           >
-            ▶ GAMES
+            Games
           </button>
-          <div id="games-side-panel" class="games-side-panel">
-            <span class="close-games-panel">×</span>
-            <h3>Available Games</h3>
-            <div class="game-icons">
-              <button class="game-icon" id="video-poker-icon">
-                <span class="material-icons">casino</span>
-                <span>Video Poker</span>
-              </button>
-              <!-- Add more game icons here in the future -->
-            </div>
-          </div>
         </div>
 
         <div id="player-info" class="player-info-popup">
@@ -484,42 +481,82 @@
           </div>
         </div>
 
-        <div id="video-poker-popup" class="settings-popup">
-          <div class="settings-content">
+        <div id="video-poker-popup" class="vp-overlay">
+          <div class="vp-table">
             <span class="close-video-poker">&times;</span>
-            <h2>Video Poker</h2>
-            <div class="poker-table">
-              <div class="cards">
-                <div class="card" data-index="0">
-                  <div class="rank"></div>
-                  <div class="suit"></div>
-                  <div class="hold">HOLD</div>
+            <div class="vp-felt">
+              <!-- Payout table -->
+              <div class="vp-payouts">
+                <div class="vp-pay-col">
+                  <span>One Pair (J or better): 1x</span>
+                  <span>Two Pairs: 2x</span>
+                  <span>Three of a kind: 4x</span>
+                  <span>Straight: 6x</span>
+                  <span>Flush: 8x</span>
                 </div>
-                <div class="card" data-index="1">
-                  <div class="rank"></div>
-                  <div class="suit"></div>
-                  <div class="hold">HOLD</div>
-                </div>
-                <div class="card" data-index="2">
-                  <div class="rank"></div>
-                  <div class="suit"></div>
-                  <div class="hold">HOLD</div>
-                </div>
-                <div class="card" data-index="3">
-                  <div class="rank"></div>
-                  <div class="suit"></div>
-                  <div class="hold">HOLD</div>
-                </div>
-                <div class="card" data-index="4">
-                  <div class="rank"></div>
-                  <div class="suit"></div>
-                  <div class="hold">HOLD</div>
+                <div class="vp-pay-col">
+                  <span>Full House: 12x</span>
+                  <span>Four of a kind: 25x</span>
+                  <span>Straight Flush: 50x</span>
+                  <span>Royal Flush: 500x</span>
                 </div>
               </div>
-              <div class="controls">
-                <button id="deal-draw-btn">Deal</button>
-              </div>
+              <!-- Status text -->
+              <div class="vp-status">Click "New" to begin game</div>
               <div class="hand-ranking"></div>
+              <!-- Cards -->
+              <div class="vp-cards">
+                <div class="vp-card card-back" data-index="0">
+                  <div class="vp-card-face">
+                    <div class="rank"></div>
+                    <div class="suit"></div>
+                  </div>
+                  <div class="vp-card-back-art"></div>
+                </div>
+                <div class="vp-card card-back" data-index="1">
+                  <div class="vp-card-face">
+                    <div class="rank"></div>
+                    <div class="suit"></div>
+                  </div>
+                  <div class="vp-card-back-art"></div>
+                </div>
+                <div class="vp-card card-back" data-index="2">
+                  <div class="vp-card-face">
+                    <div class="rank"></div>
+                    <div class="suit"></div>
+                  </div>
+                  <div class="vp-card-back-art"></div>
+                </div>
+                <div class="vp-card card-back" data-index="3">
+                  <div class="vp-card-face">
+                    <div class="rank"></div>
+                    <div class="suit"></div>
+                  </div>
+                  <div class="vp-card-back-art"></div>
+                </div>
+                <div class="vp-card card-back" data-index="4">
+                  <div class="vp-card-face">
+                    <div class="rank"></div>
+                    <div class="suit"></div>
+                  </div>
+                  <div class="vp-card-back-art"></div>
+                </div>
+              </div>
+              <!-- Bet selector -->
+              <div class="vp-bet-row">
+                <select id="vp-bet-select">
+                  <option value="0">No bet</option>
+                  <option value="1">£1</option>
+                  <option value="5">£5</option>
+                  <option value="10">£10</option>
+                  <option value="25">£25</option>
+                </select>
+              </div>
+              <!-- Buttons -->
+              <div class="vp-controls">
+                <button id="deal-draw-btn" class="vp-btn">New</button>
+                <button id="vp-hold-btn" class="vp-btn">Hold</button>
+              </div>
             </div>
           </div>
         </div>
@@ -580,6 +617,7 @@
     <script src="/socket.io/socket.io.js"></script>
     <!-- DOMPurify for XSS protection -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.7/purify.min.js"></script>
-    <script src="../game/game.js?v=2"></script>
+    <script src="../game/menuData.js?v=1"></script>
+    <script src="../game/game.js?v=4"></script>
   </body>
 </html>

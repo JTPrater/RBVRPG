@@ -96,7 +96,7 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       // Fetch available cabins from the server
       const response = await fetch(
-        `/api/get_available_cabins?cabin_type=${encodeURIComponent(cabinType)}`
+        `/api/get_available_cabins?cabin_type=${encodeURIComponent(cabinType)}`,
       );
 
       console.log(`📡 Cabin API response status: ${response.status}`);
@@ -105,7 +105,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const errorData = await response.json().catch(() => ({}));
         console.error("❌ Cabin API error:", errorData);
         throw new Error(
-          errorData.error || `Server responded with status: ${response.status}`
+          errorData.error || `Server responded with status: ${response.status}`,
         );
       }
 
@@ -119,7 +119,7 @@ document.addEventListener("DOMContentLoaded", function () {
           : rawCabins; // Backwards compatible if server returns strings
       console.log(
         `✅ Received ${availableCabins.length} available cabins:`,
-        availableCabins
+        availableCabins,
       );
 
       // Clear existing options
@@ -167,9 +167,8 @@ document.addEventListener("DOMContentLoaded", function () {
           if (total && left !== undefined) {
             // Display occupied/total and seats left
             const occ = selected?.dataset?.occupied ?? 0;
-            document.getElementById(
-              "capacity-total"
-            ).textContent = `${occ}/${total}`;
+            document.getElementById("capacity-total").textContent =
+              `${occ}/${total}`;
             document.getElementById("capacity-left").textContent = left;
             capInfo.style.display = "block";
           } else {
@@ -189,7 +188,7 @@ document.addEventListener("DOMContentLoaded", function () {
       cabinNumberSelect.innerHTML =
         '<option value="">-- Error loading cabins --</option>';
       alert(
-        `Failed to load cabin numbers: ${error.message}\n\nPlease try refreshing the page or contact support if the issue persists.`
+        `Failed to load cabin numbers: ${error.message}\n\nPlease try refreshing the page or contact support if the issue persists.`,
       );
     } finally {
       cabinNumberSelect.disabled = false;
@@ -219,6 +218,10 @@ document.addEventListener("DOMContentLoaded", function () {
       const result = await response.json();
       if (result.success) {
         sessionStorage.setItem("character", JSON.stringify(result.passenger));
+        sessionStorage.setItem(
+          "userEmail",
+          result.email || formData.get("email"),
+        );
         window.location.href = "/main/list.html";
       } else {
         alert(result.error || "Registration failed");

@@ -59,8 +59,8 @@ io.use((socket, next) => {
 
 // Global voyage start time (set when server starts)
 // Begin from Southampton (real-time progression)
-const voyageStartTime = Date.now() - 14400 * 1000; // DEBUG: 1 hour before Cherbourg arrival (mid-channel)
-console.debug("⏰ Voyage start time initialized at Southampton (BST 12:00).");
+const voyageStartTime = Date.now();
+console.debug("⏰ Voyage start time initialized at Southampton.");
 
 // Narrative events for server-side synchronization (times are seconds)
 const narrativeEvents = [
@@ -253,6 +253,46 @@ const upload = multer({
   },
 });
 
+function getStartingMoneyForCabin(cabinType) {
+  if (typeof cabinType !== "string") return 0;
+  if (cabinType.startsWith("1st_")) return 1000;
+  if (cabinType.startsWith("2nd_")) return 100;
+  if (cabinType.startsWith("3rd_")) return 10;
+  return 0;
+}
+
+function runAvatarUpload(req, res) {
+  return new Promise((resolve, reject) => {
+    upload.single("avatar")(req, res, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function getAvatarUploadErrorMessage(error) {
+  if (!error) return "Avatar upload failed";
+  if (error instanceof multer.MulterError) {
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return "Avatar image must be 5MB or smaller";
+    }
+    return error.message;
+  }
+
+  if (error.http_code === 400 && /invalid image file/i.test(error.message)) {
+    return "Avatar image could not be processed. Please re-save the PNG/JPG and try again.";
+  }
+
+  if (/invalid file type/i.test(error.message)) {
+    return "Avatar must be a JPG, PNG, GIF, or WebP image";
+  }
+
+  return error.message || "Avatar upload failed";
+}
+
 // Middleware Setup
 // Trust proxy - required for Render and other reverse proxies
 app.set("trust proxy", 1);
@@ -318,89 +358,117 @@ const authLimiter = rateLimit({
 app.use(limiter); // Apply general rate limiting to all routes
 
 // API Routes
-app.post(
-  "/api/register",
-  authLimiter,
-  upload.single("avatar"),
-  async (req, res) => {
-    try {
-      console.info(
-        `📝 Registration attempt from IP: ${req.ip}, Email: ${req.body.email}`,
+app.post("/api/register", authLimiter, async (req, res) => {
+  try {
+    await runAvatarUpload(req, res);
+
+    console.info(
+      `📝 Registration attempt from IP: ${req.ip}, Email: ${req.body.email}`,
+    );
+
+    if (!req.file) {
+      console.warn(
+        `❌ Registration failed: No avatar file uploaded for ${req.body.email}`,
       );
-
-      if (!req.file) {
-        console.warn(
-          `❌ Registration failed: No avatar file uploaded for ${req.body.email}`,
-        );
-        return res
-          .status(400)
-          .json({ success: false, error: "No avatar file uploaded" });
-      }
-
-      const existingUser = await User.findOne({ email: req.body.email });
-      if (existingUser) {
-        console.warn(
-          `❌ Registration failed: Email already registered: ${req.body.email}`,
-        );
-        return res
-          .status(400)
-          .json({ success: false, error: "Email already registered" });
-      }
-
-      const cabinType = req.body.cabin;
-      const cabinNumber = req.body.cabin_number;
-
-      console.debug(`🏠 Checking cabin: ${cabinType} - ${cabinNumber}`);
-
-      if (!cabins[cabinType] || !cabins[cabinType][cabinNumber]) {
-        console.warn(
-          `❌ Registration failed: Invalid cabin selected: ${cabinType} - ${cabinNumber}`,
-        );
-        return res
-          .status(400)
-          .json({ success: false, error: "Invalid cabin selected" });
-      }
-
-      if (
-        cabins[cabinType][cabinNumber].occupied >=
-        cabins[cabinType][cabinNumber].capacity
-      ) {
-        console.warn(
-          `❌ Registration failed: Cabin fully booked: ${cabinType} - ${cabinNumber}`,
-        );
-        return res
-          .status(400)
-          .json({ success: false, error: "Selected cabin is fully booked" });
-      }
-
-      const hashedPassword = await bcrypt.hash(req.body.password, 10);
-      const newUser = new User({
-        email: req.body.email,
-        password: hashedPassword,
-        character: {
-          avatar: req.file.path, // Cloudinary URL
-          forename: req.body.forename,
-          surname: req.body.surname,
-          birthdate: req.body.birthdate,
-          cabin: cabinType,
-          cabin_number: cabinNumber,
-          bio: req.body.bio,
-        },
-      });
-
-      await newUser.save();
-      cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
-      io.emit("new-passenger", newUser.character);
-      console.info(
-        `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`,
-      );
-      res.json({ success: true, passenger: newUser.character });
-    } catch (error) {
-      console.error("❌ Registration error:", error);
-      res.status(500).json({ success: false, error: error.message });
+      return res
+        .status(400)
+        .json({ success: false, error: "No avatar file uploaded" });
     }
-  },
-);
+
+    const existingUser = await User.findOne({ email: req.body.email });
+    if (existingUser) {
+      console.warn(
+        `❌ Registration failed: Email already registered: ${req.body.email}`,
+      );
+      return res
+        .status(400)
+        .json({ success: false, error: "Email already registered" });
+    }
+
+    const cabinType = req.body.cabin;
+    const cabinNumber = req.body.cabin_number;
+
+    console.debug(`🏠 Checking cabin: ${cabinType} - ${cabinNumber}`);
+
+    if (!cabins[cabinType] || !cabins[cabinType][cabinNumber]) {
+      console.warn(
+        `❌ Registration failed: Invalid cabin selected: ${cabinType} - ${cabinNumber}`,
+      );
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid cabin selected" });
+    }
+
+    if (
+      cabins[cabinType][cabinNumber].occupied >=
+      cabins[cabinType][cabinNumber].capacity
+    ) {
+      console.warn(
+        `❌ Registration failed: Cabin fully booked: ${cabinType} - ${cabinNumber}`,
+      );
+      return res
+        .status(400)
+        .json({ success: false, error: "Selected cabin is fully booked" });
+    }
+
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+
+    const startingMoney = getStartingMoneyForCabin(cabinType);
+
+    const newUser = new User({
+      email: req.body.email,
+      password: hashedPassword,
+      character: {
+        avatar: req.file.path, // Cloudinary URL
+        forename: req.body.forename,
+        surname: req.body.surname,
+        birthdate: req.body.birthdate,
+        cabin: cabinType,
+        cabin_number: cabinNumber,
+        bio: req.body.bio,
+      },
+      stats: {
+        money: startingMoney,
+        moneyVersion: 1,
+      },
+    });
+
+    await newUser.save();
+    req.session.userId = newUser._id;
+    await new Promise((resolve, reject) => {
+      req.session.save((sessionError) => {
+        if (sessionError) {
+          reject(sessionError);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
+    io.emit("new-passenger", newUser.character);
+    console.info(
+      `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`,
+    );
+    res.json({
+      success: true,
+      passenger: newUser.character,
+      email: newUser.email,
+    });
+  } catch (error) {
+    console.error("❌ Registration error:", error);
+
+    const statusCode =
+      error instanceof multer.MulterError || error.http_code === 400
+        ? 400
+        : 500;
+
+    res.status(statusCode).json({
+      success: false,
+      error: getAvatarUploadErrorMessage(error),
+    });
+  }
+});
 
 app.post("/api/check-credentials", authLimiter, async (req, res) => {
   try {
@@ -1014,88 +1082,127 @@ app.get("/api/get_available_cabins", (req, res) => {
   res.json(availableCabins);
 });
 
-// Stats API endpoints
-app.get("/api/get-stats", async (req, res) => {
-  try {
-    const userEmail = req.query.email;
-    if (!userEmail) {
-      return res.status(400).json({ error: "Email is required" });
-    }
+async function populateSocketUserEmail(socket, includeCharacter = false) {
+  if (!socket.userEmail && socket.request?.session?.userId) {
+    const selection = includeCharacter ? "email character" : "email";
+    const sessionUser = await User.findById(
+      socket.request.session.userId,
+    ).select(selection);
 
-    const user = await User.findOne({ email: userEmail });
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    // Calculate time-based stat decay since last update
-    const now = Date.now();
-    const timeDiff = (now - user.stats.lastUpdated) / 1000; // seconds
-    const decayIntervals = Math.floor(timeDiff);
-
-    let updatedStats = { ...user.stats };
-
-    // Apply decay for each interval
-    for (let i = 0; i < decayIntervals; i++) {
-      // Hunger decreases by 0.005 per second (more realistic timing)
-      updatedStats.hunger = Math.max(0, updatedStats.hunger - 0.005);
-      // Thirst decreases by 0.007 per second
-      updatedStats.thirst = Math.max(0, updatedStats.thirst - 0.007);
-      // Energy decreases by 0.003 per second
-      updatedStats.energy = Math.max(0, updatedStats.energy - 0.003);
-      // Hygiene decreases by 0.002 per second
-      updatedStats.hygiene = Math.max(0, updatedStats.hygiene - 0.002);
-      // Bladder decreases by 0.006 per second
-      updatedStats.bladder = Math.max(0, updatedStats.bladder - 0.006);
-      // Intoxication decreases by 0.01 per second (if above 0)
-      if (updatedStats.intoxication > 0) {
-        updatedStats.intoxication = Math.max(
-          0,
-          updatedStats.intoxication - 0.01,
-        );
+    if (sessionUser) {
+      socket.userEmail = sessionUser.email;
+      if (includeCharacter && !socket.character && sessionUser.character) {
+        socket.character = sessionUser.character;
       }
     }
-
-    // Update lastUpdated timestamp
-    updatedStats.lastUpdated = now;
-
-    // Save updated stats to database
-    user.stats = updatedStats;
-    await user.save();
-
-    console.debug(`📊 Loaded and updated stats for ${userEmail}`);
-    res.json(updatedStats);
-  } catch (error) {
-    console.error("❌ Error loading stats:", error);
-    res.status(500).json({ error: "Failed to load stats" });
   }
-});
 
-app.post("/api/save-stats", async (req, res) => {
+  return socket.userEmail || null;
+}
+
+async function handleLoadStats(socket) {
   try {
-    const { email, stats } = req.body;
-    if (!email || !stats) {
-      return res.status(400).json({ error: "Email and stats are required" });
+    const targetEmail = await populateSocketUserEmail(socket, true);
+    if (!targetEmail) {
+      console.error("❌ No user email available for stats loading");
+      return;
     }
 
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
+    const user = await User.findOne({ email: targetEmail });
+    if (!user || !user.stats) {
+      console.debug(
+        `📊 No stats found for user ${targetEmail}, sending defaults`,
+      );
+      socket.emit("stats-loaded", {
+        hunger: 100,
+        thirst: 100,
+        energy: 100,
+        hygiene: 100,
+        bladder: 100,
+        intoxication: 0,
+        money: 0,
+      });
+      return;
     }
 
-    // Update stats with current timestamp
-    user.stats = {
-      ...stats,
-      lastUpdated: Date.now(),
+    const now = Date.now();
+    const timeDiffSeconds = (now - user.stats.lastUpdated) / 1000;
+
+    const hungerDecay = Math.min(100, timeDiffSeconds * 0.005);
+    const thirstDecay = Math.min(100, timeDiffSeconds * 0.007);
+    const energyDecay = Math.min(100, timeDiffSeconds * 0.003);
+    const hygieneDecay = Math.min(100, timeDiffSeconds * 0.002);
+    const bladderDecay = Math.min(100, timeDiffSeconds * 0.006);
+    const intoxicationDecay = Math.max(0, timeDiffSeconds * 0.01);
+
+    const currentMoneyVersion = user.stats.moneyVersion || 0;
+    if (currentMoneyVersion < 1) {
+      const cabinValue = user.character?.cabin;
+      const startingMoney = getStartingMoneyForCabin(cabinValue);
+      console.info(
+        `💰 Money migration for ${targetEmail}: cabin="${cabinValue}", startingMoney=${startingMoney}, oldMoney=${user.stats.money}`,
+      );
+      await User.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            "stats.money": startingMoney,
+            "stats.moneyVersion": 1,
+          },
+        },
+      );
+      user.stats.money = startingMoney;
+      user.stats.moneyVersion = 1;
+    }
+
+    const currentStats = {
+      hunger: Math.max(0, user.stats.hunger - hungerDecay),
+      thirst: Math.max(0, user.stats.thirst - thirstDecay),
+      energy: Math.max(0, user.stats.energy - energyDecay),
+      hygiene: Math.max(0, user.stats.hygiene - hygieneDecay),
+      bladder: Math.max(0, user.stats.bladder - bladderDecay),
+      intoxication: Math.max(0, user.stats.intoxication - intoxicationDecay),
+      money: user.stats.money || 0,
     };
 
-    await user.save();
-    console.debug(`💾 Saved stats for ${email}`);
-    res.json({ success: true });
+    console.info(
+      `📊 Loaded stats for ${targetEmail}: money=${currentStats.money}`,
+    );
+    socket.emit("stats-loaded", currentStats);
   } catch (error) {
-    console.error("❌ Error saving stats:", error);
-    res.status(500).json({ error: "Failed to save stats" });
+    console.error(`❌ Error loading stats: ${error.message}`);
   }
-});
+}
+
+async function handleSaveStats(socket, statsData) {
+  try {
+    const targetEmail = await populateSocketUserEmail(socket);
+    if (!targetEmail) {
+      console.error("❌ No user email available for stats saving");
+      return;
+    }
+
+    await User.findOneAndUpdate(
+      { email: targetEmail },
+      {
+        $set: {
+          "stats.hunger": statsData.hunger,
+          "stats.thirst": statsData.thirst,
+          "stats.energy": statsData.energy,
+          "stats.hygiene": statsData.hygiene,
+          "stats.bladder": statsData.bladder,
+          "stats.intoxication": statsData.intoxication,
+          "stats.lastUpdated": Date.now(),
+        },
+      },
+      { upsert: true },
+    );
+
+    console.info(`💾 Saved stats for ${targetEmail}:`, statsData);
+  } catch (error) {
+    console.error(`❌ Error saving stats: ${error.message}`);
+  }
+}
 
 // Socket.IO Setup
 io.on("connection", async (socket) => {
@@ -1176,6 +1283,10 @@ io.on("connection", async (socket) => {
   userChatColors[socket.id] = assignedColor;
   console.debug(`🎨 Assigned color to ${socket.id}: ${assignedColor}`);
 
+  if (socket.userEmail || socket.request?.session?.userId) {
+    handleLoadStats(socket);
+  }
+
   // Send the assigned color to the connected client
   socket.emit("assign-chat-color", assignedColor);
   socket.emit("game-user-count", gameClientCount);
@@ -1208,6 +1319,14 @@ io.on("connection", async (socket) => {
   // Initialize per-socket variables
   let currentRoom = null;
   let currentCharacter = null;
+
+  socket.on("load-stats", () => {
+    handleLoadStats(socket);
+  });
+
+  socket.on("save-stats", (statsData) => {
+    handleSaveStats(socket, statsData);
+  });
 
   // Handle 'join-room' event
   socket.on("join-room", async (data) => {
@@ -1447,105 +1566,218 @@ io.on("connection", async (socket) => {
     }
   });
 
-  socket.on("load-stats", async () => {
-    try {
-      if (!socket.userEmail && socket.request?.session?.userId) {
-        const sessionUser = await User.findById(
-          socket.request.session.userId,
-        ).select("email stats");
-        if (sessionUser) {
-          socket.userEmail = sessionUser.email;
-          if (!socket.character && sessionUser.character) {
-            socket.character = sessionUser.character;
-          }
-        }
-      }
+  // ─── Server-authoritative poker ───────────────────────────────────────────
+  const POKER_RANKS = [
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "J",
+    "Q",
+    "K",
+    "A",
+  ];
+  const POKER_SUITS = ["hearts", "diamonds", "clubs", "spades"];
+  const SUIT_SYMBOLS = {
+    hearts: "♥",
+    diamonds: "♦",
+    clubs: "♣",
+    spades: "♠",
+  };
+  const POKER_PAYOUTS = {
+    "Jacks or Better": 1,
+    "Two Pair": 2,
+    "Three of a Kind": 4,
+    Straight: 6,
+    Flush: 8,
+    "Full House": 12,
+    "Four of a Kind": 25,
+    "Straight Flush": 50,
+    "Royal Flush": 500,
+  };
+  const VALID_BETS = [0, 1, 5, 10, 25];
 
-      const targetEmail = socket.userEmail;
-      if (!targetEmail) {
-        console.error("❌ No user email available for stats loading");
-        return;
-      }
-
-      const user = await User.findOne({ email: targetEmail });
-      if (!user || !user.stats) {
-        console.debug(
-          `📊 No stats found for user ${targetEmail}, sending defaults`,
-        );
-        socket.emit("stats-loaded", {
-          hunger: 100,
-          thirst: 100,
-          energy: 100,
-          hygiene: 100,
-          bladder: 100,
-          intoxication: 0,
+  function createShuffledDeck() {
+    const deck = [];
+    for (const suit of POKER_SUITS) {
+      for (const rank of POKER_RANKS) {
+        deck.push({
+          rank,
+          suit,
+          symbol: SUIT_SYMBOLS[suit],
+          color: suit === "hearts" || suit === "diamonds" ? "red" : "black",
         });
+      }
+    }
+    // Fisher-Yates shuffle
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
+  }
+
+  function evaluatePokerHand(hand) {
+    const sortedHand = [...hand].sort(
+      (a, b) => POKER_RANKS.indexOf(a.rank) - POKER_RANKS.indexOf(b.rank),
+    );
+    const isFlush = hand.every((c) => c.suit === hand[0].suit);
+    let isStraight = false;
+    if (sortedHand.length === 5) {
+      const ri = sortedHand.map((c) => POKER_RANKS.indexOf(c.rank));
+      isStraight = ri.every((v, i, a) => i === 0 || v === a[i - 1] + 1);
+      if (
+        !isStraight &&
+        ri[4] === 12 &&
+        ri[0] === 0 &&
+        ri[1] === 1 &&
+        ri[2] === 2 &&
+        ri[3] === 3
+      )
+        isStraight = true;
+    }
+    const rc = {};
+    for (const c of hand) rc[c.rank] = (rc[c.rank] || 0) + 1;
+    const counts = Object.values(rc);
+
+    if (isFlush && isStraight && sortedHand[0].rank === "10")
+      return "Royal Flush";
+    if (isFlush && isStraight) return "Straight Flush";
+    if (counts.includes(4)) return "Four of a Kind";
+    if (counts.includes(3) && counts.includes(2)) return "Full House";
+    if (isFlush) return "Flush";
+    if (isStraight) return "Straight";
+    if (counts.includes(3)) return "Three of a Kind";
+    if (counts.filter((c) => c === 2).length === 2) return "Two Pair";
+    if (
+      Object.keys(rc).find(
+        (r) => rc[r] === 2 && ["J", "Q", "K", "A"].includes(r),
+      )
+    )
+      return "Jacks or Better";
+    if (counts.includes(2)) return "Pair";
+    return "High Card";
+  }
+
+  // poker-deal: client sends { bet }
+  socket.on("poker-deal", async ({ bet }) => {
+    try {
+      if (!socket.userEmail) return;
+      const betAmount = Number(bet) || 0;
+      if (!VALID_BETS.includes(betAmount)) return;
+
+      const user = await User.findOne({ email: socket.userEmail });
+      if (!user) return;
+
+      if (betAmount > 0 && (user.stats.money || 0) < betAmount) {
+        socket.emit("poker-error", { message: "Not enough money!" });
         return;
       }
 
-      // Calculate time-based decay since last update
-      const now = Date.now();
-      const timeDiffSeconds = (now - user.stats.lastUpdated) / 1000;
+      // Deduct bet atomically
+      if (betAmount > 0) {
+        await User.findOneAndUpdate(
+          { email: socket.userEmail },
+          { $inc: { "stats.money": -betAmount } },
+        );
+      }
 
-      // Apply decay rates
-      const hungerDecay = Math.min(100, timeDiffSeconds * 0.005); // 0.005 per second
-      const thirstDecay = Math.min(100, timeDiffSeconds * 0.007); // 0.007 per second
-      const energyDecay = Math.min(100, timeDiffSeconds * 0.003); // 0.003 per second
-      const hygieneDecay = Math.min(100, timeDiffSeconds * 0.002); // 0.002 per second
-      const bladderDecay = Math.min(100, timeDiffSeconds * 0.006); // 0.006 per second
-      const intoxicationDecay = Math.max(0, timeDiffSeconds * 0.01); // 0.01 per second (only decreases)
+      const deck = createShuffledDeck();
+      const hand = deck.splice(0, 5);
 
-      const currentStats = {
-        hunger: Math.max(0, user.stats.hunger - hungerDecay),
-        thirst: Math.max(0, user.stats.thirst - thirstDecay),
-        energy: Math.max(0, user.stats.energy - energyDecay),
-        hygiene: Math.max(0, user.stats.hygiene - hygieneDecay),
-        bladder: Math.max(0, user.stats.bladder - bladderDecay),
-        intoxication: Math.max(0, user.stats.intoxication - intoxicationDecay),
-      };
+      // Store game state on the socket (not accessible to client)
+      socket.pokerGame = { deck, hand, bet: betAmount };
 
-      console.debug(`📊 Loaded stats for ${targetEmail}:`, currentStats);
-      socket.emit("stats-loaded", currentStats);
+      const updatedUser = await User.findOne({ email: socket.userEmail });
+      socket.emit("poker-dealt", {
+        hand,
+        money: updatedUser.stats.money,
+      });
     } catch (error) {
-      console.error(`❌ Error loading stats: ${error.message}`);
+      console.error(`❌ Poker deal error: ${error.message}`);
     }
   });
 
-  socket.on("save-stats", async (statsData) => {
+  // poker-hold: client sends { held: [bool, bool, bool, bool, bool] }
+  socket.on("poker-hold", async ({ held }) => {
     try {
-      if (!socket.userEmail && socket.request?.session?.userId) {
-        const sessionUser = await User.findById(
-          socket.request.session.userId,
-        ).select("email");
-        if (sessionUser) {
-          socket.userEmail = sessionUser.email;
+      if (!socket.userEmail || !socket.pokerGame) return;
+      if (!Array.isArray(held) || held.length !== 5) return;
+
+      const game = socket.pokerGame;
+      // Draw replacements from the stored deck
+      for (let i = 0; i < 5; i++) {
+        if (!held[i]) {
+          game.hand[i] = game.deck.pop();
         }
       }
 
-      if (!socket.userEmail) {
-        console.error("❌ No user email available for stats saving");
+      const rank = evaluatePokerHand(game.hand);
+      const multiplier = POKER_PAYOUTS[rank] || 0;
+      let winnings = 0;
+
+      if (multiplier > 0 && game.bet > 0) {
+        winnings = game.bet * multiplier;
+        await User.findOneAndUpdate(
+          { email: socket.userEmail },
+          { $inc: { "stats.money": winnings } },
+        );
+      }
+
+      const updatedUser = await User.findOne({ email: socket.userEmail });
+
+      socket.emit("poker-result", {
+        hand: game.hand,
+        rank,
+        multiplier,
+        winnings,
+        bet: game.bet,
+        money: updatedUser.stats.money,
+      });
+
+      // Clear game state
+      socket.pokerGame = null;
+    } catch (error) {
+      console.error(`❌ Poker hold error: ${error.message}`);
+    }
+  });
+
+  // ─── Server-authoritative purchases ───────────────────────────────────────
+  socket.on("purchase-item", async ({ price }) => {
+    try {
+      if (!socket.userEmail) return;
+      const cost = Number(price) || 0;
+      if (cost <= 0) {
+        socket.emit("purchase-result", { success: true, money: null });
+        return;
+      }
+
+      const user = await User.findOne({ email: socket.userEmail });
+      if (!user || (user.stats.money || 0) < cost) {
+        socket.emit("purchase-result", {
+          success: false,
+          message: "Not enough money!",
+        });
         return;
       }
 
       await User.findOneAndUpdate(
         { email: socket.userEmail },
-        {
-          stats: {
-            hunger: statsData.hunger,
-            thirst: statsData.thirst,
-            energy: statsData.energy,
-            hygiene: statsData.hygiene,
-            bladder: statsData.bladder,
-            intoxication: statsData.intoxication,
-            lastUpdated: Date.now(),
-          },
-        },
-        { upsert: true },
+        { $inc: { "stats.money": -cost } },
       );
 
-      console.info(`💾 Saved stats for ${socket.userEmail}:`, statsData);
+      const updatedUser = await User.findOne({ email: socket.userEmail });
+      socket.emit("purchase-result", {
+        success: true,
+        money: updatedUser.stats.money,
+      });
     } catch (error) {
-      console.error(`❌ Error saving stats: ${error.message}`);
+      console.error(`❌ Purchase error: ${error.message}`);
     }
   });
 

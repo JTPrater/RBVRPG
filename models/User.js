@@ -30,6 +30,8 @@ const userSchema = new mongoose.Schema({
     hygiene: { type: Number, default: 100 },
     bladder: { type: Number, default: 100 },
     intoxication: { type: Number, default: 0 },
+    money: { type: Number, default: 0 },
+    moneyVersion: { type: Number, default: 0 },
     lastUpdated: { type: Date, default: Date.now },
   },
   chatColor: {

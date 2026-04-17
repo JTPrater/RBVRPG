@@ -3,6 +3,14 @@ const socket = io({
     email: sessionStorage.getItem("userEmail"),
   },
 });
+
+socket.on("stats-loaded", (statsData) => {
+  console.debug("📊 Received stats from server:", statsData);
+  applyStatsToState(statsData);
+  persistStatsLocally();
+  console.debug("📊 Stats loaded and visual bars updated");
+});
+
 let currentRoom = { name: null, id: null };
 const chatHistory = {
   rooms: {},
@@ -126,7 +134,7 @@ window.RBVLog = {
 // Flip to true to freeze the voyage in open ocean. Change DEV_HOUR
 // to test any time of day (0-23, fractional OK e.g. 17.5 = 5:30 PM).
 // Set back to false when done.
-const DEV_NORTH_ATLANTIC = true;
+const DEV_NORTH_ATLANTIC = false;
 const DEV_HOUR = 12; // 0 = midnight, 6 = sunrise, 12 = noon, 17 = sunset, 22 = night
 // ── end dev override ───────────────────────────────────────────────
 
@@ -166,18 +174,11 @@ socket.on("voyage-state", (currentVoyageState) => {
     lastServerElapsedAt = Date.now();
   }
 
-  // Update info bar elements immediately
+  // Keep voyage values in sync; the info bar itself is rendered via updateInfoBar().
   if (DEV_NORTH_ATLANTIC) {
-    document.getElementById("location").textContent =
-      "Location: North Atlantic";
-    document.getElementById("speed").textContent = "Speed: 22.0 knots";
     window.currentSpeed = 22;
     window.targetSpeed = 22;
   } else {
-    document.getElementById("location").textContent =
-      `Location: ${currentVoyageState.location}`;
-    document.getElementById("speed").textContent =
-      `Speed: ${currentVoyageState.speed}`;
     // Set window.currentSpeed for visual effects (smoke, wind)
     window.currentSpeed = currentVoyageState.speedValue;
     // Set target speed for smooth acceleration/deceleration
@@ -191,6 +192,10 @@ socket.on("voyage-state", (currentVoyageState) => {
   if (typeof updateSkyImage === "function") {
     updateSkyImage();
     console.debug("🌤️ Updated sky with server voyage state");
+  }
+
+  if (typeof updateInfoBar === "function") {
+    updateInfoBar();
   }
 
   // Try to perform full sync if functions are available
@@ -251,14 +256,6 @@ socket.on("narrative-current", (data) => {
       narrativeSystem.currentEventIndex.toString(),
     );
   }
-});
-
-// Listen for stats from server (for loading persisted stats on connect)
-socket.on("stats-loaded", (statsData) => {
-  console.debug("📊 Received stats from server:", statsData);
-  applyStatsToState(statsData);
-  persistStatsLocally();
-  console.debug("📊 Stats loaded and visual bars updated");
 });
 
 // Handle automatic room joining for reconnections
@@ -514,6 +511,35 @@ const openDoorSound = new Audio("/sounds/open_door.mp3");
 const closeDoorSound = new Audio("/sounds/close_door.mp3");
 openDoorSound.preload = "auto";
 closeDoorSound.preload = "auto";
+
+const eatSound = new Audio("/sounds/eat.mp3");
+const drinkSound = new Audio("/sounds/drink.mp3");
+eatSound.preload = "auto";
+drinkSound.preload = "auto";
+
+function playConsumptionSound(item) {
+  let soundToPlay = null;
+
+  if (item?.topCategory === "food") {
+    soundToPlay = eatSound;
+  } else if (
+    item?.topCategory === "soft_beverages" ||
+    item?.topCategory === "alcoholic_beverages"
+  ) {
+    soundToPlay = drinkSound;
+  } else if ((item?.hungry ?? 0) > 0) {
+    soundToPlay = eatSound;
+  } else if ((item?.thirsty ?? 0) > 0) {
+    soundToPlay = drinkSound;
+  }
+
+  if (!soundToPlay) {
+    return;
+  }
+
+  soundToPlay.currentTime = 0;
+  soundToPlay.play().catch(() => {});
+}
 
 const interiorSound = new Audio("/sounds/ship_interior.mp3");
 interiorSound.loop = true; // Loop the ambient sound
@@ -2605,6 +2631,14 @@ const statusBars = {
   bladder: { value: 100, rate: 0.006 }, // More realistic timing
   intoxication: { value: 0, rate: 0.01 }, // More realistic timing
 };
+
+// Player money (persisted alongside stats)
+let playerMoney = 0;
+function updateMoneyDisplay() {
+  const el = document.getElementById("character-money");
+  if (el) el.textContent = `\u00a3${playerMoney.toFixed(2)}`;
+}
+
 const STORED_STATS_KEY = "rbvrpg:lastStats";
 let statsSyncTimer = null;
 const STAT_SYNC_DELAY = 30000; // 30 seconds debounce for server sync
@@ -2620,6 +2654,11 @@ function applyStatsToState(stats) {
         key === "intoxication" ? clampStat(value) : clampStat(value);
     }
   });
+
+  if (typeof stats.money === "number") {
+    playerMoney = stats.money;
+    updateMoneyDisplay();
+  }
 
   Object.keys(statusBars).forEach((key) => {
     const bar = document.querySelector(`.bar.${key}`);
@@ -2642,6 +2681,7 @@ function persistStatsLocally() {
     hygiene: statusBars.hygiene.value,
     bladder: statusBars.bladder.value,
     intoxication: statusBars.intoxication.value,
+    money: playerMoney,
     savedAt: Date.now(),
   };
   try {
@@ -2736,12 +2776,6 @@ function saveStatsToServer() {
   persistStatsLocally();
 }
 
-// Function to load stats from server
-function loadStatsFromServer() {
-  console.debug("📊 Requesting stats from server");
-  socket.emit("load-stats");
-}
-
 window.addEventListener("beforeunload", () => {
   try {
     saveStatsToServer();
@@ -2805,8 +2839,8 @@ document.addEventListener("DOMContentLoaded", function () {
       className = "Crew";
     }
 
-    classElement.textContent = className;
-    cabinElement.textContent = `(${cabinNumber})`; // e.g., "A3"
+    classElement.textContent = `${className} Passenger`;
+    cabinElement.textContent = `${cabinNumber}`; // e.g., "A-17"
 
     // Make cabin clickable
     cabinElement.addEventListener("click", (e) => {
@@ -3273,6 +3307,34 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   };
 
+  const infoBarElements = {
+    location: document.getElementById("location"),
+    speed: document.getElementById("speed"),
+    date: document.getElementById("date"),
+  };
+
+  function renderInfoBarText(location, speed, date) {
+    const nextLocation = `Location: ${location}`;
+    const nextSpeed = `Speed: ${speed}`;
+    const nextDate = `Date: ${date}`;
+
+    if (
+      infoBarElements.location &&
+      infoBarElements.location.textContent !== nextLocation
+    ) {
+      infoBarElements.location.textContent = nextLocation;
+    }
+    if (
+      infoBarElements.speed &&
+      infoBarElements.speed.textContent !== nextSpeed
+    ) {
+      infoBarElements.speed.textContent = nextSpeed;
+    }
+    if (infoBarElements.date && infoBarElements.date.textContent !== nextDate) {
+      infoBarElements.date.textContent = nextDate;
+    }
+  }
+
   function updateInfoBar() {
     const bstTime = getBSTTime();
 
@@ -3307,9 +3369,7 @@ document.addEventListener("DOMContentLoaded", function () {
       .toString()
       .padStart(2, "0")}`;
 
-    document.getElementById("location").textContent = `Location: ${location}`;
-    document.getElementById("speed").textContent = `Speed: ${speed}`;
-    document.getElementById("date").textContent = `Date: ${date}`;
+    renderInfoBarText(location, speed, date);
 
     console.debug("🗓️ Updated info bar:", { location, speed, date });
   }
@@ -3528,11 +3588,6 @@ document.addEventListener("DOMContentLoaded", function () {
     // Update sky and info bar
     refreshWorldStateImmediately("initial-sync");
     console.debug("✅ Initial sync complete");
-
-    // Load stats from server
-    if (typeof loadStatsFromServer === "function") {
-      loadStatsFromServer();
-    }
 
     // Handle automatic room joining
     if (typeof handleReconnectionRoomJoin === "function") {
@@ -4813,6 +4868,11 @@ document.addEventListener("DOMContentLoaded", function () {
           gamesToggleBtn.style.display = "block";
         } else {
           gamesToggleBtn.style.display = "none";
+          gamesToggleBtn.textContent = "Games";
+          const gamesPopup = document.querySelector(".games-popup");
+          if (gamesPopup) {
+            gamesPopup.remove();
+          }
         }
       }
 
@@ -7376,207 +7436,75 @@ document.addEventListener("DOMContentLoaded", function () {
   const videoPokerPopup = document.getElementById("video-poker-popup");
   const closeVideoPokerBtn = document.querySelector(".close-video-poker");
   const dealDrawBtn = document.getElementById("deal-draw-btn");
+  const vpHoldBtn = document.getElementById("vp-hold-btn");
   const handRanking = document.querySelector(".hand-ranking");
-  const cards = document.querySelectorAll(".card");
+  const vpStatus = document.querySelector(".vp-status");
+  const vpCards = document.querySelectorAll(".vp-card");
 
   // Poker game state
+  const vpBetSelect = document.getElementById("vp-bet-select");
+
   const videoPoker = {
-    deck: [],
     hand: [],
     held: [false, false, false, false, false],
-    isDraw: false,
+    phase: "idle",
+    currentBet: 0,
 
-    // Suit symbols
-    suits: {
-      hearts: "♥",
-      diamonds: "♦",
-      clubs: "♣",
-      spades: "♠",
-    },
-
-    // Card ranks
-    ranks: ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"],
-
-    // Initialize the game
     init() {
-      this.createDeck();
-      this.shuffle();
-      dealDrawBtn.textContent = "Deal";
-      this.isDraw = false;
+      this.phase = "idle";
       this.held = [false, false, false, false, false];
+      this.currentBet = 0;
+      dealDrawBtn.textContent = "New";
+      if (vpHoldBtn) vpHoldBtn.style.opacity = "0.5";
+      if (vpBetSelect) vpBetSelect.disabled = false;
       handRanking.textContent = "";
+      handRanking.classList.remove("win");
+      if (vpStatus) vpStatus.textContent = 'Click "New" to begin game';
 
-      // Hide all hold indicators and reset card display
-      document.querySelectorAll(".hold").forEach((hold) => {
-        hold.style.display = "none";
+      // Reset all cards to card-back
+      vpCards.forEach((card) => {
+        card.classList.add("card-back");
+        card.classList.remove("held", "dealing");
+        const rank = card.querySelector(".rank");
+        const suit = card.querySelector(".suit");
+        if (rank) rank.textContent = "";
+        if (suit) suit.textContent = "";
       });
-      document.querySelectorAll(".card .rank, .card .suit").forEach((el) => {
-        el.textContent = "";
-      });
-      document.querySelectorAll(".card").forEach((card) => {
-        card.style.background = "white";
-        card.classList.remove("held");
-      });
     },
 
-    // Create a fresh deck of cards
-    createDeck() {
-      this.deck = [];
-      for (const suit of Object.keys(this.suits)) {
-        for (const rank of this.ranks) {
-          this.deck.push({
-            rank: rank,
-            suit: suit,
-            symbol: this.suits[suit],
-            color: suit === "hearts" || suit === "diamonds" ? "red" : "black",
-          });
-        }
-      }
-    },
-
-    // Shuffle the deck
-    shuffle() {
-      for (let i = this.deck.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
-      }
-    },
-
-    // Deal 5 cards from the deck
-    deal() {
-      if (!this.isDraw) {
-        this.hand = [];
-        for (let i = 0; i < 5; i++) {
-          this.hand[i] = this.deck.pop();
-        }
-      } else {
-        for (let i = 0; i < 5; i++) {
-          if (!this.held[i]) {
-            this.hand[i] = this.deck.pop();
-          }
-        }
-      }
-    },
-
-    // Evaluate the hand and return the rank
-    evaluateHand() {
-      const sortedHand = [...this.hand].sort((a, b) => {
-        return this.ranks.indexOf(a.rank) - this.ranks.indexOf(b.rank);
-      });
-
-      const isFlush = this.hand.every(
-        (card) => card.suit === this.hand[0].suit,
-      );
-
-      let isStraight = false;
-      if (sortedHand.length === 5) {
-        const rankIndices = sortedHand.map((card) =>
-          this.ranks.indexOf(card.rank),
-        );
-        isStraight = rankIndices.every((val, i, arr) => {
-          return i === 0 || val === arr[i - 1] + 1;
-        });
-
-        // Special case: A-2-3-4-5 straight
-        if (
-          !isStraight &&
-          rankIndices[4] === 12 &&
-          rankIndices[0] === 0 &&
-          rankIndices[1] === 1 &&
-          rankIndices[2] === 2 &&
-          rankIndices[3] === 3
-        ) {
-          isStraight = true;
-        }
-      }
-
-      const rankCounts = {};
-      for (const card of this.hand) {
-        rankCounts[card.rank] = (rankCounts[card.rank] || 0) + 1;
-      }
-
-      const counts = Object.values(rankCounts);
-
-      // Winning hands
-      if (isFlush && isStraight && sortedHand[0].rank === "10") {
-        return "Royal Flush";
-      }
-      if (isFlush && isStraight) {
-        return "Straight Flush";
-      }
-      if (counts.includes(4)) {
-        return "Four of a Kind";
-      }
-      if (counts.includes(3) && counts.includes(2)) {
-        return "Full House";
-      }
-      if (isFlush) {
-        return "Flush";
-      }
-      if (isStraight) {
-        return "Straight";
-      }
-      if (counts.includes(3)) {
-        return "Three of a Kind";
-      }
-      if (counts.filter((count) => count === 2).length === 2) {
-        return "Two Pair";
-      }
-      if (
-        Object.keys(rankCounts).find(
-          (rank) =>
-            rankCounts[rank] === 2 && ["J", "Q", "K", "A"].includes(rank),
-        )
-      ) {
-        return "Jacks or Better";
-      }
-      if (counts.includes(2)) {
-        return "Pair";
-      }
-      return "High Card";
-    },
-
-    // Update the visual display of the cards
     updateCardDisplay() {
       for (let i = 0; i < 5; i++) {
-        const card = document.querySelector(`.card[data-index="${i}"]`);
+        const card = document.querySelector(`.vp-card[data-index="${i}"]`);
         const rank = card.querySelector(".rank");
         const suit = card.querySelector(".suit");
 
         if (this.hand[i]) {
+          card.classList.remove("card-back");
           rank.textContent = this.hand[i].rank;
           suit.textContent = this.hand[i].symbol;
           rank.style.color = this.hand[i].color;
           suit.style.color = this.hand[i].color;
-          if (!this.isDraw || !this.held[i]) {
+          if (this.phase !== "deal" || !this.held[i]) {
             card.classList.add("dealing");
-            setTimeout(() => card.classList.remove("dealing"), 500);
+            setTimeout(() => card.classList.remove("dealing"), 400);
           }
           card.classList.toggle("held", this.held[i]);
-        } else {
-          rank.textContent = "";
-          suit.textContent = "";
-          card.classList.remove("held");
         }
       }
     },
 
-    // Toggle hold status for a card
     toggleHold(index) {
-      if (!this.isDraw) return; // Can only hold during draw phase
+      if (this.phase !== "deal") return;
       this.held[index] = !this.held[index];
-      const holdDisplay = document.querySelector(
-        `.card[data-index="${index}"] .hold`,
-      );
-      holdDisplay.style.display = this.held[index] ? "block" : "none";
+      const card = document.querySelector(`.vp-card[data-index="${index}"]`);
+      card.classList.toggle("held", this.held[index]);
     },
   };
 
   // Initialize video poker button event
   if (videoPokerBtn) {
     videoPokerBtn.addEventListener("click", () => {
-      videoPokerPopup.style.display = "block";
-      videoPoker.init();
+      openVideoPokerGame();
     });
   }
 
@@ -7587,93 +7515,160 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Deal/Draw button click event
+  // "New" button — sends bet to server, waits for dealt hand
   dealDrawBtn.addEventListener("click", () => {
-    if (!videoPoker.isDraw) {
-      // First click: Deal
-      videoPoker.createDeck();
-      videoPoker.shuffle();
-      videoPoker.deal();
-      videoPoker.updateCardDisplay();
-      dealDrawBtn.textContent = "Draw";
-      videoPoker.isDraw = true;
-    } else {
-      // Second click: Draw
-      videoPoker.deal();
-      videoPoker.updateCardDisplay();
-      dealDrawBtn.textContent = "Deal";
-      videoPoker.isDraw = false;
-
-      // Hide hold indicators and reset held status
-      document.querySelectorAll(".hold").forEach((hold) => {
-        hold.style.display = "none";
-      });
-      videoPoker.held = [false, false, false, false, false];
-
-      // Show hand ranking with win feedback
-      const rank = videoPoker.evaluateHand();
-      handRanking.textContent = rank;
-      const winningHands = [
-        "Royal Flush",
-        "Straight Flush",
-        "Four of a Kind",
-        "Full House",
-        "Flush",
-        "Straight",
-        "Three of a Kind",
-        "Two Pair",
-        "Jacks or Better",
-      ];
-      handRanking.classList.toggle("win", winningHands.includes(rank));
+    const betAmount = parseFloat(vpBetSelect ? vpBetSelect.value : 0);
+    if (betAmount > 0 && playerMoney < betAmount) {
+      if (vpStatus) vpStatus.textContent = "Not enough money!";
+      return;
     }
+    dealDrawBtn.disabled = true;
+    socket.emit("poker-deal", { bet: betAmount });
   });
 
+  // Server dealt cards
+  socket.on("poker-dealt", ({ hand, money }) => {
+    playerMoney = money;
+    updateMoneyDisplay();
+    videoPoker.hand = hand;
+    videoPoker.phase = "deal";
+    videoPoker.held = [false, false, false, false, false];
+    videoPoker.updateCardDisplay();
+    dealDrawBtn.textContent = "New";
+    dealDrawBtn.disabled = false;
+    if (vpHoldBtn) vpHoldBtn.style.opacity = "1";
+    if (vpBetSelect) vpBetSelect.disabled = true;
+    handRanking.textContent = "";
+    handRanking.classList.remove("win");
+    const betAmount = parseFloat(vpBetSelect ? vpBetSelect.value : 0);
+    if (vpStatus)
+      vpStatus.textContent =
+        betAmount > 0
+          ? `Bet: £${betAmount.toFixed(2)} — Select cards to hold, then click Hold`
+          : "Select cards to hold, then click Hold";
+  });
+
+  socket.on("poker-error", ({ message }) => {
+    if (vpStatus) vpStatus.textContent = message;
+    dealDrawBtn.disabled = false;
+  });
+
+  // "Hold" button — sends held cards to server, waits for result
+  if (vpHoldBtn) {
+    vpHoldBtn.addEventListener("click", () => {
+      if (videoPoker.phase !== "deal") return;
+      vpHoldBtn.disabled = true;
+      socket.emit("poker-hold", { held: [...videoPoker.held] });
+    });
+  }
+
+  // Server evaluated the hand
+  socket.on(
+    "poker-result",
+    ({ hand, rank, multiplier, winnings, bet, money }) => {
+      playerMoney = money;
+      updateMoneyDisplay();
+      videoPoker.hand = hand;
+      videoPoker.phase = "idle";
+      videoPoker.updateCardDisplay();
+      if (vpHoldBtn) {
+        vpHoldBtn.style.opacity = "0.5";
+        vpHoldBtn.disabled = false;
+      }
+      if (vpBetSelect) vpBetSelect.disabled = false;
+
+      handRanking.textContent = rank;
+      const isWin = multiplier > 0;
+      handRanking.classList.toggle("win", isWin);
+
+      if (isWin && bet > 0) {
+        if (vpStatus)
+          vpStatus.textContent = `${rank} — You win £${winnings.toFixed(2)}!`;
+      } else if (bet > 0) {
+        if (vpStatus)
+          vpStatus.textContent = `${rank} — You lose £${bet.toFixed(2)}`;
+      } else {
+        if (vpStatus) vpStatus.textContent = isWin ? "You win!" : rank;
+      }
+    },
+  );
+
   // Card click event for selecting holds
-  cards.forEach((card) => {
+  vpCards.forEach((card) => {
     card.addEventListener("click", () => {
       const index = parseInt(card.getAttribute("data-index"));
       videoPoker.toggleHold(index);
     });
   });
 
+  function openVideoPokerGame() {
+    if (!videoPokerPopup) return;
+    // Move poker popup into location-display so it overlays the room image
+    const locationDisplay = document.querySelector(".location-display");
+    if (locationDisplay && !locationDisplay.contains(videoPokerPopup)) {
+      locationDisplay.appendChild(videoPokerPopup);
+    }
+    videoPokerPopup.style.display = "block";
+    videoPoker.init();
+  }
+
   const gamesToggleBtn = document.getElementById("games-toggle-btn");
-  const gamesSidePanel = document.getElementById("games-side-panel");
-  const closeGamesPanel = document.querySelector(".close-games-panel");
-
-  if (gamesToggleBtn && gamesSidePanel && closeGamesPanel) {
-    // Toggle side panel on button click
+  if (gamesToggleBtn) {
     gamesToggleBtn.addEventListener("click", () => {
-      gamesSidePanel.classList.toggle("open");
-      console.debug("🎮 Games panel toggled");
-    });
-
-    // Close side panel with close button
-    closeGamesPanel.addEventListener("click", () => {
-      gamesSidePanel.classList.remove("open");
-      console.debug("🎮 Games panel closed");
-    });
-
-    // Close side panel when clicking outside
-    window.addEventListener("click", (event) => {
-      if (
-        !gamesSidePanel.contains(event.target) &&
-        event.target !== gamesToggleBtn &&
-        event.target !== roomPlayersBtn &&
-        !(roomPlayersPopup && roomPlayersPopup.contains(event.target))
-      ) {
-        gamesSidePanel.classList.remove("open");
-        console.debug("🎮 Games panel closed by clicking outside");
+      const existingPopup = document.querySelector(".games-popup");
+      if (existingPopup) {
+        existingPopup.remove();
+        gamesToggleBtn.textContent = "Games";
+      } else {
+        showGamesOptions();
+        gamesToggleBtn.textContent = "Close Games";
       }
     });
+  }
 
-    // Video Poker icon functionality
-    const videoPokerIcon = document.getElementById("video-poker-icon");
-    if (videoPokerIcon) {
-      videoPokerIcon.addEventListener("click", () => {
-        document.getElementById("video-poker-popup").style.display = "block";
-        videoPoker.init();
-        gamesSidePanel.classList.remove("open"); // Close panel after selection
-        console.debug("🎰 Video Poker launched from side panel");
+  function showGamesOptions() {
+    const existingPopup = document.querySelector(".games-popup");
+    if (existingPopup) {
+      existingPopup.remove();
+    }
+
+    const locationDisplay = document.querySelector(".location-display");
+    if (!locationDisplay) return;
+
+    const popup = document.createElement("div");
+    popup.className = "games-popup";
+    popup.innerHTML = `
+      <div class="gp-icons">
+        <button class="gp-icon" type="button" data-game="video-poker" data-label="Poker">
+          <span class="material-icons">casino</span>
+        </button>
+      </div>
+      <div class="gp-tooltip" style="display:none"></div>
+    `;
+
+    // Tooltip on hover
+    popup.querySelectorAll(".gp-icon").forEach((btn) => {
+      btn.addEventListener("mouseenter", () => {
+        const tip = popup.querySelector(".gp-tooltip");
+        tip.textContent = btn.dataset.label;
+        tip.style.display = "block";
+      });
+      btn.addEventListener("mouseleave", () => {
+        popup.querySelector(".gp-tooltip").style.display = "none";
+      });
+    });
+
+    locationDisplay.appendChild(popup);
+
+    const pokerCard = popup.querySelector('[data-game="video-poker"]');
+    if (pokerCard) {
+      pokerCard.addEventListener("click", () => {
+        popup.remove();
+        if (gamesToggleBtn) {
+          gamesToggleBtn.textContent = "Games";
+        }
+        openVideoPokerGame();
+        console.debug("🎰 Video Poker launched from games popup");
       });
     }
   }
@@ -7707,22 +7702,50 @@ document.addEventListener("DOMContentLoaded", function () {
               <span class="edm-arrow">▼</span> Food
             </div>
             <div class="edm-subcategories" style="display:flex">
-              <div class="edm-subcat-btn active" data-subcategory="all">All</div>
-              <div class="edm-subcat-btn" data-subcategory="light-meal">Light Meal</div>
-              <div class="edm-subcat-btn" data-subcategory="side">Side</div>
-              <div class="edm-subcat-btn" data-subcategory="entree">Entrée</div>
+              <div class="edm-subcat-btn active" data-top="food" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="entree">Entrée</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="light_meal">Light Meal</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="side">Side</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="fruit">Fruit</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="ice_cream">Ice Cream</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="cakes">Cakes</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="desserts">Desserts</div>
             </div>
           </div>
-          <div class="edm-category" data-category="beverages">
+          <div class="edm-category" data-category="soft_beverages">
             <div class="edm-category-header">
               <span class="edm-arrow">▶</span> Soft Beverages
             </div>
             <div class="edm-subcategories">
-              <div class="edm-subcat-btn active" data-subcategory="all">All</div>
-              <div class="edm-subcat-btn" data-subcategory="common-drinks">Common Drinks</div>
-              <div class="edm-subcat-btn" data-subcategory="tea">Tea</div>
-              <div class="edm-subcat-btn" data-subcategory="coffee">Coffee</div>
-              <div class="edm-subcat-btn" data-subcategory="hot-beverages">Hot Beverages</div>
+              <div class="edm-subcat-btn active" data-top="soft_beverages" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="common">Common</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="tea">Tea</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="coffee">Coffee</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="juice">Juice</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="hot_beverages">Hot Beverages</div>
+            </div>
+          </div>
+          <div class="edm-category" data-category="alcoholic_beverages">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▶</span> Alcoholic Beverages
+            </div>
+            <div class="edm-subcategories">
+              <div class="edm-subcat-btn active" data-top="alcoholic_beverages" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="beer">Beer</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="cocktails">Cocktails</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="wines_and_champagne">Wines & Champagne</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="spirits">Spirits</div>
+            </div>
+          </div>
+          <div class="edm-category" data-category="tobacco">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▶</span> Tobacco
+            </div>
+            <div class="edm-subcategories">
+              <div class="edm-subcat-btn active" data-top="tobacco" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="tobacco" data-sub="cigars">Cigars</div>
+              <div class="edm-subcat-btn" data-top="tobacco" data-sub="pipes">Pipes</div>
+              <div class="edm-subcat-btn" data-top="tobacco" data-sub="cigarettes">Cigarettes</div>
             </div>
           </div>
         </div>
@@ -7730,6 +7753,7 @@ document.addEventListener("DOMContentLoaded", function () {
           <div class="edm-items-grid"></div>
         </div>
       </div>
+      <div class="edm-tooltip" style="display:none"></div>
     `;
 
     // Remove any existing popup
@@ -7739,9 +7763,154 @@ document.addEventListener("DOMContentLoaded", function () {
     const locationDisplay = document.querySelector(".location-display");
     locationDisplay.appendChild(popup);
 
-    // Food category starts open
+    const itemsGrid = popup.querySelector(".edm-items-grid");
+    const tooltip = popup.querySelector(".edm-tooltip");
+
+    // --- Render items into grid ---
+    function renderItems(topCategory, subCategory) {
+      itemsGrid.innerHTML = "";
+      if (typeof MENU_DATA === "undefined") return;
+
+      const filtered = MENU_DATA.filter((item) => {
+        if (item.topCategory !== topCategory) return false;
+        if (subCategory !== "all" && item.subCategory !== subCategory)
+          return false;
+        return true;
+      });
+
+      filtered.forEach((item) => {
+        const card = document.createElement("div");
+        card.className = "edm-item-card";
+        card.innerHTML = `
+          <img src="${item.localImage}" alt="${item.name}" onerror="this.src='${item.image}'" />
+          <span class="edm-item-name">${item.name}</span>
+        `;
+
+        // Tooltip on hover
+        card.addEventListener("mouseenter", (e) => {
+          const desc = item.description.replace(/\n/g, "<br>");
+          let statsHtml = "";
+          if (item.hungry)
+            statsHtml += `<span class="edm-stat edm-stat-hunger">🍖 ${item.hungry > 0 ? "+" : ""}${item.hungry}</span>`;
+          if (item.thirsty)
+            statsHtml += `<span class="edm-stat edm-stat-thirst">💧 ${item.thirsty > 0 ? "+" : ""}${item.thirsty}</span>`;
+          if (item.drunk)
+            statsHtml += `<span class="edm-stat edm-stat-drunk">🍺 ${item.drunk > 0 ? "+" : ""}${item.drunk}</span>`;
+          if (item.warm)
+            statsHtml += `<span class="edm-stat edm-stat-warm">🔥 ${item.warm > 0 ? "+" : ""}${item.warm}</span>`;
+          if (item.price)
+            statsHtml += `<span class="edm-stat edm-stat-price">💰 £${item.price}</span>`;
+
+          tooltip.innerHTML = `
+            <div class="edm-tooltip-title">${item.name}</div>
+            <div class="edm-tooltip-desc">${desc}</div>
+            ${statsHtml ? `<div class="edm-tooltip-stats">${statsHtml}</div>` : ""}
+          `;
+          tooltip.style.display = "block";
+        });
+
+        card.addEventListener("mouseleave", () => {
+          tooltip.style.display = "none";
+        });
+
+        // Click to consume
+        card.addEventListener("click", () => {
+          consumeItem(item);
+        });
+
+        itemsGrid.appendChild(card);
+      });
+
+      if (filtered.length === 0) {
+        itemsGrid.innerHTML =
+          '<div class="edm-no-items">No items available</div>';
+      }
+    }
+
+    // --- Consume item ---
+    function consumeItem(item) {
+      // Free items — apply immediately
+      if (!item.price || item.price <= 0) {
+        applyConsumption(item);
+        return;
+      }
+
+      // Paid items — server validates and deducts money
+      if (playerMoney < item.price) {
+        console.debug(`💰 Cannot afford ${item.name} (£${item.price})`);
+        return;
+      }
+
+      socket.emit("purchase-item", { price: item.price });
+      socket.once("purchase-result", (result) => {
+        if (!result.success) {
+          console.debug(`💰 Purchase denied: ${result.message}`);
+          return;
+        }
+        if (typeof result.money === "number") {
+          playerMoney = result.money;
+          updateMoneyDisplay();
+        }
+        applyConsumption(item);
+      });
+    }
+
+    function applyConsumption(item) {
+      playConsumptionSound(item);
+
+      if (item.hungry) {
+        statusBars.hunger.value = Math.min(
+          100,
+          statusBars.hunger.value + item.hungry,
+        );
+        const bar = document.querySelector(".bar.hunger");
+        if (bar) {
+          bar.style.width = `${statusBars.hunger.value}%`;
+          bar.style.setProperty(
+            "--hunger-hue",
+            (statusBars.hunger.value / 100) * 120,
+          );
+        }
+      }
+      if (item.thirsty) {
+        statusBars.thirst.value = Math.min(
+          100,
+          statusBars.thirst.value + item.thirsty,
+        );
+        const bar = document.querySelector(".bar.thirst");
+        if (bar) {
+          bar.style.width = `${statusBars.thirst.value}%`;
+          bar.style.setProperty(
+            "--thirst-hue",
+            (statusBars.thirst.value / 100) * 120,
+          );
+        }
+      }
+      if (item.drunk && statusBars.intoxication) {
+        statusBars.intoxication.value = Math.min(
+          100,
+          statusBars.intoxication.value + item.drunk,
+        );
+        const bar = document.querySelector(".bar.intoxication");
+        if (bar) {
+          bar.style.width = `${statusBars.intoxication.value}%`;
+          bar.style.setProperty(
+            "--intoxication-hue",
+            120 - (statusBars.intoxication.value / 100) * 120,
+          );
+        }
+      }
+
+      console.debug(
+        `🍽️ Consumed ${item.name} | hunger:${item.hungry} thirst:${item.thirsty} drunk:${item.drunk}`,
+      );
+      saveStatsToServer();
+    }
+
+    // Food category starts open, render food items by default
     const foodCat = popup.querySelector('[data-category="food"]');
     if (foodCat) foodCat.classList.add("open");
+    renderItems("food", "all");
 
     // Accordion category toggling
     const categories = popup.querySelectorAll(".edm-category");
@@ -7749,6 +7918,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const header = cat.querySelector(".edm-category-header");
       const arrow = cat.querySelector(".edm-arrow");
       const subcats = cat.querySelector(".edm-subcategories");
+      const topCat = cat.dataset.category;
 
       header.addEventListener("click", () => {
         const isOpen = cat.classList.contains("open");
@@ -7770,6 +7940,8 @@ document.addEventListener("DOMContentLoaded", function () {
           const subBtns = subcats.querySelectorAll(".edm-subcat-btn");
           subBtns.forEach((b) => b.classList.remove("active"));
           subBtns[0].classList.add("active");
+
+          renderItems(topCat, "all");
         }
       });
 
@@ -7780,6 +7952,7 @@ document.addEventListener("DOMContentLoaded", function () {
           e.stopPropagation();
           subBtns.forEach((b) => b.classList.remove("active"));
           btn.classList.add("active");
+          renderItems(btn.dataset.top, btn.dataset.sub);
         });
       });
     });
@@ -9057,44 +9230,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       // Always update land_middle position (it will keep scrolling)
-      landMiddlePosition += currentSpeed * delta; // Update speed display in info bar
-      const speedElement = document.getElementById("speed");
-      if (speedElement) {
-        speedElement.textContent = `Speed: ${currentSpeed.toFixed(1)} knots`;
-      }
-
-      // Update location display in info bar based on elapsed time
-      const locationElement = document.getElementById("location");
-      if (locationElement) {
-        let currentLocation = "Southampton Water";
-
-        if (elapsedTime < SOUTHAMPTON_WATER_END) {
-          currentLocation = "Southampton Water";
-        } else if (elapsedTime < NEEDLES_PASS) {
-          currentLocation = "The Solent";
-        } else if (elapsedTime < NEEDLES_COMPLETE) {
-          currentLocation = "Isle of Wight";
-        } else if (elapsedTime < CHANNEL_COMPLETE) {
-          currentLocation = "English Channel";
-        } else if (elapsedTime < BERTHING_COMPLETE) {
-          const fallbackSpeed = Math.max(
-            0,
-            19 -
-              ((elapsedTime - CHANNEL_COMPLETE) / 1000) * CHERBOURG_DECEL_RATE,
-          );
-          if (fallbackSpeed > 6) {
-            currentLocation = "Approaching Cherbourg";
-          } else if (fallbackSpeed > 0) {
-            currentLocation = "Cherbourg Harbor";
-          } else {
-            currentLocation = "Cherbourg";
-          }
-        } else {
-          currentLocation = "Cherbourg";
-        }
-
-        locationElement.textContent = `Location: ${currentLocation}`;
-      }
+      landMiddlePosition += currentSpeed * delta;
 
       // Apply transform to move elements left
       southamptonCity.style.transform = `translateX(-${departurePosition}px)`;

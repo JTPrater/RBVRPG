@@ -13,8 +13,7 @@ const CHERBOURG_DECEL_RATE =
 
 // Global voyage start time (set when server starts)
 // Begin from Southampton (real-time progression)
-// Start 1 minute before sunset (BST 16:59)
-const voyageStartTime = Date.now() - 299 * 60 * 1000; // 299 mins = 4h59m
+const voyageStartTime = Date.now();
 
 function getCurrentVoyageState() {
   const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
@@ -39,7 +38,7 @@ function getCurrentVoyageState() {
   // Departure happens DEPARTURE_DELAY milliseconds into the voyage
   const elapsedSinceDeparture = Math.max(
     0,
-    elapsedSeconds - DEPARTURE_DELAY / 1000
+    elapsedSeconds - DEPARTURE_DELAY / 1000,
   );
 
   if (elapsedSeconds < DEPARTURE_DELAY / 1000) {
@@ -105,7 +104,7 @@ function getCurrentVoyageState() {
     // Continuous Cherbourg deceleration from 19 knots down to 0 by berthing
     const elapsedSinceChannelEntry = Math.max(
       0,
-      elapsedSinceDeparture - CHANNEL_COMPLETE / 1000
+      elapsedSinceDeparture - CHANNEL_COMPLETE / 1000,
     );
     const drop = elapsedSinceChannelEntry * CHERBOURG_DECEL_RATE;
     speedValue = Math.max(0, 19 - drop);
