@@ -3364,10 +3364,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const date = `${bstTime.getDate()} of ${bstTime.toLocaleString("default", {
       month: "long",
-    })}, ${bstTime.getHours()}:${bstTime
+    })}, ${bstTime.getHours().toString().padStart(2, "0")}:${bstTime
       .getMinutes()
       .toString()
-      .padStart(2, "0")}`;
+      .padStart(2, "0")}:${bstTime.getSeconds().toString().padStart(2, "0")}`;
 
     renderInfoBarText(location, speed, date);
 
@@ -3603,7 +3603,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   const skyImageInterval = setInterval(updateSkyImage, 1000); // Update every second
-  const infoBarInterval = setInterval(updateInfoBar, 5000); // Update every 5 seconds for better sync
+  const infoBarInterval = setInterval(updateInfoBar, 1000); // Update every second so the clock visibly advances
 
   console.debug("✅ Initialized sky image and info bar updates.");
 

@@ -57,10 +57,10 @@ io.use((socket, next) => {
   sessionMiddleware(socket.request, socket.request.res || {}, next);
 });
 
-// Global voyage start time (set when server starts)
+// Global voyage start time (loaded from DB or set on first boot)
 // Begin from Southampton (real-time progression)
-const voyageStartTime = Date.now();
-console.debug("⏰ Voyage start time initialized at Southampton.");
+let voyageStartTime = Date.now(); // temporary default, overwritten by DB in startServer()
+console.debug("⏰ Voyage start time placeholder set (will sync from DB).");
 
 // Narrative events for server-side synchronization (times are seconds)
 const narrativeEvents = [
@@ -206,6 +206,7 @@ const initMongoDB = async () => {
 
 // Prefer the shared User model so admin flags, helpers, and migrations stay consistent
 const User = require("./models/User");
+const ServerState = require("./models/ServerState");
 // If you're testing locally and don't yet have the model file available, fall back
 // to an inline schema (but production should use ./models/User.js)
 if (!User) {
@@ -459,6 +460,9 @@ app.post("/api/register", authLimiter, async (req, res) => {
 
     cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
     io.emit("new-passenger", newUser.character);
+    // Broadcast updated passenger count to all clients
+    const totalPassengers = await User.countDocuments();
+    io.emit("game-user-count", totalPassengers);
     console.info(
       `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`,
     );
@@ -554,6 +558,42 @@ app.post("/api/admin/reset-password", authLimiter, async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Admin reset-password error:", error);
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+// Admin-only: reset the voyage to restart the clock from now
+app.post("/api/admin/reset-voyage", authLimiter, async (req, res) => {
+  try {
+    const sessionUserId = req.session?.userId;
+    if (!sessionUserId) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+    const admin = await User.findById(sessionUserId);
+    if (!admin?.isAdmin) {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
+
+    voyageStartTime = Date.now();
+    await ServerState.findOneAndUpdate(
+      { key: "voyageStartTime" },
+      { value: voyageStartTime },
+      { upsert: true },
+    );
+
+    // Re-sync narrative
+    serverNarrativeIndex = 0;
+
+    // Broadcast new voyage time to all connected clients
+    io.emit("voyage-start-time", voyageStartTime);
+    io.emit("voyage-state", getCurrentVoyageState());
+
+    console.info(
+      `⏰ Voyage reset by admin at ${new Date(voyageStartTime).toISOString()}`,
+    );
+    res.json({ success: true, voyageStartTime });
+  } catch (error) {
+    console.error("❌ Admin reset-voyage error:", error);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -1309,8 +1349,20 @@ io.on("connection", async (socket) => {
 
   // Send the assigned color to the connected client
   socket.emit("assign-chat-color", assignedColor);
-  socket.emit("game-user-count", gameClientCount);
   console.debug(`📩 Sent assigned chat color to ${socket.id}`);
+
+  // Send registered passenger count from DB as the "People Onboard" count
+  User.countDocuments()
+    .then((totalPassengers) => {
+      socket.emit("game-user-count", totalPassengers);
+      console.debug(
+        `👥 Sent DB passenger count to ${socket.id}: ${totalPassengers}`,
+      );
+    })
+    .catch((err) => {
+      console.error("❌ Error counting passengers:", err);
+      socket.emit("game-user-count", 0);
+    });
 
   // Send existing passengers to ALL new connections (public feature)
   User.find({}, "character")
@@ -1355,7 +1407,6 @@ io.on("connection", async (socket) => {
     if (!socket.isGameClient) {
       socket.isGameClient = true;
       gameClientCount++;
-      io.emit("game-user-count", gameClientCount);
       console.info(`🎮 Game client count increased: ${gameClientCount}`);
     }
     if (allowedRooms.includes(room)) {
@@ -1816,7 +1867,6 @@ io.on("connection", async (socket) => {
 
       if (socket.isGameClient) {
         gameClientCount = Math.max(0, gameClientCount - 1);
-        io.emit("game-user-count", gameClientCount);
         console.info(`🎮 Game client count decremented: ${gameClientCount}`);
       }
 
@@ -1864,6 +1914,37 @@ const startServer = async () => {
   validateEnvironment();
   console.info("🚀 Initializing MongoDB...");
   await initMongoDB();
+
+  // Load or initialize persistent voyage start time
+  const savedState = await ServerState.findOne({ key: "voyageStartTime" });
+  if (savedState) {
+    voyageStartTime = savedState.value;
+    console.info(
+      `⏰ Voyage start time loaded from DB: ${new Date(voyageStartTime).toISOString()}`,
+    );
+  } else {
+    voyageStartTime = Date.now();
+    await ServerState.create({
+      key: "voyageStartTime",
+      value: voyageStartTime,
+    });
+    console.info(
+      `⏰ Voyage start time initialized and saved to DB: ${new Date(voyageStartTime).toISOString()}`,
+    );
+  }
+
+  // Re-sync narrative index to match persisted elapsed time
+  const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
+  let idx = 0;
+  for (let i = 0; i < narrativeEvents.length; i++) {
+    if (elapsedSeconds >= narrativeEvents[i].time) idx = i + 1;
+    else break;
+  }
+  serverNarrativeIndex = idx;
+  console.info(
+    `🔁 Narrative synced to index ${serverNarrativeIndex} (${elapsedSeconds}s elapsed)`,
+  );
+
   console.info("🔁 Syncing cabin occupancy from DB...");
   await syncCabinOccupancyFromDB();
   const PORT = process.env.PORT || 3000;
