@@ -5314,7 +5314,11 @@ document.addEventListener("DOMContentLoaded", function () {
           reportForm.reset();
           console.info("✅ Report submitted successfully");
         } else {
-          alert("❌ Failed to submit report. Please try again.");
+          const failureMessage =
+            result.details ||
+            result.error ||
+            "Failed to submit report. Please try again.";
+          alert(`❌ ${failureMessage}`);
           console.error("❌ Report submission failed:", result.error);
         }
       } catch (error) {

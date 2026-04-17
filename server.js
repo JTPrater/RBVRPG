@@ -2,6 +2,7 @@
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
+const https = require("https");
 const socketIo = require("socket.io");
 const multer = require("multer");
 const path = require("path");
@@ -291,6 +292,54 @@ function getAvatarUploadErrorMessage(error) {
   }
 
   return error.message || "Avatar upload failed";
+}
+
+function postJson(urlString, payload) {
+  return new Promise((resolve, reject) => {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(String(urlString || "").trim());
+    } catch {
+      reject(new Error("Invalid DISCORD_WEBHOOK_URL"));
+      return;
+    }
+
+    const body = JSON.stringify(payload);
+    const transport = parsedUrl.protocol === "http:" ? http : https;
+    const request = transport.request(
+      {
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || undefined,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+          "User-Agent": "RBVRPG/1.0",
+        },
+      },
+      (response) => {
+        let responseBody = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          responseBody += chunk;
+        });
+        response.on("end", () => {
+          const status = response.statusCode || 500;
+          resolve({
+            ok: status >= 200 && status < 300,
+            status,
+            body: responseBody,
+          });
+        });
+      },
+    );
+
+    request.on("error", reject);
+    request.write(body);
+    request.end();
+  });
 }
 
 // Middleware Setup
@@ -632,7 +681,8 @@ app.post("/api/report", async (req, res) => {
         .json({ success: false, error: "Missing required fields" });
     }
 
-    if (!process.env.DISCORD_WEBHOOK_URL) {
+    const webhookUrl = String(process.env.DISCORD_WEBHOOK_URL || "").trim();
+    if (!webhookUrl) {
       console.warn("⚠️ Report endpoint called without DISCORD_WEBHOOK_URL set");
       return res.status(503).json({
         success: false,
@@ -688,19 +738,20 @@ app.post("/api/report", async (req, res) => {
     }
 
     // Send to Discord webhook
-    const webhookResponse = await fetch(process.env.DISCORD_WEBHOOK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(webhookPayload),
-    });
+    const webhookResponse = await postJson(webhookUrl, webhookPayload);
 
     if (!webhookResponse.ok) {
-      console.error("❌ Discord webhook failed:", webhookResponse.status);
-      return res
-        .status(500)
-        .json({ success: false, error: "Failed to send report" });
+      console.error(
+        "❌ Discord webhook failed:",
+        webhookResponse.status,
+        webhookResponse.body,
+      );
+      return res.status(500).json({
+        success: false,
+        error: "Failed to send report",
+        details:
+          webhookResponse.body || `Webhook returned ${webhookResponse.status}`,
+      });
     }
 
     console.info(
@@ -711,7 +762,11 @@ app.post("/api/report", async (req, res) => {
     res.json({ success: true, message: "Report submitted successfully" });
   } catch (error) {
     console.error("❌ Report error:", error);
-    res.status(500).json({ success: false, error: "Internal server error" });
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      details: error.message,
+    });
   }
 });
 
