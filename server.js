@@ -160,7 +160,6 @@ const voyageStateInterval = setInterval(() => {
 function validateEnvironment() {
   const required = [
     "MONGO_URL",
-    "DISCORD_WEBHOOK_URL",
     "SESSION_SECRET",
     "CLOUDINARY_CLOUD_NAME",
     "CLOUDINARY_API_KEY",
@@ -331,7 +330,8 @@ const sessionMiddleware = session({
     ttl: 24 * 60 * 60, // Sessions expire after 1 day (seconds)
   }),
   cookie: {
-    secure: false, // Set to true if using HTTPS
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
     maxAge: 24 * 60 * 60 * 1000, // 1 day in milliseconds
   },
 });
@@ -356,6 +356,18 @@ const authLimiter = rateLimit({
 });
 
 app.use(limiter); // Apply general rate limiting to all routes
+
+app.get("/health", (req, res) => {
+  const dbConnected = mongoose.connection.readyState === 1;
+  const payload = {
+    ok: dbConnected,
+    uptime: Math.round(process.uptime()),
+    database: dbConnected ? "connected" : "disconnected",
+    timestamp: new Date().toISOString(),
+  };
+
+  res.status(dbConnected ? 200 : 503).json(payload);
+});
 
 // API Routes
 app.post("/api/register", authLimiter, async (req, res) => {
@@ -581,6 +593,14 @@ app.post("/api/report", async (req, res) => {
       return res
         .status(400)
         .json({ success: false, error: "Missing required fields" });
+    }
+
+    if (!process.env.DISCORD_WEBHOOK_URL) {
+      console.warn("⚠️ Report endpoint called without DISCORD_WEBHOOK_URL set");
+      return res.status(503).json({
+        success: false,
+        error: "Reporting is not configured on this deployment",
+      });
     }
 
     // Prepare Discord webhook payload
