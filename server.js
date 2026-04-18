@@ -1989,6 +1989,14 @@ const startServer = async () => {
 
 // Error Handling
 process.on("unhandledRejection", (err) => {
+  // Cloudinary sometimes throws "Invalid image file" outside the multer callback chain.
+  // Swallow it gracefully — the route handler already sent a 400 to the client.
+  if (err && err.http_code === 400 && /invalid image/i.test(err.message)) {
+    console.warn(
+      "⚠️ Cloudinary rejected an image upload (invalid image file) — handled gracefully.",
+    );
+    return;
+  }
   console.error("❌ Unhandled Promise Rejection:", err);
   process.exit(1);
 });

@@ -8706,7 +8706,10 @@ document.addEventListener("DOMContentLoaded", function () {
       const elapsedSinceVoyageStart = elapsedAtStart / 1000;
       // Calculate elapsed time since DEPARTURE (not voyage start)
       // Departure happens at 720 seconds (12 minutes)
-      const elapsedSinceDeparture = Math.max(0, elapsedSinceVoyageStart - TIMELINE_SECONDS.DEPARTURE_DELAY);
+      const elapsedSinceDeparture = Math.max(
+        0,
+        elapsedSinceVoyageStart - TIMELINE_SECONDS.DEPARTURE_DELAY,
+      );
 
       // Calculate position based on actual speed profile, not average speed
       // During acceleration (0-500s): position = 0.5 * acceleration * t^2
@@ -9569,7 +9572,9 @@ document.addEventListener("DOMContentLoaded", function () {
           animateDeparture();
         } else {
           // Normal departure - play full sequence
-          console.debug("🚢 Starting departure at server-synced 12 minute mark");
+          console.debug(
+            "🚢 Starting departure at server-synced 12 minute mark",
+          );
           startDepartureSequence();
         }
       }
