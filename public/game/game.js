@@ -283,7 +283,7 @@ function handleReconnectionRoomJoin() {
     );
   }
 
-  if (elapsedSeconds >= 420) {
+  if (elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY) {
     // Voyage has departed - spawn on ship
     console.debug(
       `🚢 Voyage already departed (${Math.floor(
@@ -4305,15 +4305,18 @@ document.addEventListener("DOMContentLoaded", function () {
         const speed = Math.max(0, Number(window.currentSpeed) || 0);
         const speedFactor = Math.min(speed / 22, 1);
 
-        emitters.forEach((emitter, emitterId) => {
-          const spawnChance = 0.36 + speedFactor * 0.45;
-          if (Math.random() < spawnChance) {
-            spawnBubble(emitter, emitterId, speedFactor, frameTime);
-          }
-          if (Math.random() < 0.12 + speedFactor * 0.08) {
-            spawnBubble(emitter, emitterId, speedFactor, frameTime);
-          }
-        });
+        // Only spawn bubbles when the ship is actually moving
+        if (speed > 0.1) {
+          emitters.forEach((emitter, emitterId) => {
+            const spawnChance = speedFactor * 0.7;
+            if (Math.random() < spawnChance) {
+              spawnBubble(emitter, emitterId, speedFactor, frameTime);
+            }
+            if (Math.random() < speedFactor * 0.18) {
+              spawnBubble(emitter, emitterId, speedFactor, frameTime);
+            }
+          });
+        }
 
         for (let index = bubbles.length - 1; index >= 0; index--) {
           const bubble = bubbles[index];
@@ -4557,8 +4560,8 @@ document.addEventListener("DOMContentLoaded", function () {
         clearInterval(waitForSpawn);
         const elapsedSeconds = getElapsedSeconds();
 
-        // If ship has already departed (past 7 minutes), spawn on ship
-        if (elapsedSeconds >= 420) {
+        // If ship has already departed (past 12 minutes), spawn on ship
+        if (elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY) {
           // Check if player was in a room before refresh
           const lastRoomName = localStorage.getItem("lastRoom");
           if (lastRoomName) {
@@ -8702,8 +8705,8 @@ document.addEventListener("DOMContentLoaded", function () {
     if (elapsedAtStart > 0) {
       const elapsedSinceVoyageStart = elapsedAtStart / 1000;
       // Calculate elapsed time since DEPARTURE (not voyage start)
-      // Departure happens at 420 seconds (7 minutes)
-      const elapsedSinceDeparture = Math.max(0, elapsedSinceVoyageStart - 420);
+      // Departure happens at 720 seconds (12 minutes)
+      const elapsedSinceDeparture = Math.max(0, elapsedSinceVoyageStart - TIMELINE_SECONDS.DEPARTURE_DELAY);
 
       // Calculate position based on actual speed profile, not average speed
       // During acceleration (0-500s): position = 0.5 * acceleration * t^2
@@ -9550,11 +9553,11 @@ document.addEventListener("DOMContentLoaded", function () {
       const elapsedSeconds = getElapsedSeconds();
 
       // If we're past departure time but haven't started yet
-      if (elapsedSeconds >= 420) {
+      if (elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY) {
         clearInterval(checkDepartureTime);
 
         // Check if departure already happened (player joined late or refreshed)
-        if (elapsedSeconds > 425) {
+        if (elapsedSeconds > TIMELINE_SECONDS.DEPARTURE_DELAY + 5) {
           // 5 second grace period after departure
           console.info(
             `🚢 Departure already occurred (${Math.floor(
@@ -9566,7 +9569,7 @@ document.addEventListener("DOMContentLoaded", function () {
           animateDeparture();
         } else {
           // Normal departure - play full sequence
-          console.debug("🚢 Starting departure at server-synced 7 minute mark");
+          console.debug("🚢 Starting departure at server-synced 12 minute mark");
           startDepartureSequence();
         }
       }
