@@ -4176,6 +4176,162 @@ document.addEventListener("DOMContentLoaded", function () {
       ];
     }
 
+    function initPropellers() {
+      const propellerContainer = document.querySelector(".propeller-container");
+      if (!propellerContainer) {
+        console.warn("⚠️ Propeller container not found");
+        return;
+      }
+
+      const existingCanvas = propellerContainer.querySelector("canvas");
+      if (existingCanvas) {
+        existingCanvas.remove();
+      }
+
+      const canvas = document.createElement("canvas");
+      propellerContainer.appendChild(canvas);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        console.warn("⚠️ Could not acquire 2d context for propeller canvas");
+        return;
+      }
+
+      // The scene-layer is always 1920px wide in CSS.
+      // The propeller container is 50% = 960px, height 160px.
+      // These are FIXED layout values — CSS transforms scale visually but
+      // don't change layout dimensions. Never use offsetWidth/getBoundingClientRect
+      // inside a transformed parent — they return inconsistent values.
+      const CONTAINER_W = 960;
+      const CONTAINER_H = 160;
+
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = CONTAINER_W * dpr;
+        canvas.height = CONTAINER_H * dpr;
+        canvas.style.width = `${CONTAINER_W}px`;
+        canvas.style.height = `${CONTAINER_H}px`;
+        canvas.style.display = "block";
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+      }
+
+      function updatePropellerBubblePositions() {
+        bubbles.forEach((bubble) => {
+          const emitter = emitters[bubble.emitterId];
+          if (!emitter) return;
+          bubble.baseX = CONTAINER_W * emitter.xPct;
+          bubble.baseY = CONTAINER_H * emitter.yPct;
+        });
+      }
+
+      resizeCanvas();
+      window.addEventListener("resize", () => {
+        resizeCanvas();
+        updatePropellerBubblePositions();
+      });
+
+      // Emitter positions as fraction of 960px container width.
+      // The stern (left edge) of the ship is at x=0.
+      // xPct 0.08 ≈ 77px from left edge = stern propeller area.
+      const emitters = [
+        { xPct: 0.1, yPct: 0.85, radius: 4.5, phase: 0 },
+        { xPct: 0.07, yPct: 0.85, radius: 3, phase: Math.PI / 3 },
+      ];
+
+      const bubbles = [];
+
+      function spawnBubble(emitter, emitterId, speedFactor, timestamp) {
+        const radius = emitter.radius * (0.14 + Math.random() * 0.095);
+        const swirl = 0.55 + Math.random() * 0.7;
+
+        bubbles.push({
+          emitterId,
+          baseX: CONTAINER_W * emitter.xPct,
+          baseY: CONTAINER_H * emitter.yPct,
+          orbitX: emitter.radius * (1.25 + Math.random() * 0.75),
+          orbitY: emitter.radius * (0.85 + Math.random() * 0.55),
+          radius,
+          alpha: (0.18 + Math.random() * 0.22) * (0.5 + speedFactor * 0.5),
+          age: 0,
+          life: 64 + Math.random() * 56,
+          rise: 0.16 + Math.random() * 0.24 + speedFactor * 0.14,
+          drift: (Math.random() - 0.5) * 0.1,
+          travelX: -(0.1 + Math.random() * 0.14 + speedFactor * 0.09),
+          swirl,
+          phase:
+            emitter.phase + Math.random() * Math.PI * 2 + timestamp * 0.001,
+        });
+      }
+
+      function drawBubble(bubble) {
+        const orbitAngle = bubble.phase + bubble.age * bubble.swirl * 0.12;
+        const lifeRatio = bubble.age / bubble.life;
+        const spiralScale = 0.8 + lifeRatio * 1.4;
+        const forwardX =
+          bubble.baseX +
+          bubble.drift * bubble.age +
+          bubble.age * bubble.travelX;
+        const x =
+          forwardX + Math.cos(orbitAngle) * bubble.orbitX * 0.42 * spiralScale;
+        const y =
+          bubble.baseY +
+          Math.sin(orbitAngle) * bubble.orbitY * spiralScale +
+          Math.cos(orbitAngle * 0.55 + bubble.phase) *
+            bubble.orbitY *
+            0.28 *
+            spiralScale;
+        const alpha = bubble.alpha * Math.max(0, 1 - lifeRatio * 0.95);
+        const size = bubble.radius * (0.82 + lifeRatio * 0.35);
+
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(170, 220, 255, ${alpha * 0.3})`;
+        ctx.arc(x, y, size * 1.1, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(210, 236, 255, ${alpha})`;
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.85})`;
+        ctx.arc(x - size * 0.2, y - size * 0.2, size * 0.18, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function animatePropellers(frameTime) {
+        ctx.clearRect(0, 0, CONTAINER_W, CONTAINER_H);
+
+        const speed = Math.max(0, Number(window.currentSpeed) || 0);
+        const speedFactor = Math.min(speed / 22, 1);
+
+        emitters.forEach((emitter, emitterId) => {
+          const spawnChance = 0.36 + speedFactor * 0.45;
+          if (Math.random() < spawnChance) {
+            spawnBubble(emitter, emitterId, speedFactor, frameTime);
+          }
+          if (Math.random() < 0.12 + speedFactor * 0.08) {
+            spawnBubble(emitter, emitterId, speedFactor, frameTime);
+          }
+        });
+
+        for (let index = bubbles.length - 1; index >= 0; index--) {
+          const bubble = bubbles[index];
+          bubble.age += 1;
+          drawBubble(bubble);
+
+          if (bubble.age >= bubble.life) {
+            bubbles.splice(index, 1);
+          }
+        }
+
+        requestAnimationFrame(animatePropellers);
+      }
+
+      requestAnimationFrame(animatePropellers);
+      console.debug("🔄 Started propeller bubble loop.");
+    }
+
     // Update existing particle positions when canvas resizes
     function updateParticlePositions() {
       const currentFunnelPositions = getFunnelPositions();
@@ -4333,6 +4489,9 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     console.debug("🔄 Started smoke animation loop.");
+
+    // Start propeller bubbles
+    initPropellers();
   }
 
   // Initialize smoke

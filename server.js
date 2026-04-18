@@ -2,7 +2,6 @@
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
-const https = require("https");
 const socketIo = require("socket.io");
 const multer = require("multer");
 const path = require("path");
@@ -17,6 +16,7 @@ const MongoStore = require("connect-mongo");
 const mongoose = require("mongoose");
 const rateLimit = require("express-rate-limit");
 const cors = require("cors");
+const fetch = require("node-fetch");
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 
@@ -294,52 +294,38 @@ function getAvatarUploadErrorMessage(error) {
   return error.message || "Avatar upload failed";
 }
 
-function postJson(urlString, payload) {
-  return new Promise((resolve, reject) => {
-    let parsedUrl;
-    try {
-      parsedUrl = new URL(String(urlString || "").trim());
-    } catch {
-      reject(new Error("Invalid DISCORD_WEBHOOK_URL"));
-      return;
-    }
+async function postJson(urlString, payload) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(String(urlString || "").trim());
+  } catch {
+    throw new Error("Invalid DISCORD_WEBHOOK_URL");
+  }
 
-    const body = JSON.stringify(payload);
-    const transport = parsedUrl.protocol === "http:" ? http : https;
-    const request = transport.request(
-      {
-        protocol: parsedUrl.protocol,
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port || undefined,
-        path: `${parsedUrl.pathname}${parsedUrl.search}`,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(body),
-          "User-Agent": "RBVRPG/1.0",
-        },
-      },
-      (response) => {
-        let responseBody = "";
-        response.setEncoding("utf8");
-        response.on("data", (chunk) => {
-          responseBody += chunk;
-        });
-        response.on("end", () => {
-          const status = response.statusCode || 500;
-          resolve({
-            ok: status >= 200 && status < 300,
-            status,
-            body: responseBody,
-          });
-        });
-      },
-    );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
 
-    request.on("error", reject);
-    request.write(body);
-    request.end();
-  });
+  try {
+    const response = await fetch(parsedUrl.toString(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/plain, */*",
+        "User-Agent": "RBVRPG/1.0",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    const body = await response.text();
+    return {
+      ok: response.ok,
+      status: response.status,
+      body,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // Middleware Setup
@@ -740,17 +726,23 @@ app.post("/api/report", async (req, res) => {
     // Send to Discord webhook
     const webhookResponse = await postJson(webhookUrl, webhookPayload);
 
+    const webhookBody = String(webhookResponse.body || "");
+    const isCloudflareRateLimit =
+      webhookResponse.status === 1015 ||
+      webhookBody.includes("Error code 1015");
+
     if (!webhookResponse.ok) {
       console.error(
         "❌ Discord webhook failed:",
         webhookResponse.status,
-        webhookResponse.body,
+        webhookBody,
       );
       return res.status(500).json({
         success: false,
         error: "Failed to send report",
-        details:
-          webhookResponse.body || `Webhook returned ${webhookResponse.status}`,
+        details: isCloudflareRateLimit
+          ? "Discord is rate-limiting webhook requests from the server right now. Wait a minute and try again."
+          : webhookBody || `Webhook returned ${webhookResponse.status}`,
       });
     }
 

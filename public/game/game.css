@@ -507,17 +507,6 @@ body {
   opacity: 1;
 }
 
-/* Debug outlines to visually locate yachts during testing */
-.yacht-1-container.visible {
-  outline: 2px dashed rgba(255, 255, 0, 0.85);
-}
-.yacht-2-container.visible {
-  outline: 2px dashed rgba(255, 0, 255, 0.6);
-}
-.yacht-3-container.visible {
-  outline: 2px dashed rgba(0, 255, 255, 0.6);
-}
-
 /* When container becomes visible ensure the yacht image is also shown */
 .yacht-1-container.visible > .southampton-yacht,
 .yacht-2-container.visible > .southampton-yacht,
@@ -610,6 +599,17 @@ body {
 .britannic-md,
 .britannic-night {
   transition: opacity 5s ease-in-out;
+}
+
+.propeller-container {
+  position: absolute;
+  bottom: calc(var(--ship-bottom, 690px) - 1px);
+  right: 50%;
+  width: 50%;
+  height: 160px;
+  z-index: 6;
+  pointer-events: none;
+  overflow: visible;
 }
 
 .waves {
