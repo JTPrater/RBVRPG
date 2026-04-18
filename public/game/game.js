@@ -31,7 +31,7 @@ let latestVoyageState = null; // Track most recent server-authoritative snapshot
 
 // Mirror the server-side voyage timeline so refreshes show the same speed/location
 const TIMELINE_SECONDS = {
-  DEPARTURE_DELAY: 7 * 60,
+  DEPARTURE_DELAY: 12 * 60,
   SOUTHAMPTON_WATER_END: 20 * 60,
   NEEDLES_COMPLETE: 5130, // 1h 25m 30s
   CHANNEL_COMPLETE: 5 * 60 * 60,
@@ -346,43 +346,43 @@ const narrativeSystem = {
       text: "Final preparations are being made for departure...",
     },
     {
-      time: 420, // 7 minutes - Departure begins
+      time: 720, // 12 minutes - Departure begins
       text: "The ship's horn echoes across Southampton Water. The moorings are cast off, and Britannic slowly pulls away from the dock.",
     },
     {
-      time: 630, // 10 minutes 30 seconds - Southampton Water end
+      time: 930, // 15 minutes 30 seconds - Southampton Water end
       text: "We depart Southampton Water and enter the Solent, increasing to cruising speed.",
     },
     {
-      time: 2430, // 40 minutes 30 seconds
+      time: 2730, // 45 minutes 30 seconds
       text: "The Solent stretches ahead as we make our way toward the open sea.",
     },
     {
-      time: 4080, // 1h 8m - Isle of Wight visible
+      time: 4380, // 1h 13m - Isle of Wight visible
       text: "The Isle of Wight coastline becomes visible on the starboard side.",
     },
     {
-      time: 4680, // 1h 18m - Needles Pass
+      time: 4980, // 1h 23m - Nab Tower
       text: "We are now passing the Nab Tower, a few miles East of us.",
     },
     {
-      time: 5160, // 1h 26m - Needles Complete
+      time: 5460, // 1h 31m - Isle of Wight fades
       text: "The Isle of Wight fades astern as we enter the English Channel proper.",
     },
     {
-      time: 6030, // 1h 40m 30s
+      time: 6330, // 1h 45m 30s
       text: "The engines settle into their steady rhythm for the channel crossing.",
     },
     {
-      time: 10830, // 3h 30s
+      time: 11130, // 3h 5m 30s
       text: "The English coast has disappeared from view. Only open water surrounds us now.",
     },
     {
-      time: 14430, // 4h 30s - Mid-channel
+      time: 14730, // 4h 5m 30s - Mid-channel
       text: "We are now deep in the English Channel, making steady progress toward France.",
     },
     {
-      time: 18030, // 5h 30s - French coast visible
+      time: 18330, // 5h 5m 30s - French coast visible
       text: "The French coast appears on the horizon as we approach Cherbourg.",
     },
   ],
@@ -8544,7 +8544,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const yacht1 = document.querySelector(".yacht-1-container");
     const yacht2 = document.querySelector(".yacht-2-container");
     const yacht3 = document.querySelector(".yacht-3-container");
-    const DEPARTURE_DELAY_MS = 420000; // 7 minutes pre-departure countdown
+    const DEPARTURE_DELAY_MS = 720000; // 12 minutes pre-departure countdown
 
     if (!southamptonCity || !dock) {
       console.warn("⚠️ Southampton elements not found for departure");

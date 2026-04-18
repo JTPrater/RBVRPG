@@ -26,7 +26,7 @@ const server = http.createServer(app);
 
 // Timeline constants (milliseconds from departure)
 const TIMELINE_MS = {
-  DEPARTURE_DELAY: 7 * 60 * 1000, // 7 minutes between prep and actual departure
+  DEPARTURE_DELAY: 12 * 60 * 1000, // 12 minutes between prep and actual departure
   SOUTHAMPTON_WATER_END: 20 * 60 * 1000, // 20 minutes - 6 knots
   NEEDLES_PASS: 4_650_000, // 1h 17.5m - Isle of Wight passage start
   NEEDLES_COMPLETE: 5_130_000, // ~8 minutes after Needles start
@@ -67,43 +67,43 @@ console.debug("⏰ Voyage start time placeholder set (will sync from DB).");
 const narrativeEvents = [
   { time: 0, text: "Final preparations are being made for departure..." },
   {
-    time: 420,
+    time: 720,
     text: "The ship's horn echoes across Southampton Water. The moorings are cast off, and Britannic slowly pulls away from the dock.",
   },
   {
-    time: 630,
+    time: 930,
     text: "We depart Southampton Water and enter the Solent, increasing to cruising speed.",
   },
   {
-    time: 2430,
+    time: 2730,
     text: "The Solent stretches ahead as we make our way toward the open sea.",
   },
   {
-    time: 4080,
+    time: 4380,
     text: "The Isle of Wight coastline becomes visible on the starboard side.",
   },
   {
-    time: 4680,
+    time: 4980,
     text: "We are now passing the Nab Tower, a few miles East of us.",
   },
   {
-    time: 5160,
+    time: 5460,
     text: "The Isle of Wight fades astern as we enter the English Channel proper.",
   },
   {
-    time: 6030,
+    time: 6330,
     text: "The engines settle into their steady rhythm for the channel crossing.",
   },
   {
-    time: 10830,
+    time: 11130,
     text: "The English coast has disappeared from view. Only open water surrounds us now.",
   },
   {
-    time: 14430,
+    time: 14730,
     text: "We are now deep in the English Channel, making steady progress toward France.",
   },
   {
-    time: 18030,
+    time: 18330,
     text: "The French coast appears on the horizon as we approach Cherbourg.",
   },
 ];

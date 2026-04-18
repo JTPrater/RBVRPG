@@ -1,5 +1,5 @@
 const TIMELINE_MS = {
-  DEPARTURE_DELAY: 7 * 60 * 1000, // 7 minutes between prep and actual departure
+  DEPARTURE_DELAY: 12 * 60 * 1000, // 12 minutes between prep and actual departure
   SOUTHAMPTON_WATER_END: 20 * 60 * 1000, // 20 minutes - 6 knots
   NEEDLES_PASS: 4_650_000, // 1h 17.5m - Isle of Wight passage start
   NEEDLES_COMPLETE: 5_130_000, // ~8 minutes after Needles start
