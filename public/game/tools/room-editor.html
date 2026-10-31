@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deck Room Editor — RBVRPG</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Economica:ital,wght@0,400;0,700;1,400&family=Julius+Sans+One&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Edwardian drafting-room palette — warm ink, brass, parchment — to
+         match the game rather than a generic admin dashboard. */
+      :root {
+        --bg: #17120c;          /* dark walnut */
+        --panel: #211a12;       /* leather */
+        --panel2: #2b2217;      /* raised */
+        --line: #4a3a22;        /* brass hairline */
+        --ink: #efe4cf;         /* parchment text */
+        --muted: #b0a184;       /* faded ink */
+        --brass: #c69a4b;
+        --brass-bright: #e6c079;
+        --felt: #120d08;        /* drafting table */
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; height: 100%;
+        background: var(--bg); color: var(--ink);
+        font: 15px/1.45 "Economica", "Segoe UI", sans-serif;
+        overflow: hidden;
+      }
+      #app { display: grid; grid-template-columns: 248px 1fr 292px; grid-template-rows: 54px 1fr; height: 100%; }
+      header {
+        grid-column: 1 / 4; display: flex; align-items: center; gap: 9px;
+        padding: 0 14px; background: linear-gradient(#241c13, #1c150d);
+        border-bottom: 2px solid var(--brass);
+        box-shadow: 0 2px 0 #0006;
+      }
+      header h1 {
+        font-family: "Julius Sans One", sans-serif; font-size: 15px; margin: 0 14px 0 0;
+        color: var(--brass-bright); letter-spacing: 2px; text-transform: uppercase; white-space: nowrap;
+      }
+      header .spacer { flex: 1; }
+      select, button, input {
+        background: var(--panel2); color: var(--ink); border: 1px solid var(--line);
+        border-radius: 3px; padding: 6px 10px; font: inherit; font-size: 14px;
+      }
+      select:focus, input:focus { outline: none; border-color: var(--brass); }
+      button { cursor: pointer; letter-spacing: .4px; transition: border-color .12s, background .12s; }
+      button:hover:not(:disabled) { border-color: var(--brass); color: var(--brass-bright); }
+      button:disabled { opacity: .38; cursor: default; }
+      button.primary { background: linear-gradient(var(--brass-bright), var(--brass)); color: #241706; border-color: #8a6a2f; font-weight: 700; }
+      button.primary:hover { filter: brightness(1.07); color: #241706; }
+      button.danger { border-color: #7a2f22; color: #e6a08c; }
+      button.danger:hover { border-color: #b5432e; color: #f0b6a3; }
+      button.active { border-color: var(--brass-bright); color: var(--brass-bright); background: #34281a; }
+      #status { font-size: 14px; color: var(--muted); min-width: 130px; text-align: right; font-style: italic; }
+
+      aside { background: var(--panel); overflow-y: auto; }
+      #left { border-right: 1px solid var(--line); }
+      #right { border-left: 1px solid var(--line); padding: 14px; }
+      .sec {
+        padding: 11px 14px; border-bottom: 1px solid var(--line);
+        font-family: "Julius Sans One", sans-serif; font-size: 11px;
+        text-transform: uppercase; letter-spacing: 1.5px; color: var(--brass);
+        background: #1b140d;
+      }
+      .roomrow {
+        display: flex; align-items: center; gap: 9px; padding: 8px 14px; cursor: pointer;
+        border-bottom: 1px solid #3a2c1955;
+      }
+      .roomrow:hover { background: var(--panel2); }
+      .roomrow.sel { background: #3a2c19; box-shadow: inset 3px 0 0 var(--brass); }
+      .dot { width: 11px; height: 11px; border-radius: 2px; flex: none; border: 1px solid #0008; }
+      .roomrow .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .roomrow .noshape { color: #cf9b6a; font-size: 12px; font-style: italic; }
+
+      #center { position: relative; overflow: hidden; background:
+        radial-gradient(120% 120% at 50% 0%, #1a140d, var(--felt)); }
+      #viewport { position: absolute; inset: 0; overflow: hidden; }
+      #stage { position: absolute; top: 0; left: 0; transform-origin: 0 0; box-shadow: 0 0 0 1px #0008, 0 8px 40px #0009; }
+      #deckimg { display: block; user-select: none; -webkit-user-drag: none; background: #1a1712; }
+      #svg { position: absolute; top: 0; left: 0; overflow: visible; }
+      #hint {
+        position: absolute; left: 14px; bottom: 12px; z-index: 5; color: var(--ink);
+        background: #0d0a06dd; border: 1px solid var(--line); padding: 6px 11px; border-radius: 3px;
+        font-size: 13px; pointer-events: none; max-width: 60%;
+      }
+      #zoombar { position: absolute; right: 14px; bottom: 12px; z-index: 5; display: flex; gap: 6px; }
+      #zoombar button { min-width: 34px; }
+
+      polygon.room { cursor: pointer; }
+      .vtx { fill: var(--brass-bright); stroke: #1a1206; cursor: grab; vector-effect: non-scaling-stroke; }
+      .vtx:hover { fill: #fff; }
+      .mid { fill: #e6c07988; stroke: #1a120699; cursor: copy; vector-effect: non-scaling-stroke; }
+      .draft { fill: #c69a4b22; stroke: var(--brass-bright); stroke-width: 1.4; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+
+      label { display: block; margin: 11px 0 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+      input[type="text"], select.full { width: 100%; }
+      .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .swatches { display: flex; gap: 7px; margin-top: 4px; }
+      .sw { width: 34px; height: 28px; border-radius: 3px; border: 2px solid #0004; cursor: pointer; position: relative; }
+      .sw.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--brass); }
+      .sw.on::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 13px; text-shadow: 0 1px 2px #000; }
+      textarea { width: 100%; background: var(--felt); color: var(--muted); border: 1px solid var(--line); border-radius: 3px; font: 12px/1.4 "Consolas", monospace; padding: 7px; resize: vertical; }
+      .empty { color: var(--muted); padding: 24px 6px; text-align: center; font-style: italic; }
+      .pill { display:inline-block; padding:3px 9px; border-radius:2px; font-size:13px; background:var(--felt); border:1px solid var(--line); color: var(--muted); }
+      .sep { width: 1px; height: 24px; background: var(--line); margin: 0 3px; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Deck Room Editor</h1>
+        <select id="deckSel" title="Deck"></select>
+        <button id="drawBtn" title="Draw a new room (N)">New Room</button>
+        <div class="sep"></div>
+        <button id="undoBtn" title="Undo (Ctrl+Z)" disabled>Undo</button>
+        <button id="redoBtn" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+        <div class="sep"></div>
+        <span class="pill" id="roomCount">0 rooms</span>
+        <div class="spacer"></div>
+        <button id="exportBtn" title="Download deckRooms.js">Export</button>
+        <button id="saveBtn" class="primary" title="Write to the game">Save to game</button>
+        <span id="status"></span>
+      </header>
+
+      <aside id="left">
+        <div class="sec">Rooms on this deck</div>
+        <div id="roomList"></div>
+      </aside>
+
+      <div id="center">
+        <div id="viewport">
+          <div id="stage">
+            <img id="deckimg" alt="" />
+            <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+          </div>
+        </div>
+        <div id="hint"></div>
+        <div id="zoombar">
+          <button id="zoomOut">−</button>
+          <button id="zoomFit">Fit</button>
+          <button id="zoomIn">+</button>
+        </div>
+      </div>
+
+      <aside id="right">
+        <div id="props"><div class="empty">Select a room, or draw a new one.</div></div>
+      </aside>
+    </div>
+
+    <!-- deckRooms.js does (function(RBV){...})(window.RBV); RBV must exist first -->
+    <script>window.RBV = window.RBV || {};</script>
+    <script src="/game/data/deckRooms.js" onerror="window.__loadErr=1"></script>
+    <script>
+      (function () {
+        "use strict";
+        // ----- deck image list (matches /images/decks/{deck}.jpg) -----
+        const DECKS = [
+          "boat_deck", "a_deck", "b_deck", "c_deck", "d_deck",
+          "e_deck", "f_deck", "lo_deck", "tank_deck",
+        ];
+        const DEFAULT_COLORS = { first: "#4195f7", second: "#3fbf6f", third: "#e0a83a", crew: "#e0533a" };
+        const CLASSES = ["first", "second", "third", "crew"];
+
+        // deckRooms.js ran already (window.deckRooms). Deep-clone to an editable model.
+        const srcRooms = window.deckRooms || {};
+        const colors = Object.assign({}, DEFAULT_COLORS, window.roomClassColors || {});
+        const viewBoxes = Object.assign({}, window.deckViewBoxes || {});
+        const model = JSON.parse(JSON.stringify(srcRooms));
+        // ensure every ship deck exists as an array
+        for (const d of DECKS) if (!Array.isArray(model[d])) model[d] = [];
+
+        const S = {
+          deck: "a_deck",
+          selId: null,
+          mode: "idle", // idle | draw
+          draft: [],
+          zoom: 1, panX: 0, panY: 0,
+          vb: { w: 1000, h: 300 },
+          drag: null, // {type:'vtx'|'mid'|'pan', ...}
+          dirty: false,
+        };
+
+        const $ = (id) => document.getElementById(id);
+        const svg = $("svg");
+        const img = $("deckimg");
+        const stage = $("stage");
+        const viewport = $("viewport");
+        const SVGNS = "http://www.w3.org/2000/svg";
+
+        // ---------- undo / redo (per-deck history) ----------
+        // Snapshots are taken BEFORE each mutation via pushHistory(). Deduped
+        // so redundant snapshots (e.g. focusing a field without editing) don't
+        // pile up. History is cleared when switching decks.
+        let past = [], future = [];
+        function snapDeck() {
+          return JSON.stringify({ rooms: model[S.deck] || [], vb: viewBoxes[S.deck], selId: S.selId });
+        }
+        function pushHistory() {
+          const s = snapDeck();
+          if (past.length && past[past.length - 1] === s) return; // no-op
+          past.push(s); if (past.length > 150) past.shift();
+          future.length = 0; updateUndoButtons();
+        }
+        function applySnap(s) {
+          const o = JSON.parse(s);
+          model[S.deck] = o.rooms;
+          if (o.vb) viewBoxes[S.deck] = o.vb;
+          S.selId = o.selId; cancelDraw();
+          renderAll(); markDirty(); updateUndoButtons();
+        }
+        function undo() { if (!past.length) return; future.push(snapDeck()); applySnap(past.pop()); }
+        function redo() { if (!future.length) return; past.push(snapDeck()); applySnap(future.pop()); }
+        function updateUndoButtons() {
+          const u = $("undoBtn"), r = $("redoBtn");
+          if (u) u.disabled = !past.length;
+          if (r) r.disabled = !future.length;
+        }
+        $("undoBtn").addEventListener("click", undo);
+        $("redoBtn").addEventListener("click", redo);
+
+        // ---------- deck selector ----------
+        const deckSel = $("deckSel");
+        for (const d of DECKS) {
+          const o = document.createElement("option");
+          o.value = d; o.textContent = d.replace(/_/g, " ");
+          deckSel.appendChild(o);
+        }
+        deckSel.value = S.deck;
+        deckSel.addEventListener("change", () => { setDeck(deckSel.value); });
+
+        function parseVB(deck) {
+          const s = viewBoxes[deck];
+          if (s) {
+            const p = s.trim().split(/\s+/).map(Number);
+            if (p.length === 4 && p[2] > 0 && p[3] > 0) return { w: p[2], h: p[3] };
+          }
+          return null;
+        }
+
+        function setDeck(deck) {
+          S.deck = deck; S.selId = null; cancelDraw();
+          past = []; future = []; updateUndoButtons();
+          const vb = parseVB(deck);
+          img.onload = () => {
+            if (!vb) { S.vb = { w: img.naturalWidth || 1000, h: img.naturalHeight || 300 }; viewBoxes[deck] = `0 0 ${S.vb.w} ${S.vb.h}`; }
+            applyStageSize(); zoomFit(); renderAll();
+          };
+          img.onerror = () => {
+            // no image; still allow editing using stored/blank viewBox
+            S.vb = vb || { w: 1000, h: 300 };
+            applyStageSize(); zoomFit(); renderAll();
+          };
+          if (vb) S.vb = vb;
+          img.src = `/images/decks/${deck}.jpg`;
+          applyStageSize(); renderList(); renderProps();
+        }
+
+        function applyStageSize() {
+          img.style.width = S.vb.w + "px"; img.style.height = S.vb.h + "px";
+          svg.setAttribute("viewBox", `0 0 ${S.vb.w} ${S.vb.h}`);
+          svg.setAttribute("width", S.vb.w); svg.setAttribute("height", S.vb.h);
+          stage.style.width = S.vb.w + "px"; stage.style.height = S.vb.h + "px";
+        }
+
+        // ---------- zoom / pan ----------
+        function applyTransform() {
+          stage.style.transform = `translate(${S.panX}px, ${S.panY}px) scale(${S.zoom})`;
+        }
+        function zoomFit() {
+          const r = viewport.getBoundingClientRect();
+          const pad = 24;
+          const z = Math.min((r.width - pad) / S.vb.w, (r.height - pad) / S.vb.h);
+          S.zoom = z > 0 ? z : 1;
+          S.panX = (r.width - S.vb.w * S.zoom) / 2;
+          S.panY = (r.height - S.vb.h * S.zoom) / 2;
+          applyTransform();
+        }
+        function zoomAt(cx, cy, factor) {
+          const r = viewport.getBoundingClientRect();
+          const px = cx - r.left, py = cy - r.top;
+          const sx = (px - S.panX) / S.zoom, sy = (py - S.panY) / S.zoom;
+          S.zoom = Math.max(0.05, Math.min(40, S.zoom * factor));
+          S.panX = px - sx * S.zoom; S.panY = py - sy * S.zoom;
+          applyTransform();
+          renderPolys(); // handles are sized in screen px → resize with zoom
+        }
+        $("zoomIn").onclick = () => { const r = viewport.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.2); };
+        $("zoomOut").onclick = () => { const r = viewport.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.2); };
+        $("zoomFit").onclick = zoomFit;
+        viewport.addEventListener("wheel", (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12); }, { passive: false });
+
+        // mouse → svg user coords (handles the CSS transform via getScreenCTM)
+        function toUser(e) {
+          const ctm = svg.getScreenCTM();
+          if (!ctm) return { x: 0, y: 0 };
+          const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY;
+          const u = p.matrixTransform(ctm.inverse());
+          return { x: Math.round(u.x), y: Math.round(u.y) };
+        }
+
+        // ---------- model helpers ----------
+        function curRooms() { return model[S.deck] || (model[S.deck] = []); }
+        function selected() { return curRooms().find((r) => r.id === S.selId) || null; }
+        function ptsArr(r) {
+          if (!r.coordinates) return [];
+          const n = r.coordinates.match(/-?\d+(?:\.\d+)?/g) || [];
+          const out = []; for (let i = 0; i + 1 < n.length; i += 2) out.push([+n[i], +n[i + 1]]);
+          return out;
+        }
+        function setPts(r, arr) { r.coordinates = arr.map((p) => `${Math.round(p[0])},${Math.round(p[1])}`).join(" "); markDirty(); }
+        function markDirty() { S.dirty = true; setStatus("Unsaved changes", "#e0a83a"); }
+        function slug(s) {
+          return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "room";
+        }
+        function uniqueId(base) {
+          const all = new Set(); for (const d of Object.keys(model)) for (const r of model[d]) all.add(r.id);
+          if (!all.has(base)) return base;
+          let i = 2; while (all.has(base + "_" + i)) i++; return base + "_" + i;
+        }
+
+        // ---------- rendering ----------
+        function renderAll() { renderPolys(); renderList(); renderProps(); updateHint(); $("roomCount").textContent = curRooms().length + " rooms"; }
+
+        function renderPolys() {
+          while (svg.firstChild) svg.removeChild(svg.firstChild);
+          for (const r of curRooms()) {
+            const pts = ptsArr(r); if (!pts.length) continue;
+            const poly = document.createElementNS(SVGNS, "polygon");
+            poly.setAttribute("points", pts.map((p) => p.join(",")).join(" "));
+            poly.setAttribute("class", "room");
+            const col = colors[r.class] || colors.first;
+            const on = r.id === S.selId;
+            poly.setAttribute("fill", col + (on ? "66" : "40"));
+            poly.setAttribute("stroke", on ? "#fff" : col);
+            poly.setAttribute("stroke-width", on ? 2 : 1.3);
+            poly.addEventListener("mousedown", (e) => {
+              if (S.mode === "draw") return;
+              e.stopPropagation(); select(r.id);
+            });
+            svg.appendChild(poly);
+          }
+          // draft polygon while drawing
+          if (S.mode === "draw" && S.draft.length) {
+            const dp = document.createElementNS(SVGNS, "polyline");
+            dp.setAttribute("points", S.draft.map((p) => p.join(",")).join(" "));
+            dp.setAttribute("class", "draft");
+            dp.setAttribute("fill", "none");
+            svg.appendChild(dp);
+            for (const p of S.draft) addHandle(p, "vtx", null, true);
+          }
+          // handles for selected
+          const sel = selected();
+          if (sel && S.mode !== "draw") {
+            const pts = ptsArr(sel);
+            for (let i = 0; i < pts.length; i++) {
+              const a = pts[i], b = pts[(i + 1) % pts.length];
+              addHandle([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], "mid", i);
+            }
+            for (let i = 0; i < pts.length; i++) addHandle(pts[i], "vtx", i);
+          }
+        }
+
+        function addHandle(p, kind, idx, draftPt) {
+          const c = document.createElementNS(SVGNS, "circle");
+          // Radius is a fixed on-screen size (px) regardless of zoom, so the
+          // handles stay small and precise even when zoomed in. renderPolys
+          // re-runs on zoom to keep this constant.
+          const screenPx = kind === "mid" ? 3 : 4;
+          c.setAttribute("cx", p[0]); c.setAttribute("cy", p[1]);
+          c.setAttribute("r", screenPx / S.zoom);
+          c.setAttribute("class", kind === "mid" ? "mid" : "vtx");
+          if (kind === "vtx" && !draftPt) {
+            c.addEventListener("mousedown", (e) => { e.stopPropagation(); pushHistory(); S.drag = { type: "vtx", idx }; });
+            c.addEventListener("contextmenu", (e) => { e.preventDefault(); deleteVertex(idx); });
+          } else if (kind === "mid") {
+            c.addEventListener("mousedown", (e) => { e.stopPropagation(); insertVertex(idx, p); });
+          }
+          svg.appendChild(c);
+        }
+
+        function renderList() {
+          const list = $("roomList"); list.innerHTML = "";
+          const rooms = curRooms();
+          if (!rooms.length) { list.innerHTML = '<div class="empty">No rooms yet.<br>Click New Room to draw one.</div>'; }
+          rooms.forEach((r) => {
+            const row = document.createElement("div");
+            row.className = "roomrow" + (r.id === S.selId ? " sel" : "");
+            const dot = document.createElement("span");
+            dot.className = "dot"; dot.style.background = colors[r.class] || colors.first;
+            const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = r.name;
+            row.appendChild(dot); row.appendChild(nm);
+            if (!r.coordinates) { const w = document.createElement("span"); w.className = "noshape"; w.textContent = "no shape"; row.appendChild(w); }
+            row.addEventListener("click", () => select(r.id));
+            list.appendChild(row);
+          });
+          $("roomCount").textContent = rooms.length + " rooms";
+        }
+
+        function renderProps() {
+          const box = $("props"); const r = selected();
+          if (!r) { box.innerHTML = '<div class="empty">Select a room, or draw a new one.</div>'; return; }
+          box.innerHTML = "";
+          const mk = (label, el) => { const l = document.createElement("label"); l.textContent = label; box.appendChild(l); box.appendChild(el); };
+
+          const name = document.createElement("input"); name.type = "text"; name.value = r.name;
+          name.addEventListener("focus", pushHistory);
+          name.addEventListener("input", () => { r.name = name.value; markDirty(); renderList(); });
+          mk("Name", name);
+
+          const idIn = document.createElement("input"); idIn.type = "text"; idIn.value = r.id;
+          idIn.title = "Unique id (used as chat room). Change with care.";
+          idIn.addEventListener("focus", pushHistory);
+          idIn.addEventListener("change", () => {
+            const nv = slug(idIn.value); if (!nv) { idIn.value = r.id; return; }
+            const taken = curRooms().some((o) => o !== r && o.id === nv);
+            if (taken) { setStatus("id already used", "#e0533a"); idIn.value = r.id; return; }
+            if (r.location && r.location.chatRoom === r.id) r.location.chatRoom = nv;
+            r.id = nv; S.selId = nv; idIn.value = nv; markDirty(); renderAll();
+          });
+          mk("Room id", idIn);
+
+          // class swatches
+          const sw = document.createElement("div"); sw.className = "swatches";
+          CLASSES.forEach((cl) => {
+            const b = document.createElement("div");
+            b.className = "sw" + (r.class === cl ? " on" : "");
+            b.style.background = colors[cl]; b.title = cl;
+            b.addEventListener("click", () => { pushHistory(); r.class = cl; markDirty(); renderAll(); });
+            sw.appendChild(b);
+          });
+          mk("Passenger class", sw);
+
+          const type = document.createElement("input"); type.type = "text"; type.value = r.type || "";
+          type.placeholder = "e.g. cabin, promenade, lounge";
+          type.addEventListener("focus", pushHistory);
+          type.addEventListener("input", () => { r.type = type.value.trim(); markDirty(); });
+          mk("Type (optional tag)", type);
+
+          r.location = r.location || {};
+          const imgIn = document.createElement("input"); imgIn.type = "text";
+          imgIn.value = r.location.images ? r.location.images.join(", ") : (r.location.image || "");
+          imgIn.placeholder = "image filename in /images/animations/locations/britannic/";
+          imgIn.addEventListener("focus", pushHistory);
+          imgIn.addEventListener("input", () => {
+            const v = imgIn.value.trim();
+            if (v.includes(",")) { r.location.images = v.split(",").map((s) => s.trim()).filter(Boolean); delete r.location.image; }
+            else { r.location.image = v || "placeholder.jpg"; delete r.location.images; }
+            markDirty();
+          });
+          mk("Room image(s)", imgIn);
+
+          const chat = document.createElement("input"); chat.type = "text"; chat.value = r.location.chatRoom || r.id;
+          chat.addEventListener("focus", pushHistory);
+          chat.addEventListener("input", () => { r.location.chatRoom = chat.value.trim() || r.id; markDirty(); });
+          mk("Chat room id", chat);
+
+          const coords = document.createElement("textarea"); coords.rows = 3; coords.readOnly = true;
+          coords.value = r.coordinates || "(no polygon — draw one)";
+          mk("Coordinates (auto)", coords);
+
+          const bar = document.createElement("div"); bar.style.marginTop = "14px"; bar.style.display = "flex"; bar.style.gap = "8px";
+          const redraw = document.createElement("button"); redraw.textContent = "Redraw shape";
+          redraw.onclick = () => startDraw(r.id);
+          const del = document.createElement("button"); del.className = "danger"; del.textContent = "Delete";
+          del.onclick = () => { if (confirm(`Delete "${r.name}"?`)) { pushHistory(); const a = curRooms(); a.splice(a.indexOf(r), 1); S.selId = null; markDirty(); renderAll(); } };
+          bar.appendChild(redraw); bar.appendChild(del); box.appendChild(bar);
+        }
+
+        function select(id) { S.selId = id; cancelDraw(); renderAll(); }
+
+        // ---------- drawing ----------
+        function startDraw(forId) {
+          S.mode = "draw"; S.draft = []; S.drawFor = forId || null;
+          $("drawBtn").classList.add("active"); updateHint(); renderPolys();
+        }
+        function cancelDraw() {
+          if (S.mode !== "draw") return;
+          S.mode = "idle"; S.draft = []; S.drawFor = null;
+          $("drawBtn").classList.remove("active"); updateHint();
+        }
+        function finishDraw() {
+          if (S.draft.length < 3) { cancelDraw(); renderPolys(); return; }
+          pushHistory();
+          if (S.drawFor) {
+            const r = curRooms().find((x) => x.id === S.drawFor);
+            if (r) { setPts(r, S.draft); S.selId = r.id; }
+          } else {
+            const base = uniqueId(slug("New Room " + (curRooms().length + 1)));
+            const r = { id: base, name: "New Room", class: "first", type: "", isSVG: true, location: { image: "placeholder.jpg", chatRoom: base } };
+            setPts(r, S.draft); curRooms().push(r); S.selId = r.id;
+          }
+          cancelDraw(); markDirty(); renderAll();
+        }
+        $("drawBtn").addEventListener("click", () => { if (S.mode === "draw") cancelDraw(); else startDraw(null); renderPolys(); });
+
+        function deleteVertex(idx) {
+          const r = selected(); if (!r) return; const pts = ptsArr(r);
+          if (pts.length <= 3) { setStatus("min 3 points", "#e0533a"); return; }
+          pushHistory();
+          pts.splice(idx, 1); setPts(r, pts); renderAll();
+        }
+        function insertVertex(edgeIdx, p) {
+          const r = selected(); if (!r) return; const pts = ptsArr(r);
+          pushHistory();
+          pts.splice(edgeIdx + 1, 0, [Math.round(p[0]), Math.round(p[1])]);
+          setPts(r, pts); S.drag = { type: "vtx", idx: edgeIdx + 1 }; renderAll();
+        }
+
+        // ---------- stage interactions ----------
+        // In draw mode the SVG collects polygon points; shape/handle clicks
+        // stopPropagation so they never reach the pan logic on the viewport.
+        svg.addEventListener("mousedown", (e) => {
+          if (S.mode !== "draw" || e.button !== 0) return;
+          const u = toUser(e);
+          if (S.draft.length >= 3) {
+            const f = S.draft[0]; // click near start closes the polygon
+            if (Math.hypot(u.x - f[0], u.y - f[1]) * S.zoom < 10) { finishDraw(); return; }
+          }
+          S.draft.push([u.x, u.y]); renderPolys(); updateHint();
+        });
+        // Pan (or click-to-deselect) on the empty background. Shapes/handles
+        // handle their own mousedown and stop propagation, so reaching here
+        // means the background was pressed.
+        viewport.addEventListener("mousedown", (e) => {
+          if (S.mode === "draw") return;
+          if (e.target.closest && e.target.closest("circle, polygon")) return;
+          if (e.button === 0 || e.button === 1) {
+            S.drag = { type: "pan", moved: 0, x: e.clientX, y: e.clientY, px: S.panX, py: S.panY };
+            e.preventDefault();
+          }
+        });
+        window.addEventListener("mousemove", (e) => {
+          if (!S.drag) return;
+          if (S.drag.type === "pan") {
+            S.drag.moved += Math.abs(e.movementX) + Math.abs(e.movementY);
+            S.panX = S.drag.px + (e.clientX - S.drag.x); S.panY = S.drag.py + (e.clientY - S.drag.y);
+            applyTransform(); return;
+          }
+          if (S.drag.type === "vtx") { const r = selected(); if (!r) return; const pts = ptsArr(r); const u = toUser(e); pts[S.drag.idx] = [u.x, u.y]; setPts(r, pts); renderPolys(); }
+        });
+        window.addEventListener("mouseup", () => {
+          if (S.drag) {
+            if (S.drag.type === "vtx") renderProps();
+            else if (S.drag.type === "pan" && S.drag.moved < 4 && S.selId) { S.selId = null; renderAll(); }
+          }
+          S.drag = null;
+        });
+        svg.addEventListener("contextmenu", (e) => { if (S.mode === "draw") { e.preventDefault(); finishDraw(); } });
+        svg.addEventListener("dblclick", (e) => { if (S.mode === "draw") { e.preventDefault(); finishDraw(); } });
+
+        window.addEventListener("keydown", (e) => {
+          const mod = e.ctrlKey || e.metaKey;
+          // Undo/redo work regardless of focus (but let native text undo win
+          // inside a field)
+          const inField = e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA";
+          if (mod && (e.key === "z" || e.key === "Z") && !e.shiftKey) {
+            if (inField) return; e.preventDefault(); undo(); return;
+          }
+          if (mod && ((e.shiftKey && (e.key === "z" || e.key === "Z")) || e.key === "y" || e.key === "Y")) {
+            if (inField) return; e.preventDefault(); redo(); return;
+          }
+          if (inField) return;
+          if (e.key === "Escape") { cancelDraw(); renderPolys(); }
+          else if (e.key === "Enter" && S.mode === "draw") finishDraw();
+          else if ((e.key === "Delete" || e.key === "Backspace") && selected() && S.mode !== "draw") {
+            const r = selected(); if (confirm(`Delete "${r.name}"?`)) { pushHistory(); const a = curRooms(); a.splice(a.indexOf(r), 1); S.selId = null; markDirty(); renderAll(); }
+          } else if (e.key === "n" || e.key === "N") { startDraw(null); renderPolys(); }
+        });
+
+        function updateHint() {
+          const h = $("hint");
+          if (S.mode === "draw") h.textContent = `Drawing: click to add points • click first point / Enter / right-click to finish • Esc to cancel  (${S.draft.length} pts)`;
+          else if (selected()) h.textContent = "Drag ● to move • drag ○ midpoints to add • right-click ● to delete • zoom in for precision • Ctrl+Z to undo";
+          else h.textContent = "Click a room to edit • New Room to draw • drag to pan • wheel to zoom";
+        }
+
+        function setStatus(msg, col) { const s = $("status"); s.textContent = msg; s.style.color = col || "var(--muted)"; }
+
+        // ---------- save / export ----------
+        function payload() {
+          // prune empty decks we never touched but keep ones with rooms
+          const dr = {};
+          for (const [d, arr] of Object.entries(model)) if (arr && arr.length) dr[d] = arr;
+          return { deckRooms: dr, deckViewBoxes: viewBoxes, roomClassColors: colors };
+        }
+        $("saveBtn").addEventListener("click", async () => {
+          setStatus("Saving…");
+          try {
+            const res = await fetch("/api/admin/save-rooms", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              credentials: "same-origin", body: JSON.stringify(payload()),
+            });
+            const j = await res.json().catch(() => ({}));
+            if (res.ok && j.success) { S.dirty = false; setStatus(`Saved ✓ ${j.rooms} rooms`, "#3fbf6f"); }
+            else setStatus("Save failed: " + (j.error || res.status), "#e0533a");
+          } catch (err) { setStatus("Save error: " + err.message, "#e0533a"); }
+        });
+        $("exportBtn").addEventListener("click", () => {
+          const p = payload();
+          const text =
+            "(function (RBV) {\n  const roomClassColors = " + JSON.stringify(p.roomClassColors, null, 2) +
+            ";\n\n  const deckViewBoxes = " + JSON.stringify(p.deckViewBoxes, null, 2) +
+            ";\n\n  const deckRooms = " + JSON.stringify(p.deckRooms, null, 2) +
+            ";\n\n  RBV.data = RBV.data || {};\n  RBV.data.deckRooms = deckRooms;\n  RBV.data.deckViewBoxes = deckViewBoxes;\n  RBV.data.roomClassColors = roomClassColors;\n  window.deckRooms = deckRooms;\n  window.deckViewBoxes = deckViewBoxes;\n  window.roomClassColors = roomClassColors;\n})(window.RBV);\n";
+          const blob = new Blob([text], { type: "text/javascript" });
+          const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "deckRooms.js"; a.click();
+        });
+        window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+        if (window.__loadErr || !window.deckRooms) setStatus("⚠ could not load deckRooms.js", "#e0533a");
+        setDeck(S.deck);
+      })();
+    </script>
+  </body>
+</html>

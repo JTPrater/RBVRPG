@@ -19,24 +19,16 @@ const cors = require("cors");
 const fetch = require("node-fetch");
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
+const {
+  TIMELINE_MS,
+  getCurrentVoyageState: computeVoyageStateAt,
+} = require("./lib/voyageState");
+const { lookupMenuItem } = require("./lib/menuCatalog");
+const { createSocketGameAuth } = require("./lib/socketGameAuth");
 
 // Initialize Express and Server
 const app = express();
 const server = http.createServer(app);
-
-// Timeline constants (milliseconds from departure)
-const TIMELINE_MS = {
-  DEPARTURE_DELAY: 12 * 60 * 1000, // 12 minutes between prep and actual departure
-  SOUTHAMPTON_WATER_END: 20 * 60 * 1000, // 20 minutes - 6 knots
-  NEEDLES_PASS: 4_650_000, // 1h 17.5m - Isle of Wight passage start
-  NEEDLES_COMPLETE: 5_130_000, // ~8 minutes after Needles start
-  CHANNEL_COMPLETE: 5 * 60 * 60 * 1000, // 5 hours - English Channel complete
-  APPROACH_COMPLETE: 18_900_000, // 15 minutes of Cherbourg approach (12 knots)
-  BERTHING_COMPLETE: 19_500_000, // 10 minutes harbor entry to stop
-};
-
-const CHERBOURG_DECEL_RATE =
-  19 / ((TIMELINE_MS.BERTHING_COMPLETE - TIMELINE_MS.CHANNEL_COMPLETE) / 1000); // knots per second needed to reach 0 by berthing
 
 // Socket.IO configuration for production
 const io = socketIo(server, {
@@ -65,7 +57,7 @@ console.debug("⏰ Voyage start time placeholder set (will sync from DB).");
 
 // Narrative events for server-side synchronization (times are seconds)
 const narrativeEvents = [
-  { time: 0, text: "Final preparations are being made for departure..." },
+  { time: 0, text: "Final preparations are being made for departure." },
   {
     time: 720,
     text: "The ship's horn echoes across Southampton Water. The moorings are cast off, and Britannic slowly pulls away from the dock.",
@@ -84,7 +76,7 @@ const narrativeEvents = [
   },
   {
     time: 4980,
-    text: "We are now passing the Nab Tower, a few miles East of us.",
+    text: "We are now passing the Nab Tower, a few miles east of us.",
   },
   {
     time: 5460,
@@ -205,29 +197,9 @@ const initMongoDB = async () => {
   }
 };
 
-// Prefer the shared User model so admin flags, helpers, and migrations stay consistent
 const User = require("./models/User");
 const ServerState = require("./models/ServerState");
-// If you're testing locally and don't yet have the model file available, fall back
-// to an inline schema (but production should use ./models/User.js)
-if (!User) {
-  const FallbackSchema = new mongoose.Schema({
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    character: {
-      forename: { type: String, required: true },
-      surname: { type: String, required: true },
-      birthdate: { type: Date, required: true },
-      cabin: { type: String, required: true },
-      cabin_number: { type: String, required: true },
-      bio: String,
-      avatar: String,
-    },
-    isAdmin: { type: Boolean, default: false },
-  });
-
-  module.exports = mongoose.model("User", FallbackSchema);
-}
+const { requireSessionUser } = createSocketGameAuth(User);
 
 // Multer Configuration with Cloudinary
 const storage = new CloudinaryStorage({
@@ -243,7 +215,8 @@ const storage = new CloudinaryStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  // 5MB avatar; text fields (names, bio) are small, so cap them well below multer's 1MB default
+  limits: { fileSize: 5 * 1024 * 1024, fieldSize: 16 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     if (!allowedTypes.includes(file.mimetype)) {
@@ -253,6 +226,15 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+const REGISTRATION_FIELD_LIMITS = { forename: 40, surname: 40, bio: 2000 };
+
+// Chat colours come from an <input type="color">, which always gives #rrggbb
+const CHAT_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+
+function isChatColor(value) {
+  return typeof value === "string" && CHAT_COLOR_PATTERN.test(value);
+}
 
 function getStartingMoneyForCabin(cabinType) {
   if (typeof cabinType !== "string") return 0;
@@ -279,6 +261,9 @@ function getAvatarUploadErrorMessage(error) {
   if (error instanceof multer.MulterError) {
     if (error.code === "LIMIT_FILE_SIZE") {
       return "Avatar image must be 5MB or smaller";
+    }
+    if (error.code === "LIMIT_FIELD_VALUE") {
+      return "One of the fields is too long";
     }
     return error.message;
   }
@@ -353,6 +338,7 @@ app.use(
 );
 
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/lib", express.static(path.join(__dirname, "lib")));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -421,6 +407,20 @@ app.post("/api/register", authLimiter, async (req, res) => {
       return res
         .status(400)
         .json({ success: false, error: "No avatar file uploaded" });
+    }
+
+    // Names end up in every chat message (and /me expands to them), so keep them short
+    const tooLong = Object.entries(REGISTRATION_FIELD_LIMITS).find(
+      ([field, max]) =>
+        typeof req.body[field] === "string" && req.body[field].length > max,
+    );
+    if (tooLong) {
+      const [field, max] = tooLong;
+      console.warn(`❌ Registration failed: ${field} longer than ${max}`);
+      return res.status(400).json({
+        success: false,
+        error: `${field[0].toUpperCase()}${field.slice(1)} must be ${max} characters or fewer`,
+      });
     }
 
     const existingUser = await User.findOne({ email: req.body.email });
@@ -626,6 +626,159 @@ app.post("/api/admin/reset-voyage", authLimiter, async (req, res) => {
     res.json({ success: true, voyageStartTime });
   } catch (error) {
     console.error("❌ Admin reset-voyage error:", error);
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+// ── Deck room editor: save deckRooms.js from the admin tool ──────────────
+// Regenerates public/game/data/deckRooms.js from a validated payload. Values
+// are written via JSON.stringify over a whitelisted schema, so nothing the
+// client sends can become executable code in the generated module.
+const DECK_ROOMS_PATH = path.join(
+  __dirname,
+  "public/game/data/deckRooms.js",
+);
+const ROOM_CLASSES = ["first", "second", "third", "crew"];
+
+function sanitizeRoom(r) {
+  if (!r || typeof r !== "object") return null;
+  const id = String(r.id || "").trim();
+  const name = String(r.name || "").trim();
+  if (!id || !name) return null;
+  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return null;
+  const out = { id, name: name.slice(0, 120) };
+  out.class = ROOM_CLASSES.includes(r.class) ? r.class : "first";
+  if (r.type) out.type = String(r.type).trim().slice(0, 60);
+  if (r.coordinates != null) {
+    const coords = String(r.coordinates).trim();
+    // only numbers, spaces, commas, dots, minus — never code
+    if (coords && /^[-0-9.,\s]+$/.test(coords))
+      out.coordinates = coords.replace(/\s+/g, " ").slice(0, 8000);
+  }
+  if (typeof r.x === "number" && isFinite(r.x)) out.x = r.x;
+  if (typeof r.y === "number" && isFinite(r.y)) out.y = r.y;
+  if (r.isSVG) out.isSVG = true;
+  const loc = r.location && typeof r.location === "object" ? r.location : {};
+  const location = {};
+  if (Array.isArray(loc.images))
+    location.images = loc.images
+      .filter((s) => typeof s === "string")
+      .map((s) => s.slice(0, 200))
+      .slice(0, 40);
+  else if (loc.image) location.image = String(loc.image).slice(0, 200);
+  else location.image = "placeholder.jpg";
+  location.chatRoom = String(loc.chatRoom || id).slice(0, 100);
+  out.location = location;
+  return out;
+}
+
+function buildDeckRoomsFile(deckRooms, deckViewBoxes, roomClassColors) {
+  const cleanRooms = {};
+  for (const [deck, rooms] of Object.entries(deckRooms)) {
+    if (!/^[a-z0-9_]{1,40}$/.test(deck) || !Array.isArray(rooms)) continue;
+    cleanRooms[deck] = rooms.map(sanitizeRoom).filter(Boolean);
+  }
+  const cleanVB = {};
+  for (const [deck, vb] of Object.entries(deckViewBoxes || {}))
+    if (
+      /^[a-z0-9_]{1,40}$/.test(deck) &&
+      typeof vb === "string" &&
+      /^[-0-9.\s]+$/.test(vb)
+    )
+      cleanVB[deck] = vb.trim();
+  const cleanColors = {};
+  for (const c of ROOM_CLASSES) {
+    const v = roomClassColors && roomClassColors[c];
+    cleanColors[c] =
+      typeof v === "string" && /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : "#4195f7";
+  }
+  return `(function (RBV) {
+  // Deck room data. Each room: id, name, class (first|second|third|crew),
+  // type (semantic tag), coordinates (SVG polygon "x,y x,y ..." in the deck
+  // image's pixel space = deckViewBoxes[deck]), optional x/y marker, and
+  // location (image + chatRoom). Ship-deck overlays are built from this by
+  // game.js. Generated by the room editor (/admin/room-editor) — hand edits
+  // are fine but will be overwritten on the next editor save.
+  const roomClassColors = ${JSON.stringify(cleanColors, null, 2)};
+
+  const deckViewBoxes = ${JSON.stringify(cleanVB, null, 2)};
+
+  const deckRooms = ${JSON.stringify(cleanRooms, null, 2)};
+
+  RBV.data = RBV.data || {};
+  RBV.data.deckRooms = deckRooms;
+  RBV.data.deckViewBoxes = deckViewBoxes;
+  RBV.data.roomClassColors = roomClassColors;
+  window.deckRooms = deckRooms;
+  window.deckViewBoxes = deckViewBoxes;
+  window.roomClassColors = roomClassColors;
+  console.debug("✅ Defined deckRooms:", deckRooms);
+})(window.RBV);
+`;
+}
+
+app.get("/admin/room-editor", async (req, res) => {
+  if (!req.session?.userId) return res.redirect("/");
+  try {
+    const admin = await User.findById(req.session.userId);
+    if (!admin?.isAdmin) return res.status(403).send("Forbidden");
+  } catch (e) {
+    return res.status(500).send("Server error");
+  }
+  res.sendFile(path.join(__dirname, "public/game/tools/room-editor.html"));
+});
+
+app.post("/api/admin/save-rooms", authLimiter, async (req, res) => {
+  try {
+    if (!req.session?.userId)
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    const admin = await User.findById(req.session.userId);
+    if (!admin?.isAdmin)
+      return res.status(403).json({ success: false, error: "Forbidden" });
+
+    const { deckRooms, deckViewBoxes, roomClassColors } = req.body || {};
+    if (!deckRooms || typeof deckRooms !== "object")
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing deckRooms" });
+
+    const fileText = buildDeckRoomsFile(
+      deckRooms,
+      deckViewBoxes,
+      roomClassColors,
+    );
+    // sanity: the regenerated file must parse and expose the decks
+    const probe = { RBV: {}, console: { debug() {} } };
+    try {
+      new Function("window", "console", fileText)(probe, probe.console);
+      if (!probe.deckRooms || typeof probe.deckRooms !== "object")
+        throw new Error("no deckRooms");
+    } catch (e) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Generated file invalid: " + e.message });
+    }
+
+    // timestamped backup, then write
+    try {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      await fs.copyFile(
+        DECK_ROOMS_PATH,
+        DECK_ROOMS_PATH + "." + stamp + ".bak",
+      );
+    } catch (e) {
+      /* first save or no prior file — non-fatal */
+    }
+    await fs.writeFile(DECK_ROOMS_PATH, fileText, "utf8");
+
+    const total = Object.values(probe.deckRooms).reduce(
+      (n, a) => n + (Array.isArray(a) ? a.length : 0),
+      0,
+    );
+    console.info(`🛏️ deckRooms.js saved by admin — ${total} rooms`);
+    res.json({ success: true, rooms: total });
+  } catch (error) {
+    console.error("❌ save-rooms error:", error);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -926,6 +1079,23 @@ function addMessageToRoomHistory(room, message) {
   }
 }
 
+// Engine order telegraph (bridge/wheelhouse roleplay prop): last order
+// signaled per room, kept only in memory so a late joiner sees the current
+// needle position (mirrors roomMessageHistory above).
+const TELEGRAPH_LABELS = {
+  STOP: "STOP",
+  STAND_BY: "STAND BY",
+  DEAD_SLOW_AHEAD: "DEAD SLOW AHEAD",
+  SLOW_AHEAD: "SLOW AHEAD",
+  HALF_AHEAD: "HALF AHEAD",
+  FULL_AHEAD: "FULL AHEAD",
+  FULL_ASTERN: "FULL ASTERN",
+  HALF_ASTERN: "HALF ASTERN",
+  SLOW_ASTERN: "SLOW ASTERN",
+  DEAD_SLOW_ASTERN: "DEAD SLOW ASTERN",
+};
+const telegraphState = {};
+
 // Add this function at the top level of server.js
 function emitRoomCount(roomId) {
   const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
@@ -937,126 +1107,8 @@ function emitRoomCount(roomId) {
   });
 }
 
-// Function to get current voyage state
 function getCurrentVoyageState() {
-  const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
-
-  let location = "Southampton";
-  let speed = "0 knots";
-  let speedValue = 0; // Actual current speed
-  let targetSpeed = 0; // Target speed for smooth acceleration
-
-  const {
-    DEPARTURE_DELAY,
-    SOUTHAMPTON_WATER_END,
-    NEEDLES_COMPLETE,
-    CHANNEL_COMPLETE,
-    APPROACH_COMPLETE,
-    BERTHING_COMPLETE,
-  } = TIMELINE_MS;
-
-  // Acceleration rate: 0.012 knots per second squared (matches client)
-  const ACCELERATION = 0.012;
-
-  // Departure happens DEPARTURE_DELAY milliseconds into the voyage
-  const elapsedSinceDeparture = Math.max(
-    0,
-    elapsedSeconds - DEPARTURE_DELAY / 1000,
-  );
-
-  if (elapsedSeconds < DEPARTURE_DELAY / 1000) {
-    // Before departure
-    location = "Southampton";
-    speed = "0 knots";
-    speedValue = 0;
-    targetSpeed = 0;
-  } else if (elapsedSinceDeparture * 1000 < SOUTHAMPTON_WATER_END) {
-    // Southampton Water - accelerating to 6 knots
-    location = "Southampton Water";
-    targetSpeed = 6;
-
-    // Calculate current speed based on acceleration from 0 to 6 knots
-    // Time to reach 6 knots: 6 / 0.012 = 500 seconds
-    const timeToReach6Knots = 6 / ACCELERATION;
-    if (elapsedSinceDeparture < timeToReach6Knots) {
-      speedValue = Math.min(6, elapsedSinceDeparture * ACCELERATION);
-    } else {
-      speedValue = 6;
-    }
-    speed = `${speedValue.toFixed(1)} knots`;
-  } else if (elapsedSinceDeparture * 1000 < NEEDLES_COMPLETE) {
-    // The Solent - accelerating from 6 to 12 knots
-    location = "The Solent";
-    targetSpeed = 12;
-
-    // Calculate time elapsed since entering The Solent
-    const elapsedInSolent =
-      elapsedSinceDeparture - SOUTHAMPTON_WATER_END / 1000;
-
-    // Time to accelerate from 6 to 12 knots: (12 - 6) / 0.012 = 500 seconds
-    const timeToReach12Knots = (12 - 6) / ACCELERATION;
-
-    if (elapsedInSolent < timeToReach12Knots) {
-      // Still accelerating from 6 to 12
-      speedValue = Math.min(12, 6 + elapsedInSolent * ACCELERATION);
-    } else {
-      // Reached 12 knots
-      speedValue = 12;
-    }
-    speed = `${speedValue.toFixed(1)} knots`;
-  } else if (elapsedSinceDeparture * 1000 < CHANNEL_COMPLETE) {
-    // English Channel - accelerating from 12 to 19 knots, then cruising
-    location = "English Channel";
-    targetSpeed = 19;
-
-    // Calculate time elapsed since entering English Channel
-    const elapsedInChannel = elapsedSinceDeparture - NEEDLES_COMPLETE / 1000;
-
-    // Time to accelerate from 12 to 19 knots: (19 - 12) / 0.012 = 583.33 seconds
-    const timeToReach19Knots = (19 - 12) / ACCELERATION;
-
-    if (elapsedInChannel < timeToReach19Knots) {
-      // Still accelerating from 12 to 19
-      speedValue = Math.min(19, 12 + elapsedInChannel * ACCELERATION);
-    } else {
-      // Reached 19 knots, cruising
-      speedValue = 19;
-    }
-    speed = `${speedValue.toFixed(1)} knots`;
-  } else if (elapsedSinceDeparture * 1000 < BERTHING_COMPLETE) {
-    // Continuous Cherbourg deceleration from 19 knots down to 0 by berthing
-    const elapsedSinceChannelEntry = Math.max(
-      0,
-      elapsedSinceDeparture - CHANNEL_COMPLETE / 1000,
-    );
-    const drop = elapsedSinceChannelEntry * CHERBOURG_DECEL_RATE;
-    speedValue = Math.max(0, 19 - drop);
-    targetSpeed = Math.max(0, speedValue - CHERBOURG_DECEL_RATE);
-
-    if (speedValue > 6) {
-      location = "Approaching Cherbourg";
-    } else if (speedValue > 0) {
-      location = "Cherbourg Harbor";
-    } else {
-      location = "Cherbourg";
-    }
-
-    speed = `${speedValue.toFixed(1)} knots`;
-  } else {
-    // Berthed - full stop
-    location = "Cherbourg";
-    speed = "0 knots";
-    speedValue = 0;
-    targetSpeed = 0;
-  }
-
-  return {
-    location,
-    speed,
-    speedValue,
-    targetSpeed,
-    elapsedSeconds,
-  };
+  return computeVoyageStateAt(voyageStartTime);
 }
 
 // Add cabin data
@@ -1308,8 +1360,29 @@ async function handleSaveStats(socket, statsData) {
   }
 }
 
+// A bad payload or a failing handler must never take the server down. Every socket
+// handler runs through this guard, which logs what it throws or rejects with instead
+// of letting it reach the unhandledRejection handler (which exits the process).
+function guardSocketHandler(event, handler) {
+  return (...args) => {
+    try {
+      const result = handler(...args);
+      if (result && typeof result.catch === "function") {
+        result.catch((err) =>
+          console.error(`❌ Error in socket "${event}" handler:`, err),
+        );
+      }
+      return result;
+    } catch (err) {
+      console.error(`❌ Error in socket "${event}" handler:`, err);
+    }
+  };
+}
+
 // Socket.IO Setup
 io.on("connection", async (socket) => {
+  const onEvent = (event, handler) =>
+    socket.on(event, guardSocketHandler(event, handler));
   console.debug(`🔌 New connection: ${socket.id}`);
   userCount++;
   io.emit("global-user-count", userCount); // Global site-wide count
@@ -1331,63 +1404,38 @@ io.on("connection", async (socket) => {
     currentVoyageState,
   );
 
-  // Identify authenticated user by server session (safer than trusting client handshake)
+  let assignedColor = "#c0932b";
   const sessionUserId = socket.request?.session?.userId;
-  let assignedColor = "#c0932b"; // default chat color
 
   if (sessionUserId) {
     try {
-      const dbUser =
-        await User.findById(sessionUserId).select("email chatColor");
+      const dbUser = await User.findById(sessionUserId).select(
+        "email chatColor character",
+      );
       if (dbUser) {
         socket.userEmail = dbUser.email;
-        if (dbUser.chatColor) {
+        socket.character = dbUser.character || null;
+        socket.sessionUserId = dbUser._id;
+        if (isChatColor(dbUser.chatColor)) {
           assignedColor = dbUser.chatColor;
-          console.debug(
-            `🎨 Loaded saved chat color for ${socket.userEmail}: ${assignedColor}`,
-          );
         }
-      } else {
-        console.debug(`🎨 Session user ${sessionUserId} not found in DB`);
+        console.debug(
+          `🎨 Session user ${socket.userEmail} connected with saved chat color`,
+        );
       }
     } catch (err) {
       console.error(
-        `❌ Error loading chat color for userId ${sessionUserId}:`,
+        `❌ Error loading session user ${sessionUserId}:`,
         err.message,
       );
     }
   } else {
-    // No authenticated session — fall back to any email provided in handshake, but do not persist
-    const handshakeEmail = socket.handshake.auth?.email;
-    socket.userEmail = handshakeEmail || null;
-    if (handshakeEmail) {
-      try {
-        const tmpUser = await User.findOne({ email: handshakeEmail }).select(
-          "chatColor",
-        );
-        if (tmpUser && tmpUser.chatColor) {
-          assignedColor = tmpUser.chatColor;
-          console.debug(
-            `🎨 Loaded saved chat color for ${handshakeEmail}: ${assignedColor}`,
-          );
-        }
-      } catch (err) {
-        console.error(
-          `❌ Error loading chat color for handshake email ${handshakeEmail}:`,
-          err.message,
-        );
-      }
-    } else {
-      console.debug(
-        `🎨 Anonymous user connected, using default color: ${assignedColor}`,
-      );
-    }
+    console.debug(`🔒 Anonymous socket connection: ${socket.id}`);
   }
 
   userChatColors[socket.id] = assignedColor;
-  console.debug(`🎨 Assigned color to ${socket.id}: ${assignedColor}`);
 
-  if (socket.userEmail || socket.request?.session?.userId) {
+  if (socket.sessionUserId) {
     handleLoadStats(socket);
   }
 
@@ -1424,17 +1472,39 @@ io.on("connection", async (socket) => {
   let currentRoom = null;
   let currentCharacter = null;
 
-  socket.on("load-stats", () => {
+  onEvent("load-stats", async () => {
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      socket.emit("auth-error", { message: auth.error });
+      return;
+    }
     handleLoadStats(socket);
   });
 
-  socket.on("save-stats", (statsData) => {
+  onEvent("save-stats", async (statsData) => {
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      socket.emit("auth-error", { message: auth.error });
+      return;
+    }
     handleSaveStats(socket, statsData);
   });
 
   // Handle 'join-room' event
-  socket.on("join-room", async (data) => {
-    const { room, character } = data;
+  onEvent("join-room", async (data) => {
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      socket.emit("auth-error", { message: auth.error });
+      return;
+    }
+
+    const { room } = data || {};
+    const character = socket.character;
+
+    if (!room || !character) {
+      console.warn(`⚠️ join-room missing room or server character for ${socket.id}`);
+      return;
+    }
 
     if (!socket.isGameClient) {
       socket.isGameClient = true;
@@ -1472,12 +1542,30 @@ io.on("connection", async (socket) => {
         );
       }
 
+      // Send the current engine order telegraph position, if this room has
+      // one set (bridge/wheelhouse only) — so a late joiner sees the same
+      // needle position everyone else does instead of it resetting to STOP
+      if (telegraphState[room]) {
+        socket.emit("telegraph-update", {
+          room,
+          position: telegraphState[room],
+          initial: true, // late-join sync: place the lever, don't ring it
+        });
+      }
+
       console.info(`✅ User joined room: ${room}`);
     }
   });
 
   // Handle 'chat-message' event (corrected)
-  socket.on("chat-message", (data = {}) => {
+  onEvent("chat-message", async (data) => {
+    if (!data || typeof data !== "object") return;
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      socket.emit("auth-error", { message: auth.error });
+      return;
+    }
+
     const roomId = data.room;
     const text = typeof data.message === "string" ? data.message.trim() : "";
 
@@ -1488,6 +1576,11 @@ io.on("connection", async (socket) => {
 
     if (!text) {
       console.warn("⚠️ Ignoring empty chat message payload");
+      return;
+    }
+
+    if (text.length > 500) {
+      console.warn(`⚠️ Chat message too long from ${socket.id}`);
       return;
     }
 
@@ -1518,13 +1611,19 @@ io.on("connection", async (socket) => {
       processedMessage = text.replaceAll("/me", meName);
     }
 
+    // /me expands to the player's name, so cap the result as well as the typed text
+    if (processedMessage.length > 1000) {
+      console.warn(`⚠️ Chat message too long after /me expansion from ${socket.id}`);
+      return;
+    }
+
     const outboundMessage = {
       room: roomId,
       message: processedMessage,
       timestamp: Date.now(),
       type: "user",
       userId: socket.id,
-      color: userChatColors[socket.id] || data.color || "#c0932b",
+      color: userChatColors[socket.id] || "#c0932b",
       character: safeCharacter,
       cabin: cabinRef,
       isAction: startsWithMe || text.includes("/me"),
@@ -1538,9 +1637,54 @@ io.on("connection", async (socket) => {
     );
   });
 
+  // Handle 'telegraph-set' event: bridge/wheelhouse engine order telegraph.
+  // Roleplay only — this never touches the ship's actual speed/timeline,
+  // it just records which order is currently signaled for that room and
+  // relays it to everyone present, plus a chat narration line.
+  onEvent("telegraph-set", async (data) => {
+    if (!data || typeof data !== "object") return;
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      socket.emit("auth-error", { message: auth.error });
+      return;
+    }
+
+    const { room, position } = data;
+    if (!room || !allowedRooms.includes(room)) {
+      console.warn(`⚠️ Telegraph order sent to invalid or missing room: ${room}`);
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(TELEGRAPH_LABELS, position)) {
+      console.warn(`⚠️ Unknown telegraph position: ${position}`);
+      return;
+    }
+
+    telegraphState[room] = position;
+    io.to(room).emit("telegraph-update", { room, position });
+
+    const activeCharacter = socket.character || {};
+    const orderedBy =
+      [activeCharacter.forename, activeCharacter.surname]
+        .filter(Boolean)
+        .join(" ") || "A crew member";
+    const systemMessage = {
+      type: "system",
+      message: `⚙ Engine order telegraph rung to ${TELEGRAPH_LABELS[position]} by ${orderedBy}.`,
+      room,
+      timestamp: Date.now(),
+    };
+    addMessageToRoomHistory(room, systemMessage);
+    io.emit("chat-message", systemMessage);
+    console.debug(`⚙ Telegraph in ${room} set to ${position} by ${socket.id}`);
+  });
+
   // Handle 'change-chat-color' event
-  socket.on("change-chat-color", async (color) => {
+  onEvent("change-chat-color", async (color) => {
     try {
+      if (!isChatColor(color)) {
+        console.warn(`⚠️ Ignoring invalid chat color from ${socket.id}`);
+        return;
+      }
       // Prefer server-side session for authentication — do not accept client-supplied email
       const sessionUserId = socket.request?.session?.userId;
       if (!sessionUserId) {
@@ -1574,8 +1718,14 @@ io.on("connection", async (socket) => {
   });
 
   // Handle 'leave-room' event
-  socket.on("leave-room", (data) => {
-    const { room, character } = data;
+  onEvent("leave-room", async (data) => {
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      return;
+    }
+
+    const { room } = data || {};
+    const character = socket.character;
     if (allowedRooms.includes(room)) {
       socket.leave(room);
       socket
@@ -1589,7 +1739,7 @@ io.on("connection", async (socket) => {
     }
   });
 
-  socket.on("request-room-users", (roomId) => {
+  onEvent("request-room-users", (roomId) => {
     if (allowedRooms.includes(roomId)) {
       const roomSockets = io.sockets.adapter.rooms.get(roomId);
       if (roomSockets) {
@@ -1606,21 +1756,21 @@ io.on("connection", async (socket) => {
     }
   });
 
-  socket.on("request-all-room-counts", () => {
+  onEvent("request-all-room-counts", () => {
     allowedRooms.forEach((roomId) => {
       emitRoomCount(roomId);
     });
     console.debug(`📊 Sent room counts for all rooms to ${socket.id}`);
   });
 
-  socket.on("request-room-count", (roomId) => {
+  onEvent("request-room-count", (roomId) => {
     if (allowedRooms.includes(roomId)) {
       emitRoomCount(roomId);
       console.debug(`📊 Sent room count for ${roomId} to ${socket.id}`);
     }
   });
 
-  socket.on("request-room-counts", (payload) => {
+  onEvent("request-room-counts", (payload) => {
     const roomIds = Array.isArray(payload)
       ? payload
       : Array.isArray(payload?.rooms)
@@ -1642,7 +1792,7 @@ io.on("connection", async (socket) => {
     );
   });
 
-  socket.on("request-room-players", (roomId) => {
+  onEvent("request-room-players", (roomId) => {
     if (allowedRooms.includes(roomId)) {
       const roomSockets = io.sockets.adapter.rooms.get(roomId);
       if (roomSockets) {
@@ -1769,9 +1919,11 @@ io.on("connection", async (socket) => {
   }
 
   // poker-deal: client sends { bet }
-  socket.on("poker-deal", async ({ bet }) => {
+  onEvent("poker-deal", async (payload) => {
     try {
-      if (!socket.userEmail) return;
+      const { bet } = payload || {};
+      const auth = await requireSessionUser(socket);
+      if (!auth.ok) return;
       const betAmount = Number(bet) || 0;
       if (!VALID_BETS.includes(betAmount)) return;
 
@@ -1808,9 +1960,11 @@ io.on("connection", async (socket) => {
   });
 
   // poker-hold: client sends { held: [bool, bool, bool, bool, bool] }
-  socket.on("poker-hold", async ({ held }) => {
+  onEvent("poker-hold", async (payload) => {
     try {
-      if (!socket.userEmail || !socket.pokerGame) return;
+      const { held } = payload || {};
+      const auth = await requireSessionUser(socket);
+      if (!auth.ok || !socket.pokerGame) return;
       if (!Array.isArray(held) || held.length !== 5) return;
 
       const game = socket.pokerGame;
@@ -1851,11 +2005,34 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // ─── Server-authoritative purchases ───────────────────────────────────────
-  socket.on("purchase-item", async ({ price }) => {
+  // ─── Server-authoritative purchases (price from menu catalog, not client) ─
+  onEvent("purchase-item", async (payload = {}) => {
     try {
-      if (!socket.userEmail) return;
-      const cost = Number(price) || 0;
+      const auth = await requireSessionUser(socket);
+      if (!auth.ok) {
+        socket.emit("purchase-result", {
+          success: false,
+          message: auth.error,
+        });
+        return;
+      }
+
+      const menuItem = lookupMenuItem({
+        itemKey: payload.itemKey,
+        topCategory: payload.topCategory,
+        subCategory: payload.subCategory,
+        name: payload.name,
+      });
+
+      if (!menuItem) {
+        socket.emit("purchase-result", {
+          success: false,
+          message: "Unknown menu item",
+        });
+        return;
+      }
+
+      const cost = Number(menuItem.price) || 0;
       if (cost <= 0) {
         socket.emit("purchase-result", { success: true, money: null });
         return;
@@ -1879,13 +2056,18 @@ io.on("connection", async (socket) => {
       socket.emit("purchase-result", {
         success: true,
         money: updatedUser.stats.money,
+        itemKey: payload.itemKey || null,
       });
     } catch (error) {
       console.error(`❌ Purchase error: ${error.message}`);
+      socket.emit("purchase-result", {
+        success: false,
+        message: "Purchase failed",
+      });
     }
   });
 
-  socket.on("disconnect", () => {
+  onEvent("disconnect", () => {
     console.info(`👤 User disconnected: ${socket.id}`);
     try {
       console.debug("👤 User disconnected:", socket.id);

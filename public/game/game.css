@@ -1,11 +1,4 @@
 @font-face {
-  font-family: "Vetro";
-  src: url("/css/Vetro.otf") format("opentype");
-  font-weight: normal;
-  font-style: normal;
-}
-
-@font-face {
   font-family: "Nothing Anymore";
   src: url("/css/NothingAnymore.otf") format("opentype");
   font-weight: normal;
@@ -49,6 +42,10 @@
   background: linear-gradient(135deg, #e6d7b8 60%, #f4e4bc 100%);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12) inset;
   transform: scale(0.97);
+}
+.cabin-action-btn .material-icons {
+  font-size: 22px;
+  color: #5c3d12;
 }
 
 /* Enter Britannic button */
@@ -112,67 +109,59 @@ body {
 }
 
 :root {
-  --scale: 1; /* Default value, will be overridden by JavaScript */
+  --scale: 1; /* Scene-layer transform scale — set by JS, not used for UI sizing */
   --scene-width: 1920;
   --scene-height: 1080;
   --scene-manual-offset: 0px;
   --scene-bottom-offset: 0px;
   --ship-bottom: 693px;
   --water-bottom: 150px;
-  /* Shared baseline for all yachts. Anchor to ship bottom (waterline) so they
-     stay seated on the surface no matter the viewport scaling. Adjust with
-     --yacht-offset if art needs a small nudge. */
-  /* Keep yachts referenced to the global waterline instead of Britannic */
-  /* Vertical adjust — increase this to raise yachts further above the water.
-      This is position-only (not z-index). */
-  /* Use a computed offset so the yacht baseline sits at 578px by default
-      (calculates 578px - water bottom). Override with setYachtOffset in DevTools
-      to test different values. */
-  /* Raise yachts by 30px to improve visibility above waves */
+  /* Yachts: --yacht-baseline pins every hull to the waterline, --yacht-offset-N
+     nudges one yacht up (+) or down (-) from it, and --yacht-left-N places it
+     across the scene. --yacht-offset itself is only read and written by the
+     console tuning helpers in game.js (alignYachtsToShip, setYachtOffset). */
   --yacht-offset: calc(578px - var(--water-bottom, 150px) + 145px);
-  /* Per-yacht vertical offsets (added on top of --yacht-baseline). Use
-      negative to push down or positive to raise further. */
-  /* Offsets computed from measured bottom positions in the screenshot:
-      yacht1: 723px => 0px offset, yacht2: 728px => +5px offset, yacht3: 725px => +2px offset */
   --yacht-offset-1: 0px;
   --yacht-offset-2: 5px;
   --yacht-offset-3: 2px;
-  /* Set yachts exactly to user-requested waterline (723px) so the bottoms
-      are pinned to the water. This is intentionally an absolute pixel value
-      requested by the user (see attachments). If you later want the waterline
-      anchoring behavior restored, revert to the calc(...) expression. */
   --yacht-baseline: 723px;
-  /* Per-yacht horizontal positions in absolute pixels. These map to the
-      user-supplied coordinates (left: 1536px, 1152px, 768px). You can tweak
-      these values here or via DevTools at runtime. */
   --yacht-left-1: 1536px;
   --yacht-left-2: 1152px;
   --yacht-left-3: 768px;
-  --bottom-bar-height: calc(130px * var(--scale));
+  --bottom-bar-height: clamp(65px, 6.77vw, 130px);
   /* HUD panel grows with scale so it stays proportional at 4K and above */
-  --hud-panel-height: clamp(220px, calc(360px * var(--scale)), 720px);
+  --hud-panel-height: clamp(220px, 18.75vw, 720px);
   --location-panel-width: clamp(
     360px,
     calc((16 / 9) * var(--hud-panel-height)),
     1280px
   );
-  --player-row-width: clamp(240px, calc(420px * var(--scale)), 840px);
+  --player-row-width: clamp(240px, 21.88vw, 840px);
   --smoke-offset: -90px; /* Negative = move smoke down; adjust as needed */
   /* Yacht scale variables — slightly larger so they read better at distance */
   --yacht-scale-1: 1; /* forward yacht */
   --yacht-scale-2: 1; /* mid yacht */
   --yacht-scale-3: 1; /* aft yacht */
-  /* Cherbourg sprite placement (same system as other sprites) */
-  --cherbourg-left: 50%; /* Defaults to 50% from left (around Britannic position) - tuned for Cherbourg */
-  --cherbourg-bottom: 68%; /* Default vertical offset percentage */
-  --cherbourg-width: 105%; /* Default width for Cherbourg sprite - user prefers 85% of scene */
+  /* Cherbourg sprite placement (console-tunable with setCherbourgPosition and
+     setCherbourgSize in game.js) */
+  --cherbourg-left: 50%;
+  --cherbourg-bottom: 68%;
+  --cherbourg-width: 105%;
   /* Cherbourg night sprite tuning */
   --cherbourg-brightness: 1.35; /* multiplier: 1 = unchanged */
   --cherbourg-saturation: 1.2;
   --cherbourg-contrast: 1.05;
+  /* Edwardian UI palette shared across panels */
+  --brass: #c0932b;
+  --brass-light: #e0b13d;
+  --brass-deep: #8a6a1f;
+  --parchment-light: #f6ecd3;
+  --parchment-dark: #e6d3a4;
+  --ink: #33220c;
+  --wood-dark: #2b1c0d;
+  --wood-mid: #3d2a15;
 }
 
-/* game.css */
 body {
   position: relative;
   margin: 0;
@@ -198,10 +187,6 @@ body {
   justify-content: center;
   align-items: center;
   z-index: 1000;
-}
-
-.loading-image {
-  display: none; /* Hide the loading image as the background image is used */
 }
 
 .progress-bar {
@@ -311,6 +296,101 @@ body {
   overflow: hidden;
 }
 
+/* Continues the sea below the scene on tall/portrait viewports so the
+   water always reaches the bottom of the page. Black matches the water
+   texture's own bottom rows, so the seam is invisible day and night.
+   Positioned by core/layout.js; painted behind .scene-layer (DOM order). */
+#ocean-extender {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #000;
+  pointer-events: none;
+}
+
+/* Vista wings: when the viewport is wider than the 1:1 scene (browser
+   zoom-out, large monitors) these extend the sky gradient and the tiling
+   water texture to the screen edges. Geometry from core/layout.js; the sky
+   gradient is painted by updateSkyGradient alongside the scene's .sky
+   elements; the water is relit with the scene water by updateSkyImage and
+   phase-locked to its scroll in the animation loop. */
+#sky-wing {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background: #87ceeb;
+}
+#water-wing {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background-image: url("../images/animations/water.png");
+  background-repeat: repeat-x;
+}
+/* night ink matching what the celestial canvas paints over the scene's
+   water — alpha driven by --night-ink, set each frame by celestial.js */
+#water-wing::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(3 6 14 / var(--night-ink, 0));
+}
+/* and the same fade-to-black at the bottom as .water-bottom-fade */
+#water-wing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 74%, #000 97%);
+}
+
+/* Everything in the water — texture, night ink, caustics, reflections —
+   fades uniformly to black just above the scene's bottom water edge, so
+   nothing gets hard-cut at the seam and the sea melts into the extender. */
+.water-bottom-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 148px;
+  height: 150px;
+  z-index: 6;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), #000 90%);
+}
+
+/* Dark scrollbars so any overflow gutter blends into the frame instead of
+   standing out as a light strip beside the sea */
+html {
+  scrollbar-color: #2a2a2e #050507;
+}
+body::-webkit-scrollbar {
+  background: #050507;
+}
+body::-webkit-scrollbar-thumb {
+  background: #2a2a2e;
+}
+
+/* Camera rig: the "subject" of the shot — ship, wake, smoke, ports —
+   scales down when the viewport is wider than the scene (browser zoom-out,
+   ultrawide monitors), so pulling back feels like a camera zooming out over
+   an unbroken sea. The environment (sky, water, canvases, weather) stays
+   full-bleed, so every gradient and effect survives at any zoom.
+   --cam-zoom is set by core/layout.js; origin = the ship's centre at the
+   VISIBLE water surface (the water texture top sits at y≈344, foam ~350),
+   not the sprite's bottom edge (390) — anchoring at the sprite bottom kept
+   the hull's draft a constant 46px while the ship shrank, sinking it. */
+.camera-rig {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  transform: scale(var(--cam-zoom, 1));
+  /* origin y = the water surface (344): hull bottom maps to 344 + 46·zoom,
+     keeping the draft exactly proportional at every zoom level */
+  transform-origin: 480px 344px;
+}
+
 .sprite-container {
   position: fixed;
   inset: 0;
@@ -359,17 +439,6 @@ body {
 .game-gui {
   width: 100%;
   height: 100%;
-}
-
-.water-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  min-height: 538px;
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  transition: height 0.3s ease;
 }
 
 .water {
@@ -538,7 +607,6 @@ body {
   align-items: center;
 }
 
-.cloud-layer,
 .cloud-container {
   position: absolute;
   top: 0;
@@ -629,15 +697,537 @@ body {
   overflow: hidden;
 }
 
-.top-text-border {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 45%;
-  z-index: 11;
+/* Celestial layer (modules/celestial.js): sun/moon/stars above the sky
+   gradients but under the clouds; glitter path above the water but under
+   the ship */
+.celestial-sky-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.celestial-water-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Soft atmospheric band where sea meets sky; one variant per sky phase,
+   crossfaded by celestial.js the same way the sky gradients crossfade */
+.horizon-haze {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Anchored to the horizon (y 344) and scaled with the camera — a fixed
+     96px band blows up into a thick smoked stripe when zoomed out */
+  top: calc(344px - 48px * var(--cam-zoom, 1));
+  height: calc(96px * var(--cam-zoom, 1));
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 6s linear;
+}
+
+.horizon-haze.hz-day {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(205, 225, 235, 0.5) 45%,
+    rgba(205, 225, 235, 0.5) 55%,
+    transparent
+  );
+}
+
+.horizon-haze.hz-ms {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(255, 180, 120, 0.4) 45%,
+    rgba(255, 180, 120, 0.4) 55%,
+    transparent
+  );
+}
+
+.horizon-haze.hz-night {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(8, 14, 24, 0.6) 45%,
+    rgba(8, 14, 24, 0.6) 55%,
+    transparent
+  );
+}
+
+/* ── Voyage track chart (modules/routeMap.js) ──
+   Nested inside .top-bar (not fixed to the viewport) so its position scales
+   with the bar's own height instead of a fixed viewport pixel offset. That
+   bar is just the "top bar.jpg" background image at 100% width — a 1920x34
+   source — so its rendered height scales with viewport width (~23px at the
+   game's 1280px floor, ~34px at 1920).
+   The source has a bright gold trim line filling the bottom ~21% of the
+   image (rows 27-33 of 34); centering on the bar's full height put the
+   icon right on top of it, so it's centered on the plain-wood portion
+   above that trim instead (top:39.5% vs. a plain 50%), sized small enough
+   to leave clear margin on both sides of that zone at every width. */
+#route-globe-btn {
+  position: absolute;
+  left: 12px;
+  top: 39.5%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: clamp(14px, 1.05vw, 21px);
+  height: clamp(14px, 1.05vw, 21px);
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--brass);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+#route-globe-btn svg {
+  width: 100%;
+  height: 100%;
+}
+
+#route-globe-btn:hover {
+  color: #e0b13d;
+}
+
+#route-globe-btn.open {
+  color: #f0c860;
+}
+
+#route-map-panel {
+  position: fixed;
+  top: 44px;
+  left: 12px;
+  z-index: 950;
+  width: 690px;
+  background: var(--parchment-light);
+  border: 1px solid var(--brass-deep);
+  border-radius: 3px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  padding: 8px 10px 6px;
+  overflow: hidden; /* clip the pannable svg to the panel's rounded frame */
+}
+
+#route-map-panel svg {
+  display: block;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+#route-map-panel svg.rm-dragging {
+  cursor: grabbing;
+}
+
+.rm-toolbar {
+  position: absolute;
+  top: 22px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rm-toolbar button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  line-height: 1;
+  font-family: "Julius Sans One", serif;
+  font-size: 12px;
+  background: rgba(36, 23, 8, 0.85);
+  color: var(--brass);
+  border: 1px solid var(--brass-deep);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.rm-toolbar button:hover {
+  background: #38260f;
+  color: #e0b13d;
+}
+
+.rm-toolbar button[data-act="reset"] {
+  font-size: 10px;
+}
+
+.rm-title {
+  font-family: "Julius Sans One", serif;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  color: #6b4a1f;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.rm-sea {
+  fill: rgba(148, 175, 186, 0.22);
+  stroke: rgba(138, 106, 31, 0.55);
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.rm-grat {
+  stroke: rgba(138, 106, 31, 0.15);
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.rm-tick {
+  font-family: "Julius Sans One", serif;
+  font-size: 6px;
+  fill: rgba(107, 74, 31, 0.75);
+  letter-spacing: 0.3px;
+}
+
+.rm-land {
+  fill: #cdb787;
+  stroke: none;
+}
+
+.rm-coast {
+  fill: none;
+  stroke: rgba(107, 74, 31, 0.6);
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.rm-rose {
+  fill: none;
+  stroke: rgba(107, 74, 31, 0.4);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.rm-route {
+  fill: none;
+  stroke: rgba(138, 106, 31, 0.55);
+  stroke-width: 1;
+  stroke-dasharray: 3 2.2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.rm-progress {
+  fill: none;
+  stroke: #6b3a24;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.rm-wpt {
+  fill: rgba(107, 74, 31, 0.5);
+}
+
+.rm-port {
+  fill: #33220c;
+}
+
+.rm-port-leader {
+  stroke: rgba(74, 52, 19, 0.65);
+  stroke-width: 0.65px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.rm-label {
+  font-family: "Julius Sans One", serif;
+  font-size: 8px;
+  fill: #2e2008;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  paint-order: stroke;
+  stroke: var(--parchment-light);
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+}
+
+.rm-ship {
+  fill: #c33a2c;
+}
+
+.rm-ship-ring {
+  fill: none;
+  stroke: rgba(195, 58, 44, 0.45);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ── North Atlantic admin test scenario (modules/devScenario.js) ── */
+/* Open ocean only: hide every coastal/port sprite so nothing interrupts */
+body.dev-north-atlantic .location.dock,
+body.dev-north-atlantic .southampton-city,
+body.dev-north-atlantic .isle-of-wight,
+body.dev-north-atlantic .land-middle,
+body.dev-north-atlantic .land-end,
+body.dev-north-atlantic .yacht-1-container,
+body.dev-north-atlantic .yacht-2-container,
+body.dev-north-atlantic .yacht-3-container,
+body.dev-north-atlantic .cherbourg-night {
+  display: none !important;
+}
+
+body.dev-north-atlantic .waves {
+  opacity: 1 !important;
+}
+
+body.dev-north-atlantic .bird-container {
+  display: none !important;
+}
+
+#dev-na-panel {
+  position: fixed;
+  top: 58px;
+  left: 10px;
+  z-index: 900;
+  width: 210px;
+  background: rgba(31, 21, 12, 0.92);
+  border: 1px solid var(--brass);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: "Julius Sans One", serif;
+}
+
+.dev-na-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.dev-na-title {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #ead9a8;
+}
+
+#dev-na-off,
+#dev-na-lapse {
+  font-family: inherit;
+  font-size: 10px;
+  background: #241708;
+  color: #e6c877;
+  border: 1px solid var(--brass);
+  border-radius: 3px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+#dev-na-off:hover,
+#dev-na-lapse:hover {
+  background: #38260f;
+}
+
+#dev-na-hide {
+  font-family: inherit;
+  font-size: 10px;
+  background: transparent;
+  color: #b39b6d;
+  border: 1px solid rgba(192, 147, 43, 0.5);
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+  margin-right: 4px;
+}
+
+#dev-na-hide:hover {
+  color: #ead9a8;
+}
+
+/* Tiny gear chip shown while the panel is hidden */
+#dev-na-show {
+  position: fixed;
+  top: 58px;
+  left: 10px;
+  z-index: 900;
+  width: 26px;
+  height: 26px;
+  background: rgba(31, 21, 12, 0.85);
+  color: #c0932b;
+  border: 1px solid var(--brass);
+  border-radius: 50%;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+#dev-na-show:hover {
+  opacity: 1;
+}
+
+/* During timelapse the sky gradient, haze and ship lighting are recomputed
+   every animation frame, so the slow crossfade transitions are pure lag —
+   kill them so the scene tracks the accelerated clock instead of smearing. */
+body.dev-timelapse .sky,
+body.dev-timelapse .britannic,
+body.dev-timelapse .horizon-haze,
+body.dev-timelapse .clouds {
+  transition-duration: 0s !important;
+}
+
+#dev-na-hour {
+  width: 100%;
+  accent-color: var(--brass);
+  cursor: pointer;
+}
+
+.dev-na-readout {
+  font-size: 11px;
+  text-align: center;
+  margin-top: 4px;
+  color: #f2dca2;
+  letter-spacing: 0.5px;
+}
+
+.dev-na-sec {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: #b39b6d;
+  border-top: 1px solid rgba(192, 147, 43, 0.35);
+  margin-top: 8px;
+  padding-top: 6px;
+  margin-bottom: 4px;
+}
+
+#dev-na-wx {
+  width: 100%;
+  font-family: inherit;
+  font-size: 11px;
+  background: #241708;
+  color: #e6c877;
+  border: 1px solid var(--brass);
+  border-radius: 3px;
+  padding: 3px 4px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.dev-na-srow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  color: #ead9a8;
+}
+
+.dev-na-srow > span:first-child {
+  width: 34px;
+  flex-shrink: 0;
+}
+
+.dev-na-srow input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--brass);
+  cursor: pointer;
+}
+
+.dev-na-srow input[type="range"]:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.dev-na-val {
+  width: 36px;
+  flex-shrink: 0;
+  text-align: right;
+  color: #f2dca2;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Squall lightning: double-stroke flash over the whole scene */
+.weather-lightning {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: radial-gradient(
+    ellipse at 50% 20%,
+    rgba(240, 245, 255, 0.95),
+    rgba(210, 220, 240, 0.55) 55%,
+    rgba(180, 195, 225, 0.3)
+  );
+  opacity: 0;
+  pointer-events: none;
+}
+
+.weather-lightning.flash {
+  animation: sceneLightning 0.7s ease-out;
+}
+
+@keyframes sceneLightning {
+  0% {
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.55;
+  }
+  18% {
+    opacity: 0.08;
+  }
+  30% {
+    opacity: 0.7;
+  }
+  55% {
+    opacity: 0.12;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Scene weather overlays (driven by modules/weatherEffects.js) */
+.weather-cloud-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  background: #39404a;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 12s linear;
+}
+
+.weather-fog-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  background: linear-gradient(
+    to top,
+    rgba(213, 219, 221, 0.95) 0%,
+    rgba(213, 219, 221, 0.75) 35%,
+    rgba(213, 219, 221, 0.4) 65%,
+    rgba(213, 219, 221, 0.15) 100%
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 18s linear;
+}
+
+.weather-rain-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 9;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 3.5s linear;
 }
 
 .info-bar {
@@ -645,30 +1235,25 @@ body {
   top: 40%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: calc(960px * var(--scale));
-  color: #000000; /* Changed from black to white for better contrast */
-  font-size: calc(14px * var(--scale));
+  width: clamp(480px, 50vw, 960px);
+  color: var(--ink);
+  font-size: clamp(7px, 0.73vw, 14px);
   z-index: 12;
   display: flex;
   justify-content: space-around;
-  line-height: calc(5px * var(--scale));
-  background-color: rgba(255, 255, 255, 1); /* Semi-transparent background */
-  backdrop-filter: blur(3px); /* Subtle blur effect */
-  border: calc(1px * var(--scale)) solid #c0932b; /* Gold border matching the theme */
-  border-radius: calc(5px * var(--scale)); /* Rounded corners */
-  padding: calc(8px * var(--scale)) calc(15px * var(--scale)); /* Added padding */
-  box-shadow: 0 calc(2px * var(--scale)) calc(5px * var(--scale))
-    rgba(0, 0, 0, 0.3); /* Subtle shadow */
+  line-height: clamp(3px, 0.26vw, 5px);
+  background-color: #f1e6c6;
+  border: 1px solid var(--brass-deep);
+  border-radius: clamp(3px, 0.26vw, 5px);
+  padding: clamp(4px, 0.42vw, 8px) clamp(8px, 0.78vw, 15px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   font-family: "Julius Sans One", serif;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  letter-spacing: calc(
-    0.5px * var(--scale)
-  ); /* Slightly increased letter spacing */
+  letter-spacing: 0.5px;
 }
 
 .info-bar span {
   position: relative;
-  padding: 0 calc(10px * var(--scale));
+  padding: 0 clamp(5px, 0.52vw, 10px);
   transition: transform 0.2s ease;
   white-space: nowrap;
   flex: 1;
@@ -681,33 +1266,27 @@ body {
   right: 0;
   top: 15%;
   height: 70%;
-  width: calc(1px * var(--scale));
-  background: rgba(192, 147, 43, 0.5); /* Gold divider with transparency */
+  width: 1px;
+  background: rgba(138, 106, 31, 0.5);
 }
 
-/* Narrative Panel - Curved Design */
+/* Narrative Panel - parchment notice board */
 .narrative-panel {
   position: fixed;
-  top: calc(30px * var(--scale)); /* Position below the info bar */
-  right: calc(0px * var(--scale));
-  width: calc(350px * var(--scale));
-  height: calc(140px * var(--scale)); /* Increased height for better text fit */
-  background: rgba(30, 30, 30, 0.25); /* Transparent dark background */
+  top: clamp(15px, 1.56vw, 30px); /* Position below the info bar */
+  right: 0px;
+  width: clamp(175px, 18.23vw, 350px);
+  height: clamp(70px, 7.29vw, 140px); /* Increased height for better text fit */
+  background-color: #f3e8c9;
   /* Custom border radius - rectangular with curved bottom-left corner */
-  border-radius: calc(8px * var(--scale)) calc(8px * var(--scale))
-    calc(8px * var(--scale)) calc(40px * var(--scale));
-  border: calc(2px * var(--scale)) solid #fff;
-  padding: calc(15px * var(--scale)) calc(20px * var(--scale));
+  border-radius: clamp(4px, 0.42vw, 8px) clamp(4px, 0.42vw, 8px)
+    clamp(4px, 0.42vw, 8px) clamp(20px, 2.08vw, 40px);
+  border: 1px solid #a8813c;
+  padding: clamp(8px, 0.78vw, 15px) clamp(10px, 1.04vw, 20px);
   z-index: 11;
-  box-shadow:
-    0 calc(8px * var(--scale)) calc(25px * var(--scale)) rgba(0, 0, 0, 0.4),
-    inset 0 calc(2px * var(--scale)) calc(4px * var(--scale))
-      rgba(255, 255, 255, 0.1),
-    inset 0 calc(-2px * var(--scale)) calc(4px * var(--scale))
-      rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px clamp(6px, 0.63vw, 12px) rgba(0, 0, 0, 0.35);
   font-family: "Julius Sans One", serif;
-  color: #f5f5dc; /* Beige text */
-  backdrop-filter: blur(3px);
+  color: var(--ink);
 }
 
 .narrative-content {
@@ -715,16 +1294,18 @@ body {
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: calc(10px * var(--scale));
+  gap: clamp(5px, 0.52vw, 10px);
 }
 
 #story-text {
-  font-size: calc(
-    14px * var(--scale)
+  font-size: clamp(
+    7px,
+    0.73vw,
+    14px
   ); /* Slightly larger font for better readability */
   line-height: 1.4; /* Better line spacing for readability */
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-  margin-bottom: calc(5px * var(--scale)); /* Less margin in oval */
+  color: #8f1d12; /* Ship's-notice red ink */
+  margin-bottom: clamp(3px, 0.26vw, 5px); /* Less margin in oval */
   flex: 1; /* Take available space */
   display: flex;
   align-items: center;
@@ -733,15 +1314,14 @@ body {
 }
 
 .weather-info {
-  border-top: calc(1px * var(--scale)) solid rgba(192, 147, 43, 0.3); /* Lighter divider for oval */
-  padding-top: calc(5px * var(--scale)); /* Less padding in oval */
+  border-top: 1px solid rgba(138, 106, 31, 0.4);
+  padding-top: clamp(3px, 0.26vw, 5px); /* Less padding in oval */
   text-align: center; /* Center weather text */
 }
 
 #current-weather {
-  font-size: calc(11px * var(--scale)); /* Smaller for oval shape */
-  color: #ddd;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  font-size: clamp(6px, 0.57vw, 11px); /* Smaller for oval shape */
+  color: #6b4a1f;
   font-style: italic;
   transition: opacity 0.3s ease-in-out;
 }
@@ -773,10 +1353,14 @@ body {
 
 .sky {
   width: 100%;
-  height: 40%; /* Extend height so gradient can shift upward */
+  height: 40%; /* 432px of the 1080 scene — bottom lands at 384, safely
+                  below the water's top edge (344) so sky always meets sea */
   position: absolute;
   left: 0;
-  top: -5vh; /* Raise gradient layer slightly above the scene */
+  /* Scene units, NOT vh: a viewport unit inside the scaled scene made the
+     sky slide upward as the CSS viewport grew (browser zoom-out), opening
+     a black gap between sky and ocean */
+  top: -48px;
   z-index: 0;
   opacity: 0;
   transition:
@@ -784,15 +1368,15 @@ body {
     background 6s linear;
 }
 
-/* Day sky - clear blue gradient matching reference */
+/* Day sky - naturalistic desaturated azure with a milky horizon */
 .sky.day {
   background: linear-gradient(
     to bottom,
-    #0ea5e9 0%,
-    #38bdf8 30%,
-    #7dd3fc 60%,
-    #bae6fd 85%,
-    #e0f2fe 100%
+    #4285c2 0%,
+    #68a2d4 30%,
+    #93bfe2 60%,
+    #bdd8ec 85%,
+    #e2eef5 100%
   );
   z-index: 0;
 }
@@ -870,60 +1454,51 @@ body {
   z-index: 0;
 }
 
-/* Night sky - deep dark blue gradient */
+/* Night sky - near-black desaturated navy, faintly lighter at the sea */
 .sky.night {
   background: linear-gradient(
     to bottom,
-    #0f1419 0%,
-    #1a2332 30%,
-    #2d3748 60%,
-    #4a5568 85%,
-    #718096 100%
+    #04070e 0%,
+    #080d18 30%,
+    #0d1422 60%,
+    #141c2c 85%,
+    #1e2836 100%
   );
   z-index: 0;
 }
 
 .panel1-buttons {
   position: absolute;
-  bottom: calc(10px * var(--scale));
+  bottom: clamp(5px, 0.52vw, 10px);
   left: 65%;
   transform: translateX(-50%);
   z-index: 12;
-  width: calc(350px * var(--scale));
+  width: clamp(175px, 18.23vw, 350px);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: calc(8px * var(--scale));
-  padding: calc(6px * var(--scale)); /* Reduced from 8px */
-  background: #f6f1e7; /* Solid white-beige background */
-  border-radius: calc(8px * var(--scale));
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.18),
-    0 0 0 2px #c0932b;
-  border: 1.5px solid #c0932b;
-  backdrop-filter: none;
+  gap: clamp(4px, 0.42vw, 8px);
+  padding: clamp(3px, 0.31vw, 6px);
+  /* Dark wood tray so the buttons sit in the bottom bar like inlaid panels */
+  background-color: rgba(38, 25, 12, 0.9);
+  border-radius: clamp(4px, 0.42vw, 8px);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--brass);
 }
 
 .panel-btn {
   font-family: "Julius Sans One", serif;
-  background: linear-gradient(135deg, #181818 60%, #181818 100%);
-  color: #ffffff;
-  border: 1.5px solid #c0932b;
-  border-radius: calc(7px * var(--scale));
-  padding: calc(6px * var(--scale)) 0; /* Reduced from 11px */
+  background-color: #241708;
+  color: #e6c877;
+  border: 1px solid var(--brass);
+  border-radius: clamp(3px, 0.26vw, 5px);
+  padding: clamp(3px, 0.31vw, 6px) 0;
   cursor: pointer;
-  transition:
-    background 0.25s,
-    color 0.25s,
-    transform 0.18s,
-    box-shadow 0.25s;
-  font-size: calc(13px * var(--scale));
+  transition: background-color 0.15s;
+  font-size: clamp(7px, 0.68vw, 13px);
   font-weight: 700;
-  letter-spacing: 1px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  text-shadow:
-    0 1px 2px #000,
-    0 0 6px #c0932b44;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 1px #000;
   outline: none;
   display: flex;
   align-items: center;
@@ -938,18 +1513,19 @@ body {
   transform: translateX(-50%);
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  grid-gap: calc(8px * var(--scale));
-  width: calc(525px * var(--scale)); /* Made wider */
+  grid-gap: clamp(4px, 0.42vw, 8px);
+  width: clamp(263px, 27.34vw, 525px); /* Made wider */
   z-index: 12;
 }
 
 .panel2-buttons .panel-btn {
-  background: linear-gradient(135deg, #181818 60%, #181818 100%);
-  color: #ffffff;
-  border: 1.5px solid #c0932b;
+  background-color: #2c1d0c;
+  color: #ead9a8;
+  border: 1px solid var(--brass);
+  border-bottom: none;
   text-align: center;
-  border-radius: calc(7px * var(--scale)) calc(7px * var(--scale)) 0 0; /* Rounded only at the top */
-  padding: calc(10px * var(--scale)) 0; /* More vertical padding */
+  border-radius: clamp(4px, 0.36vw, 7px) clamp(4px, 0.36vw, 7px) 0 0; /* Rounded only at the top */
+  padding: clamp(5px, 0.52vw, 10px) 0; /* More vertical padding */
   transition:
     padding-top 0.2s ease,
     background-color 0.2s ease; /* Added padding-top to transition */
@@ -958,10 +1534,12 @@ body {
 
 /* Modified hover selector to ensure only hovered button changes */
 .panel2-buttons .panel-btn:hover {
-  padding-top: calc(
-    16px * var(--scale)
+  padding-top: clamp(
+    8px,
+    0.83vw,
+    16px
   ); /* Add more padding at top instead of stretching */
-  background-color: #333; /* Slightly lighter on hover */
+  background-color: #3a2812;
 }
 
 .settings-popup {
@@ -971,25 +1549,26 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   /* Use solid background so chat panel does not show the game underneath */
-  background-color: #1a1a1a; /* previously rgba(26,26,26,0.95) */
-  border: calc(2px * var(--scale)) solid #c0932b;
-  padding: calc(20px * var(--scale));
+  background-color: #1f150c;
+  border: 2px solid var(--brass);
+  padding: clamp(10px, 1.04vw, 20px);
   z-index: 1000;
-  width: calc(400px * var(--scale));
-  border-radius: calc(5px * var(--scale));
+  width: clamp(200px, 20.83vw, 400px);
+  border-radius: clamp(3px, 0.26vw, 5px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
 
 .settings-content {
   position: relative;
   color: #fff;
-  font-size: calc(16px * var(--scale));
+  font-size: clamp(8px, 0.83vw, 16px);
 }
 
 .close-settings {
   position: absolute;
-  right: calc(10px * var(--scale));
-  top: calc(5px * var(--scale));
-  font-size: calc(24px * var(--scale));
+  right: clamp(5px, 0.52vw, 10px);
+  top: clamp(3px, 0.26vw, 5px);
+  font-size: clamp(12px, 1.25vw, 24px);
   cursor: pointer;
   color: #c0932b;
 }
@@ -997,34 +1576,40 @@ body {
 .music-controls {
   display: flex;
   flex-direction: column;
-  gap: calc(15px * var(--scale));
-  margin-top: calc(20px * var(--scale));
+  gap: clamp(8px, 0.78vw, 15px);
+  margin-top: clamp(10px, 1.04vw, 20px);
 }
 
 .now-playing {
   text-align: center;
-  font-size: calc(14px * var(--scale));
-  margin-bottom: calc(10px * var(--scale));
+  font-size: clamp(7px, 0.73vw, 14px);
+  margin-bottom: clamp(5px, 0.52vw, 10px);
 }
 
 .audio-controls {
   display: flex;
   justify-content: center;
-  gap: calc(15px * var(--scale));
+  gap: clamp(8px, 0.78vw, 15px);
 }
 
 .control-btn {
   background-color: #333;
   color: #fff;
-  border: calc(1px * var(--scale)) solid #c0932b;
+  border: 1px solid #c0932b;
   border-radius: 50%;
-  width: calc(40px * var(--scale));
-  height: calc(40px * var(--scale));
+  width: clamp(20px, 2.08vw, 40px);
+  height: clamp(20px, 2.08vw, 40px);
   cursor: pointer;
   transition:
     background-color 0.3s,
     transform 0.3s;
-  font-size: calc(18px * var(--scale));
+  font-size: clamp(9px, 0.94vw, 18px);
+  padding: 0;
+}
+
+.control-btn .material-icons {
+  font-size: 1.25em;
+  vertical-align: middle;
 }
 
 .control-btn:hover {
@@ -1036,31 +1621,50 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
+  gap: 6px;
 }
 
-#volume-slider {
+.slider-label {
+  font-size: clamp(5px, 0.52vw, 10px);
+  color: #ccc;
+  white-space: nowrap;
+  min-width: clamp(26px, 2.71vw, 52px);
+  text-align: right;
+}
+
+.slider-label .material-icons {
+  font-size: 1.4em;
+  vertical-align: middle;
+}
+
+#volume-slider,
+#sfx-slider {
   width: 80%;
-  height: calc(5px * var(--scale));
+  height: clamp(3px, 0.26vw, 5px);
   appearance: none;
   -webkit-appearance: none;
   background: #333;
-  border-radius: calc(5px * var(--scale));
+  border-radius: clamp(3px, 0.26vw, 5px);
   outline: none;
 }
 
-#volume-slider::-webkit-slider-thumb {
+#volume-slider::-webkit-slider-thumb,
+#sfx-slider::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: calc(15px * var(--scale));
-  height: calc(15px * var(--scale));
+  width: clamp(8px, 0.78vw, 15px);
+  height: clamp(8px, 0.78vw, 15px);
   background: #c0932b;
   border-radius: 50%;
   cursor: pointer;
 }
 
 .panel-btn:hover {
-  background-color: #555;
-  transform: scale(1.05);
+  background-color: #38260f;
+}
+
+.panel-btn:active {
+  background-color: #1a1005;
 }
 
 /* ── Player Info Card ── */
@@ -1069,40 +1673,38 @@ body {
   left: clamp(18px, 1.8vw, 32px);
   top: 50%;
   transform: translateY(-50%);
-  height: calc(var(--bottom-bar-height) - 10px * var(--scale));
+  height: calc(var(--bottom-bar-height) - clamp(5px, 0.52vw, 10px));
   display: flex;
   align-items: center;
   z-index: 12;
   pointer-events: auto;
-  width: clamp(290px, calc(345px * var(--scale)), 390px);
+  width: clamp(290px, 17.97vw, 390px);
 }
 
 .character-card {
   display: grid;
-  grid-template-columns: calc(88px * var(--scale)) minmax(0, 1fr);
+  grid-template-columns: clamp(44px, 4.58vw, 88px) minmax(0, 1fr);
   grid-template-areas:
     "avatar info"
     "avatar money";
-  column-gap: calc(14px * var(--scale));
-  row-gap: calc(7px * var(--scale));
+  column-gap: clamp(7px, 0.73vw, 14px);
+  row-gap: clamp(4px, 0.36vw, 7px);
   align-items: center;
   width: 100%;
-  max-width: calc(345px * var(--scale));
+  max-width: clamp(173px, 17.97vw, 345px);
 }
 
 .avatar-frame {
   grid-area: avatar;
-  width: calc(78px * var(--scale));
-  height: calc(78px * var(--scale));
-  border: calc(2px * var(--scale)) solid rgba(235, 214, 164, 0.9);
-  border-radius: calc(3px * var(--scale));
+  width: clamp(39px, 4.06vw, 78px);
+  height: clamp(39px, 4.06vw, 78px);
+  border: 2px solid var(--brass);
+  border-radius: clamp(2px, 0.16vw, 3px);
   background: linear-gradient(to bottom, #f0f0f0, #d8d8d8);
   overflow: hidden;
   flex-shrink: 0;
   align-self: center;
-  box-shadow:
-    inset 0 0 0 calc(1px * var(--scale)) rgba(0, 0, 0, 0.2),
-    0 calc(1px * var(--scale)) calc(3px * var(--scale)) rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px clamp(2px, 0.16vw, 3px) rgba(0, 0, 0, 0.4);
 }
 
 #character-avatar {
@@ -1115,7 +1717,7 @@ body {
   grid-area: info;
   display: flex;
   flex-direction: column;
-  gap: calc(2px * var(--scale));
+  gap: 2px;
   align-self: end;
   min-width: 0;
 }
@@ -1123,7 +1725,7 @@ body {
 #character-name {
   font-family: "Julius Sans One", serif;
   color: #efc56b;
-  font-size: calc(14px * var(--scale));
+  font-size: clamp(7px, 0.73vw, 14px);
   line-height: 1.12;
   letter-spacing: 0.35px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.72);
@@ -1139,7 +1741,7 @@ body {
 #character-class {
   font-family: "Julius Sans One", serif;
   color: #f5ecd4;
-  font-size: calc(11px * var(--scale));
+  font-size: clamp(6px, 0.57vw, 11px);
   line-height: 1.15;
   letter-spacing: 0.35px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
@@ -1149,12 +1751,12 @@ body {
 .character-cabin-row {
   font-family: "Julius Sans One", serif;
   color: #f5ecd4;
-  font-size: calc(11px * var(--scale));
+  font-size: clamp(6px, 0.57vw, 11px);
   line-height: 1.15;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
   display: flex;
   align-items: center;
-  gap: calc(4px * var(--scale));
+  gap: clamp(2px, 0.21vw, 4px);
   flex-wrap: nowrap;
   min-width: 0;
   text-transform: uppercase;
@@ -1169,7 +1771,7 @@ body {
 #character-cabin {
   font-family: "Julius Sans One", serif;
   color: #c33a2c;
-  font-size: calc(11px * var(--scale));
+  font-size: clamp(6px, 0.57vw, 11px);
   font-weight: bold;
   cursor: pointer;
   text-decoration: none;
@@ -1187,7 +1789,7 @@ body {
 /* Money display */
 .character-card-money {
   grid-area: money;
-  width: min(100%, calc(170px * var(--scale)));
+  width: min(100%, clamp(85px, 8.85vw, 170px));
   justify-self: start;
   align-self: start;
 }
@@ -1196,16 +1798,14 @@ body {
   display: block;
   font-family: "Julius Sans One", serif;
   color: #1e150d;
-  font-size: calc(13px * var(--scale));
+  font-size: clamp(7px, 0.68vw, 13px);
   font-weight: bold;
   text-align: center;
-  background: rgba(241, 229, 209, 0.9);
-  border: calc(1px * var(--scale)) solid rgba(251, 238, 212, 0.95);
-  border-radius: calc(4px * var(--scale));
-  padding: calc(4px * var(--scale)) calc(12px * var(--scale));
-  box-shadow:
-    inset 0 calc(1px * var(--scale)) 0 rgba(255, 255, 255, 0.5),
-    0 calc(1px * var(--scale)) calc(2px * var(--scale)) rgba(0, 0, 0, 0.2);
+  background-color: #ece0bf;
+  border: 1px solid var(--brass-deep);
+  border-radius: clamp(2px, 0.21vw, 4px);
+  padding: clamp(2px, 0.21vw, 4px) clamp(6px, 0.63vw, 12px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   letter-spacing: 0.3px;
 }
 
@@ -1215,25 +1815,27 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  /* Use solid background so chat panel does not show the game underneath */
-  background-color: #1a1a1a; /* previously rgba(26,26,26,0.95) */
-  border: calc(2px * var(--scale)) solid #c0932b;
-  padding: calc(15px * var(--scale));
+  /* Solid white, the same as the deck plans' paper, so the plan sits on the
+     popup without a visible edge (and the chat panel doesn't show through) */
+  background-color: #fff;
+  border: 2px solid var(--brass);
+  padding: clamp(8px, 0.78vw, 15px);
   z-index: 1000;
   width: 85vw;
   height: auto;
   max-width: 1200px;
   max-height: 85vh;
-  border-radius: calc(5px * var(--scale));
+  border-radius: clamp(3px, 0.26vw, 5px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
 
 .close-deckplans {
   position: absolute;
-  top: calc(10px * var(--scale));
-  right: calc(15px * var(--scale));
-  font-size: calc(24px * var(--scale));
+  top: clamp(5px, 0.52vw, 10px);
+  right: clamp(8px, 0.78vw, 15px);
+  font-size: clamp(12px, 1.25vw, 24px);
   cursor: pointer;
-  color: #c0932b;
+  color: var(--brass-deep);
 }
 
 .deckplan-display {
@@ -1243,7 +1845,7 @@ body {
   height: auto;
   overflow: hidden;
   border: 1px solid #c0932b;
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: #fff;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1264,13 +1866,13 @@ body {
   opacity: 0.5;
   cursor: pointer;
   width: 6.5%; /* Size as a percentage of container */
-  height: 42.6%; /* Adjust these based on your needs */
+  height: 42.6%;
   top: 0; /* Will be set via JS */
   left: 0; /* Will be set via JS */
   transition:
     background-color 0.3s ease,
     opacity 0.3s ease;
-  pointer-events: auto; /* Add this line to make markers clickable */
+  pointer-events: auto;
 }
 
 .room-tooltip {
@@ -1288,7 +1890,6 @@ body {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
-/* Specific room marker styles remain unchanged */
 .room-marker.gymnasium {
   width: 9%;
   height: 12%;
@@ -1308,37 +1909,13 @@ body {
 .room-marker.playroom {
   width: 9%; /* Slightly different size to distinguish it */
   height: 13%;
-  background-color: rgba(65, 119, 247, 0.5); /* Corrected syntax */
+  background-color: rgba(65, 119, 247, 0.5);
   border: 2px solid #4177f7; /* Matching border */
   opacity: 0.6;
 }
 
 .room-marker.playroom:hover {
   background-color: rgba(192, 147, 43, 1);
-  opacity: 0.8;
-}
-
-.room-marker.port_officers_promenade_bd {
-  width: 15%; /* Slightly different size to distinguish it */
-  height: 17%;
-  background-color: #ff0000;
-  border: 2px solid #ff0000;
-}
-
-.room-marker.port_officers_promenade_bd:hover {
-  background-color: #cc0000;
-  opacity: 0.8;
-}
-
-.room-marker.starboard_officers_promenade_bd {
-  width: 15%; /* Matches the port officer's promenade */
-  height: 17%;
-  background-color: #ff0000;
-  border: 2px solid #ff0000;
-}
-
-.room-marker.starboard_officers_promenade_bd:hover {
-  background-color: #cc0000;
   opacity: 0.8;
 }
 
@@ -1375,11 +1952,16 @@ body {
   right: var(--location-panel-width);
   width: auto;
   height: var(--hud-panel-height);
-  background-color: #1a1a1a;
-  border: calc(2px * var(--scale)) solid #c0932b;
-  z-index: 11; /* Place above bottom bar */
+  /* Tan wallpaper: tone-on-tone diamond trellis with rosettes, faint
+     paper grain underneath */
+  background-color: #ddcfae;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Cdefs%3E%3Cg id='r' fill='%23967a48' fill-opacity='0.12'%3E%3Ccircle cy='-3.5' r='1.8'/%3E%3Ccircle cy='3.5' r='1.8'/%3E%3Ccircle cx='-3.5' r='1.8'/%3E%3Ccircle cx='3.5' r='1.8'/%3E%3Ccircle r='1.4'/%3E%3C/g%3E%3C/defs%3E%3Cpath d='M32 0 64 32 32 64 0 32Z' fill='none' stroke='%23967a48' stroke-opacity='0.1'/%3E%3Cuse href='%23r' x='32' y='32'/%3E%3Cuse href='%23r'/%3E%3Cuse href='%23r' x='64'/%3E%3Cuse href='%23r' y='64'/%3E%3Cuse href='%23r' x='64' y='64'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.23 0 0 0 0 0.18 0 0 0 0 0.08 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23p)'/%3E%3C/svg%3E");
+  border: 2px solid var(--brass);
+  z-index: 9; /* Keep below bottom bar */
   overflow: hidden;
-  padding: calc(10px * var(--scale));
+  padding: clamp(5px, 0.52vw, 10px);
 }
 
 .location-display {
@@ -1390,8 +1972,8 @@ body {
   width: var(--location-panel-width);
   height: var(--hud-panel-height);
   background-color: rgba(26, 26, 26, 0.95);
-  border: calc(2px * var(--scale)) solid #c0932b;
-  z-index: 11; /* Place above bottom bar */
+  border: 2px solid var(--brass);
+  z-index: 9; /* Keep below bottom bar */
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -1404,11 +1986,11 @@ body {
   top: 8px;
   left: 12px;
   font-family: "Nothing Anymore", serif;
-  font-size: calc(29px * var(--scale));
-  color: #ffffff;
+  font-size: clamp(15px, 1.51vw, 29px);
+  color: #f3d488;
   text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.9),
-    0 0 12px rgba(0, 0, 0, 0.6);
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(0, 0, 0, 0.6);
   pointer-events: auto;
   user-select: text;
   -webkit-user-select: text;
@@ -1433,39 +2015,109 @@ body {
 
 .chat-messages {
   height: calc(
-    100% - (50px * var(--scale))
+    100% - clamp(25px, 2.6vw, 50px)
   ); /* Adjusted for scaled input area */
   overflow-y: auto;
-  padding: calc(10px * var(--scale)); /* Scaled padding */
-  font-size: calc(16px * var(--scale)); /* Scaled font size */
+  padding: clamp(5px, 0.52vw, 10px); /* Scaled padding */
+  font-size: clamp(8px, 0.83vw, 16px); /* Scaled font size */
   scroll-behavior: smooth;
   display: flex;
   flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--brass) rgba(83, 108, 76, 0.15);
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: rgba(83, 108, 76, 0.15);
+  border-radius: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: var(--brass);
+  border-radius: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: var(--brass-light);
 }
 
 .chat-input-container {
   display: flex;
-  padding: 10px;
-  gap: 5px;
+  padding: clamp(5px, 0.52vw, 10px);
+  gap: clamp(4px, 0.42vw, 8px);
 }
 
 #chat-input {
   flex-grow: 1;
-  padding: calc(5px * var(--scale)); /* Scaled padding */
-  border: calc(1px * var(--scale)) solid #c0932b; /* Scaled border */
-  /* Make input background solid for legibility */
-  background-color: #222; /* previously translucent white */
-  color: #fff;
-  font-size: calc(15px * var(--scale)); /* Scaled font size */
+  padding: clamp(3px, 0.31vw, 6px) clamp(6px, 0.63vw, 12px);
+  border: 1px solid #9b8a5a;
+  border-radius: 3px;
+  /* Parchment input on the tan wallpaper */
+  background-color: #f9f5e6;
+  color: var(--ink);
+  font-family: Georgia, serif;
+  font-size: clamp(8px, 0.78vw, 15px); /* Scaled font size */
+  outline: none;
+}
+
+#chat-input::placeholder {
+  color: #8c8368;
+  font-style: italic;
+}
+
+#chat-input:focus {
+  border-color: var(--brass-deep);
 }
 
 #send-message {
-  background-color: #c0932b;
-  color: #fff;
-  border: none;
-  padding: calc(5px * var(--scale)) calc(10px * var(--scale)); /* Scaled padding */
+  font-family: "Julius Sans One", serif;
+  background-color: var(--brass);
+  color: #241708;
+  border: 1px solid var(--brass-deep);
+  border-radius: 3px;
+  padding: clamp(3px, 0.26vw, 5px) clamp(8px, 0.83vw, 16px);
   cursor: pointer;
-  font-size: calc(14px * var(--scale)); /* Scaled font size */
+  font-size: clamp(7px, 0.73vw, 14px); /* Scaled font size */
+  font-weight: 700;
+}
+
+#send-message:hover {
+  background-color: #ad841f;
+}
+
+#send-message:active {
+  background-color: #8a6a1f;
+}
+
+/* Global chat toggle chip (top-right of chat panel) */
+#global-chat-toggle {
+  position: absolute;
+  top: clamp(5px, 0.52vw, 10px);
+  right: clamp(5px, 0.52vw, 10px);
+  z-index: 10;
+  width: clamp(22px, 1.77vw, 34px);
+  height: clamp(22px, 1.77vw, 34px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(12px, 1.04vw, 20px);
+  background: rgba(249, 245, 230, 0.85);
+  border: 1px solid #9b8a5a;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+#global-chat-toggle:hover {
+  background: #fffdf3;
+}
+
+#global-chat-toggle .material-icons {
+  font-size: 1em;
+  color: #5b4a2b;
 }
 
 /* Chat Message Styling */
@@ -1473,6 +2125,7 @@ body {
   font-family: Georgia, serif;
   font-size: 1rem; /* Scales with root font size */
   margin-bottom: 5px;
+  line-height: 1.35;
   overflow-wrap: break-word;
 }
 
@@ -1481,7 +2134,8 @@ body {
 }
 
 .chat-message.system {
-  color: #ffcc00; /* System messages retain their color */
+  color: #7a5c12; /* Dark gold ink, readable on the tan wallpaper */
+  font-style: italic;
 }
 
 .deckplans-content {
@@ -1489,6 +2143,11 @@ body {
   height: auto;
   display: flex;
   flex-direction: column;
+}
+
+/* Dark lettering on the white popup */
+.deckplans-content h2 {
+  color: var(--ink);
 }
 
 .deck-buttons {
@@ -1565,34 +2224,30 @@ body {
   pointer-events: none;
 }
 
-@keyframes fadeOutUp {
+@keyframes slideOutDown {
   from {
-    opacity: 1;
     transform: translateY(0);
   }
   to {
-    opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(100%);
   }
 }
 
-@keyframes fadeInDown {
+@keyframes slideInUp {
   from {
-    opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(100%);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
 
-.fade-out {
-  animation: fadeOutUp 0.5s forwards;
+.slide-out {
+  animation: slideOutDown 0.8s ease-in-out forwards;
 }
 
-.fade-in {
-  animation: fadeInDown 0.5s forwards;
+.slide-in {
+  animation: slideInUp 0.8s ease-in-out forwards;
 }
 
 .chat-color-selector {
@@ -1618,13 +2273,13 @@ body {
 
 .status-bars {
   position: absolute;
-  bottom: calc(50px * var(--scale));
+  bottom: clamp(25px, 2.6vw, 50px);
   left: 20%; /* Roughly 670px / 1920px */
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: calc(10px * var(--scale));
-  width: calc(300px * var(--scale));
+  gap: clamp(5px, 0.52vw, 10px);
+  width: clamp(150px, 15.63vw, 300px);
   z-index: 12;
 }
 
@@ -1635,18 +2290,18 @@ body {
 }
 
 .status-bar label {
-  color: #fff;
-  font-size: calc(12px * var(--scale));
-  margin-bottom: calc(4px * var(--scale));
+  color: #f2dca2;
+  font-size: clamp(6px, 0.63vw, 12px);
+  margin-bottom: clamp(2px, 0.21vw, 4px);
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
 }
 
 .bar-container {
-  width: calc(185px * var(--scale));
-  height: calc(8px * var(--scale));
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid #c0932b;
-  border-radius: calc(4px * var(--scale));
+  width: clamp(93px, 9.64vw, 185px);
+  height: clamp(5px, 0.52vw, 10px);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--brass);
+  border-radius: clamp(2px, 0.21vw, 4px);
   overflow: hidden;
 }
 
@@ -1721,56 +2376,51 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   background-color: rgba(26, 26, 26, 0.95);
-  border: calc(2px * var(--scale)) solid #c0932b;
-  padding: calc(20px * var(--scale));
+  border: 2px solid #c0932b;
+  padding: clamp(10px, 1.04vw, 20px);
   z-index: 1000;
-  width: calc(400px * var(--scale));
-  border-radius: calc(5px * var(--scale));
+  width: clamp(200px, 20.83vw, 400px);
+  border-radius: clamp(3px, 0.26vw, 5px);
 }
 
 .profile-content {
   position: relative;
   color: #fff;
-  font-size: calc(16px * var(--scale));
+  font-size: clamp(8px, 0.83vw, 16px);
 }
 
 .close-profile {
   position: absolute;
-  right: calc(10px * var(--scale));
-  top: calc(5px * var(--scale));
-  font-size: calc(24px * var(--scale));
+  right: clamp(5px, 0.52vw, 10px);
+  top: clamp(3px, 0.26vw, 5px);
+  font-size: clamp(12px, 1.25vw, 24px);
   cursor: pointer;
   color: #c0932b;
 }
 
 .profile-avatar img {
-  width: calc(100px * var(--scale));
-  height: calc(100px * var(--scale));
-  /* Removed border-radius: 50% to make it square */
+  width: clamp(50px, 5.21vw, 100px);
+  height: clamp(50px, 5.21vw, 100px);
   object-fit: cover;
-  border: calc(2px * var(--scale)) solid #c0932b; /* Optional: adds a border */
+  border: 2px solid #c0932b;
 }
 
 .profile-info {
-  margin-top: calc(10px * var(--scale));
+  margin-top: clamp(5px, 0.52vw, 10px);
 }
 
 .profile-info h2 {
-  margin: 0 0 calc(10px * var(--scale)) 0;
-  font-size: calc(20px * var(--scale));
+  margin: 0 0 clamp(5px, 0.52vw, 10px) 0;
+  font-size: clamp(10px, 1.04vw, 20px);
 }
 
 .profile-info p {
-  margin: calc(5px * var(--scale)) 0;
+  margin: clamp(3px, 0.26vw, 5px) 0;
 }
 
 .profile-info .bio-text {
   font-family: "Times New Roman", Times, serif;
-  font-size: calc(16px * var(--scale));
-}
-
-.deckplan-display {
-  position: relative;
+  font-size: clamp(8px, 0.83vw, 16px);
 }
 
 .deck-svg-overlay {
@@ -1802,20 +2452,34 @@ body {
   stroke-opacity: 0.6; /* Semi-transparent border */
 }
 
-.room-marker.first_class_lounge .image-mapper-shape {
-  fill: #4195f7; /* Brighter blue */
-  fill-opacity: 0.7; /* More visible */
+/* Passenger-class colour coding for deck room overlays. Driven by the
+   `<class>-class` token that renderShipDeckOverlay puts on each marker, so a
+   room's colour follows its class field in deckRooms.js. Keep these hex
+   values in sync with RBV.data.roomClassColors (used by the room editor).
+   first=blue, second=green, third=amber, crew=red. */
+.room-marker.first-class .image-mapper-shape {
+  fill: #4195f7;
   stroke: #4195f7;
-  stroke-width: 2px;
-  stroke-opacity: 0.7;
 }
-
-.room-marker.first_class_lounge:hover .image-mapper-shape {
-  fill: #c0932b; /* Gold fill on hover, matching rgba(192, 147, 43, 1) */
-  fill-opacity: 0.6; /* Maintains semi-transparency */
-  stroke: #4177f7; /* Keeps blue border */
-  stroke-width: 2px; /* Consistent border width */
-  stroke-opacity: 0.6; /* Semi-transparent border */
+.room-marker.second-class .image-mapper-shape {
+  fill: #3fbf6f;
+  stroke: #3fbf6f;
+}
+.room-marker.third-class .image-mapper-shape {
+  fill: #e0a83a;
+  stroke: #e0a83a;
+}
+.room-marker.crew-class .image-mapper-shape {
+  fill: #e0533a;
+  stroke: #e0533a;
+}
+/* Gold hover wins for every class */
+.room-marker.first-class:hover .image-mapper-shape,
+.room-marker.second-class:hover .image-mapper-shape,
+.room-marker.third-class:hover .image-mapper-shape,
+.room-marker.crew-class:hover .image-mapper-shape {
+  fill: #c0932b;
+  stroke: #c0932b;
 }
 
 .room-marker.corridor .image-mapper-shape {
@@ -1834,22 +2498,6 @@ body {
   stroke-opacity: 0.6; /* Semi-transparent border */
 }
 
-.room-marker.reading_writing_room .image-mapper-shape {
-  fill: #4195f7; /* Brighter blue */
-  fill-opacity: 0.7; /* More visible */
-  stroke: #4195f7;
-  stroke-width: 2px;
-  stroke-opacity: 0.7;
-}
-
-.room-marker.reading_writing_room:hover .image-mapper-shape {
-  fill: #c0932b; /* Gold fill on hover, matching rgba(192, 147, 43, 1) */
-  fill-opacity: 0.6; /* Maintains semi-transparency */
-  stroke: #4177f7; /* Keeps blue border */
-  stroke-width: 2px; /* Consistent border width */
-  stroke-opacity: 0.6; /* Semi-transparent border */
-}
-
 .room-marker.dining-room .image-mapper-shape {
   fill: #4195f7; /* Brighter blue */
   fill-opacity: 0.7; /* More visible */
@@ -1859,38 +2507,6 @@ body {
 }
 
 .room-marker.dining-room:hover .image-mapper-shape {
-  fill: #c0932b; /* Gold fill on hover, matching rgba(192, 147, 43, 1) */
-  fill-opacity: 0.6; /* Maintains semi-transparency */
-  stroke: #4177f7; /* Keeps blue border */
-  stroke-width: 2px; /* Consistent border width */
-  stroke-opacity: 0.6; /* Semi-transparent border */
-}
-
-.room-marker.reception-room .image-mapper-shape {
-  fill: #4195f7; /* Brighter blue */
-  fill-opacity: 0.7; /* More visible */
-  stroke: #4195f7;
-  stroke-width: 2px;
-  stroke-opacity: 0.7;
-}
-
-.room-marker.reception-room:hover .image-mapper-shape {
-  fill: #c0932b; /* Gold fill on hover, matching rgba(192, 147, 43, 1) */
-  fill-opacity: 0.6; /* Maintains semi-transparency */
-  stroke: #4177f7; /* Keeps blue border */
-  stroke-width: 2px; /* Consistent border width */
-  stroke-opacity: 0.6; /* Semi-transparent border */
-}
-
-.room-marker.grand_staircase .image-mapper-shape {
-  fill: #4195f7; /* Brighter blue */
-  fill-opacity: 0.7; /* More visible */
-  stroke: #4195f7;
-  stroke-width: 2px;
-  stroke-opacity: 0.7;
-}
-
-.room-marker.grand_staircase:hover .image-mapper-shape {
   fill: #c0932b; /* Gold fill on hover, matching rgba(192, 147, 43, 1) */
   fill-opacity: 0.6; /* Maintains semi-transparency */
   stroke: #4177f7; /* Keeps blue border */
@@ -2042,22 +2658,6 @@ body {
   stroke-opacity: 0.6;
 }
 
-.room-marker.crew-promenade .image-mapper-shape {
-  fill: #ff0000; /* Red for crew area */
-  fill-opacity: 0.7;
-  stroke: #ff0000;
-  stroke-width: 2px;
-  stroke-opacity: 0.7;
-}
-
-.room-marker.crew-promenade:hover .image-mapper-shape {
-  fill: #c0932b; /* Gold on hover */
-  fill-opacity: 0.6;
-  stroke: #ff0000; /* Keep red border */
-  stroke-width: 2px;
-  stroke-opacity: 0.6;
-}
-
 .room-marker.third-class-gangway .image-mapper-shape {
   fill: #ff8c00; /* Orange for 3rd class */
   fill-opacity: 0.7;
@@ -2133,25 +2733,6 @@ body {
   stroke-opacity: 0.6;
 }
 
-/* Ensure all elements use border-box sizing */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html {
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
-}
-
-:root {
-  --scale: 1; /* Default value, will be overridden by JavaScript */
-}
-
-/* ... (Previous unchanged styles remain here) ... */
-
 /* Video Poker — Oval Felt Table */
 .vp-overlay {
   display: none;
@@ -2161,6 +2742,8 @@ html {
   background: rgba(0, 0, 0, 0.6);
   align-items: center;
   justify-content: center;
+  padding: clamp(8px, 1.2vmin, 12px);
+  box-sizing: border-box;
 }
 .vp-overlay[style*="display: block"],
 .vp-overlay[style*="display:block"] {
@@ -2169,14 +2752,17 @@ html {
 
 .vp-table {
   position: relative;
-  width: 96%;
-  height: 94%;
+  width: min(calc(100% - 8px), 430px);
+  height: min(calc(100% - 8px), 355px);
+  max-width: 100%;
+  max-height: 100%;
   border-radius: 28px;
   background: linear-gradient(160deg, #6b3e1e 0%, #4e2c12 30%, #3b2008 100%);
   box-shadow:
     inset 0 0 40px rgba(0, 0, 0, 0.5),
     0 12px 40px rgba(0, 0, 0, 0.6);
-  padding: 10px;
+  padding: clamp(6px, 1vmin, 8px);
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2196,24 +2782,25 @@ html {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 20px;
+  justify-content: flex-start;
+  gap: clamp(3px, 0.6vmin, 6px);
+  padding: clamp(10px, 1.2vmin, 12px);
   position: relative;
-  overflow: hidden;
+  overflow: auto;
+  box-sizing: border-box;
 }
 
 .close-video-poker {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 30px;
-  height: 30px;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: #555;
   color: #fff;
-  font-size: 20px;
-  line-height: 30px;
+  font-size: 16px;
+  line-height: 24px;
   text-align: center;
   cursor: pointer;
   z-index: 10;
@@ -2227,15 +2814,18 @@ html {
 /* Payout Info */
 .vp-payouts {
   display: flex;
-  gap: 16px;
+  gap: clamp(6px, 1vmin, 10px);
+  width: min(100%, 360px);
+  justify-content: center;
+  box-sizing: border-box;
   background: rgba(255, 255, 255, 0.92);
   border: 2px solid #444;
   border-radius: 5px;
-  padding: 4px 12px;
+  padding: clamp(2px, 0.4vmin, 3px) clamp(5px, 0.9vmin, 8px);
   font-family: "Arial", sans-serif;
-  font-size: 10px;
+  font-size: clamp(7px, 1vmin, 9px);
   color: #222;
-  line-height: 1.45;
+  line-height: 1.25;
 }
 .vp-pay-col {
   display: flex;
@@ -2248,20 +2838,22 @@ html {
 /* Status text */
 .vp-status {
   font-family: "Julius Sans One", serif;
-  font-size: 14px;
+  font-size: clamp(9px, 1.3vmin, 12px);
   font-weight: bold;
   color: #1a3d1a;
   text-shadow: 0 1px 2px rgba(255, 255, 255, 0.2);
   text-align: center;
+  width: min(100%, 360px);
 }
 
 .hand-ranking {
-  font-size: 14px;
+  font-size: clamp(9px, 1.3vmin, 12px);
   font-weight: bold;
   color: #ffd700;
   text-align: center;
   text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.6);
-  min-height: 18px;
+  min-height: 14px;
+  width: min(100%, 360px);
 }
 .hand-ranking.win {
   color: #00ff00;
@@ -2283,13 +2875,17 @@ html {
 .vp-cards {
   display: flex;
   justify-content: center;
-  gap: 10px;
+  gap: clamp(3px, 0.8vmin, 6px);
+  width: 100%;
+  max-width: 340px;
+  padding-inline: 2px;
+  box-sizing: border-box;
 }
 
 .vp-card {
-  width: 58px;
-  height: 82px;
-  border-radius: 6px;
+  width: clamp(32px, 3.8vw, 48px);
+  height: clamp(46px, 5.4vw, 68px);
+  border-radius: clamp(4px, 0.8vmin, 8px);
   border: 2px solid #333;
   position: relative;
   cursor: pointer;
@@ -2312,19 +2908,19 @@ html {
   display: none;
   flex-direction: column;
   justify-content: space-between;
-  padding: 6px;
+  padding: clamp(2px, 0.4vmin, 4px);
   width: 100%;
   height: 100%;
   background: linear-gradient(135deg, #fff, #f5f5f5);
 }
 .vp-card-face .rank {
-  font-size: 18px;
+  font-size: clamp(10px, 1.2vmin, 14px);
   font-weight: bold;
   font-family: "Arial", sans-serif;
   align-self: flex-start;
 }
 .vp-card-face .suit {
-  font-size: 18px;
+  font-size: clamp(10px, 1.2vmin, 14px);
   font-weight: bold;
   font-family: "Arial", sans-serif;
   align-self: flex-end;
@@ -2351,7 +2947,7 @@ html {
 .vp-card-back-art::after {
   content: "";
   position: absolute;
-  inset: 8px;
+  inset: 5px;
   border: 1px solid rgba(218, 165, 32, 0.5);
   border-radius: 4px;
 }
@@ -2368,20 +2964,20 @@ html {
 .vp-card.held {
   border-color: #ffd700;
   box-shadow: 0 0 12px rgba(255, 215, 0, 0.5);
-  transform: translateY(-6px);
+  transform: translateY(-4px);
 }
 .vp-card.held::before {
   content: "HOLD";
   position: absolute;
-  bottom: 4px;
+  bottom: clamp(2px, 0.5vmin, 4px);
   left: 50%;
   transform: translateX(-50%);
   background: #ffd700;
   color: #000;
-  font-size: 9px;
+  font-size: 7px;
   font-weight: bold;
   font-family: "Arial", sans-serif;
-  padding: 1px 6px;
+  padding: 1px 4px;
   border-radius: 3px;
   z-index: 5;
 }
@@ -2405,11 +3001,12 @@ html {
 .vp-bet-row {
   display: flex;
   justify-content: center;
+  width: 100%;
 }
 #vp-bet-select {
   font-family: "Arial", sans-serif;
-  font-size: 12px;
-  padding: 3px 16px 3px 8px;
+  font-size: 11px;
+  padding: 2px 12px 2px 6px;
   border-radius: 4px;
   border: 1px solid #555;
   background: #fff;
@@ -2419,15 +3016,17 @@ html {
 /* Buttons */
 .vp-controls {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: center;
+  width: 100%;
+  flex-wrap: wrap;
 }
 .vp-btn {
   font-family: "Julius Sans One", serif;
-  font-size: 13px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  padding: 5px 22px;
+  padding: 3px 12px;
   border: 2px solid #555;
   border-radius: 6px;
   background: linear-gradient(180deg, #e8e8e8, #c8c8c8);
@@ -2447,43 +3046,21 @@ html {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-/* Responsive */
-@media (max-width: 600px) {
+/* Responsive — payouts stack vertically on very small viewports */
+@media (max-width: 480px) {
   .vp-table {
-    width: 96vw;
-    padding: 12px;
+    width: calc(100% - 4px);
+    height: calc(100% - 4px);
   }
-  .vp-felt {
-    padding: 18px 22px;
-    gap: 8px;
-  }
-  .vp-payouts {
-    font-size: 10px;
-    padding: 6px 10px;
-    gap: 14px;
-  }
-  .vp-status {
-    font-size: 14px;
-  }
-  .vp-card {
-    width: 56px;
-    height: 80px;
-  }
-  .vp-cards {
-    gap: 8px;
-  }
-  .vp-card-face .rank,
-  .vp-card-face .suit {
-    font-size: 17px;
-  }
-  .vp-btn {
-    font-size: 14px;
-    padding: 6px 20px;
-  }
-}
 
-#games-toggle-btn {
-  min-width: 100px;
+  .vp-payouts {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .vp-cards {
+    gap: 2px;
+  }
 }
 
 /* Cabin-specific styles */
@@ -2522,66 +3099,166 @@ html {
 
 /* Eat & Drink Button Styling */
 .eat-drink-button {
-  background: linear-gradient(145deg, #d4a574, #b8935a);
-  border: 2px solid #8b6914;
-  border-radius: 8px;
-  color: #4a3c28;
+  background-color: #d1a56f;
+  border: 1px solid #8b6914;
+  border-radius: 4px;
+  color: #3c2c14;
   font-family: "Julius Sans One", serif;
   font-size: 14px;
   font-weight: bold;
-  text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.3);
   padding: 8px 16px;
   cursor: pointer;
-  box-shadow:
-    0 3px 6px rgba(0, 0, 0, 0.3),
-    inset 0 1px 2px rgba(255, 255, 255, 0.4),
-    inset 0 -1px 1px rgba(0, 0, 0, 0.2);
-  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: background-color 0.15s ease;
   min-width: 100px;
   text-align: center;
   position: relative;
-  overflow: hidden;
 }
 
 .eat-drink-button:hover {
-  background: linear-gradient(145deg, #e0b180, #c49f66);
-  transform: translateY(-1px);
-  box-shadow:
-    0 4px 8px rgba(0, 0, 0, 0.4),
-    inset 0 1px 2px rgba(255, 255, 255, 0.5),
-    inset 0 -1px 1px rgba(0, 0, 0, 0.1);
+  background-color: #ddb27c;
 }
 
 .eat-drink-button:active {
-  transform: translateY(1px);
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.3),
-    inset 0 1px 2px rgba(0, 0, 0, 0.2),
-    inset 0 -1px 1px rgba(255, 255, 255, 0.3);
-  background: linear-gradient(145deg, #c49f66, #b8935a);
+  background-color: #c2955c;
 }
 
-.eat-drink-button::before {
-  content: "";
+/* ── Engine order telegraph (modules/telegraph.js) ──
+   Bridge/Wheelhouse-only prop: a brass header bar that drops down a backed
+   panel holding the dial. Dragging the handle swings it to one of the
+   orders on the real J.W. Ray & Co. decal and broadcasts it to the room —
+   it doesn't touch actual ship speed. */
+.telegraph-widget {
+  display: none; /* shown only via RBV.telegraph.show() in bridge/wheelhouse */
   position: absolute;
-  top: 0;
-  left: -100%;
+  top: 10px;
+  right: 10px;
+  z-index: 6;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: auto;
+}
+
+/* Header bar — always visible; click to drop the panel */
+.teleg-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Julius Sans One", serif;
+  font-size: clamp(8px, 0.83vw, 12px);
+  letter-spacing: 0.8px;
+  color: #f2dca2;
+  background: linear-gradient(180deg, #3d2a15, #241708);
+  border: 1px solid var(--brass);
+  border-radius: 5px;
+  padding: 5px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.teleg-header:hover {
+  background: linear-gradient(180deg, #4c3620, #2e1e0c);
+}
+
+.teleg-header-order {
+  color: #ffd76b;
+  font-weight: 700;
+}
+
+.teleg-header-caret {
+  color: var(--brass);
+  font-size: 0.9em;
+}
+
+/* Dropdown panel with a wood-and-brass background */
+.teleg-panel {
+  margin-top: 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(6px, 0.8vw, 12px);
+  /* generous top/side padding so the protruding lever stays on the panel
+     background instead of overflowing into the room view */
+  padding: clamp(46px, 5vw, 58px) clamp(46px, 5vw, 58px)
+    clamp(12px, 1.4vw, 18px);
+  background:
+    radial-gradient(
+      120% 90% at 50% 0%,
+      rgba(90, 62, 30, 0.65),
+      rgba(0, 0, 0, 0) 70%
+    ),
+    linear-gradient(180deg, #35240f, #1c1207);
+  border: 2px solid var(--brass);
+  border-radius: 8px;
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 220, 150, 0.18);
+  /* dropdown reveal */
+  transform-origin: top right;
+  transform: translateY(-8px) scaleY(0.96);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.telegraph-widget.teleg-open .teleg-panel {
+  transform: translateY(0) scaleY(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The round dial: drag surface + positioning context for the handle. Only
+   the face image is round-clipped, so the lever can extend past the rim. */
+.teleg-case {
+  position: relative;
+  width: clamp(118px, 11.5vw, 144px);
+  aspect-ratio: 1 / 1;
+  touch-action: none;
+  cursor: grab;
+}
+
+.teleg-case.teleg-dragging {
+  cursor: grabbing;
+}
+
+.teleg-face-img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.4),
-    transparent
-  );
-  transition: left 0.6s ease;
+  object-fit: cover;
+  border-radius: 50%;
+  background: #000;
+  border: 3px solid var(--brass);
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 2px 3px rgba(255, 224, 160, 0.25);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
-.eat-drink-button:hover::before {
-  left: 100%;
+/* The lever, pinned by its pommel at the dial center. width sets its size;
+   transform-origin is the pommel point (matching HANDLE_PIVOT_* in the JS),
+   and the JS-applied translate(...) drops that point onto the center. */
+.teleg-handle-img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 42%;
+  height: auto;
+  transform-origin: 49.1% 94.2%;
+  transform: translate(-49.1%, -94.2%) rotate(0deg);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
 }
 
-/* Southampton city sprite */
 /* Isle of Wight sprite */
 .isle-of-wight {
   position: absolute;
@@ -2595,6 +3272,7 @@ html {
   transform: translateX(0);
 }
 
+/* Southampton city sprite */
 .southampton-city {
   position: absolute;
   display: block;
@@ -2604,20 +3282,6 @@ html {
   z-index: 1;
   pointer-events: none;
   transition: transform 0.016s linear;
-}
-
-.southampton-city.departing,
-.location.dock.departing {
-  animation: none;
-}
-
-@keyframes departureSlide {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(-100vw);
-  }
 }
 
 /* Eat & Drink Menu - overlays inside location-display */
@@ -2863,6 +3527,11 @@ html {
   color: #e8d5b0;
 }
 
+.edm-stat .material-icons {
+  font-size: 1.3em;
+  vertical-align: middle;
+}
+
 .edm-stat-hunger {
   color: #f5a623;
 }
@@ -2971,7 +3640,7 @@ html {
   width: min(245px, calc(100% - 10px));
   max-height: 30px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(192, 147, 43, 0.75);
   border-radius: 10px 0 0 0;
   background: rgba(0, 0, 0, 0.88);
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
