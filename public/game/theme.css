@@ -28,19 +28,14 @@
   --paper-tex: url("../images/ui/paper.jpg");
   --paper-night: linear-gradient(rgb(189 178 155 / calc(var(--night-ink, 0) * 0.8)), rgb(189 178 155 / calc(var(--night-ink, 0) * 0.8)));
 
-  /* the mahogany: the bars' own boards, also used for the strips and the
-     few wooden buttons */
+  /* the mahogany: the bars' own boards, also used for the strips over the
+     room picture */
   --wood: #43241a;
   --wood-tex: url("../images/ui/wood-top.jpg");
   --on-wood: #ece2cd;
   --on-wood-2: #bfb197;
   --rule-on-wood: rgba(236, 226, 205, 0.24);
-  --red-on-wood: #e8826f;
-  /* a plate let into the bar: the board shows through, a shade darker */
-  --plate: rgba(12, 6, 3, 0.3);
-  --plate-hover: rgba(12, 6, 3, 0.56);
-  --plate-down: rgba(0, 0, 0, 0.84);
-  --plate-edge: inset 0 1px 0 rgba(0, 0, 0, 0.5), inset 0 -1px 0 rgba(255, 236, 214, 0.08);
+  /* hovered and pressed wood: the board a shade or two darker */
   --darken: inset 0 0 0 100vmax rgba(10, 5, 2, 0.42);
   --press: inset 0 0 0 100vmax rgba(0, 0, 0, 0.82);
 
@@ -48,6 +43,25 @@
   --brass: #a3824a;
   --brass-light: #c6a86a;
   --brass-ink: #8a6a2f; /* brass dark enough to read on paper */
+
+  /* Engraved brass plates and green leather tooled in gilt, both flat:
+     the material shows in its colour and grain, never in a sheen */
+  --brass-plate: #b3925a;
+  --brass-plate-hover: #c19f66;
+  --brass-plate-down: #8f7140;
+  --brass-rim: #4a3618;
+  /* a plate's dark rim, with one hairline of light along its top edge */
+  --brass-edge: 0 0 0 1px var(--brass-rim), inset 0 1px 0 rgba(255, 238, 200, 0.45);
+  --engrave: #2a1d0c;
+  --leather: #27412f;
+  --leather-hover: #2f4d39;
+  --leather-down: #1a2c20;
+  --gilt: #d3b06a;
+  --stamp: #b3261e;
+  /* the White Star burgee, printed on the passenger's ticket */
+  --burgee: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 36'%3E%3Cpath d='M0 0H60L44 18L60 36H0Z' fill='%23b0201d'/%3E%3Cpolygon points='22,9 24.12,15.09 30.56,15.22 25.42,19.11 27.29,25.28 22,21.6 16.71,25.28 18.58,19.11 13.44,15.22 19.88,15.09' fill='%23fbf7ee'/%3E%3C/svg%3E");
+  /* a printed card lying over the game */
+  --card-shadow: 0 0 0 1px rgba(33, 26, 19, 0.3), 0 2px 5px rgba(8, 4, 2, 0.3), 0 12px 28px rgba(8, 4, 2, 0.4);
 
   --f-text: "Libre Caslon Text", Georgia, serif;
 
@@ -154,18 +168,14 @@ body,
   background-position: 0 0, 0 0;
 }
 
-/* Wood: what is pressed. The strips over the room picture and the few
-   buttons on paper are cut from the same mahogany as the bars, at the
-   top board's scale */
-.room-name-label,
+/* Wood: the strips over the room picture and the loading screen's Start
+   are cut from the same mahogany as the bars, at the top board's scale */
 #cabin-action-buttons,
 .eat-drink-button,
 #refresh-location-btn,
 .players-drawer:not(.open),
 .teleg-header,
 .gp-icon,
-#send-message,
-.btn-primary,
 .enter-britannic-btn,
 #start-button,
 #dev-na-show {
@@ -180,6 +190,19 @@ body,
 .eat-drink-button,
 .players-drawer:not(.open) {
   background-position: 100% 50%;
+}
+
+/* Brass: the room's name plate, Send and the report's button are engraved
+   brass plates, like the passenger's own tabs on the bottom board. Flat
+   metal with a fine grain (the paper tile multiplied in) */
+.room-name-label,
+#send-message,
+.btn-primary {
+  background-color: var(--brass-plate);
+  background-image: var(--paper-tex);
+  background-size: 256px 256px;
+  background-repeat: repeat;
+  background-blend-mode: multiply;
 }
 
 /* ================= Top bar: a mahogany board with a paper slip ================= */
@@ -251,7 +274,10 @@ body,
   height: auto;
   border: 0;
   border-radius: 0;
-  box-shadow: none;
+  /* a printed card over the sky, ruled round inside its edge */
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -6px;
   padding: clamp(9px, 0.73vw, 14px) clamp(11px, 0.83vw, 16px) clamp(8px, 0.63vw, 12px);
   color: var(--ink);
 }
@@ -365,23 +391,26 @@ body,
   outline: 1px solid var(--ink);
   outline-offset: -2px;
 }
-/* Send is a small mahogany plate */
+/* Send is a small engraved brass plate */
 #send-message {
-  color: var(--on-wood);
+  color: var(--engrave);
   border: 0;
   border-radius: 0;
   font-size: var(--t-ui);
   font-weight: 400;
   padding: 0 clamp(16px, 1.25vw, 24px);
-  box-shadow: none;
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+  box-shadow: var(--brass-edge);
 }
 #send-message:hover {
-  box-shadow: var(--darken);
-  color: #fff8ec;
+  background-color: var(--brass-plate-hover);
+  background-image: var(--paper-tex);
+  color: var(--engrave);
 }
 #send-message:active {
-  box-shadow: var(--press);
-  color: var(--brass-light);
+  background-color: var(--brass-plate-down);
+  background-image: var(--paper-tex);
+  box-shadow: 0 0 0 1px var(--brass-rim), inset 0 1px 3px rgba(30, 18, 4, 0.5);
 }
 #global-chat-toggle {
   top: clamp(8px, 0.73vw, 14px);
@@ -431,21 +460,22 @@ body,
   position: relative;
 }
 
-/* The title and the controls on the photograph are opaque mahogany strips
-   in its corners. The title is a caption, so it is set in italic like
-   every other label; the controls are roman, darken when hovered and go
-   black when pressed */
+/* The room's name is an engraved brass plate in the photograph's top-left
+   corner. The controls in its other corners are opaque mahogany strips,
+   roman, that darken when hovered and go black when pressed */
 .room-name-label {
   top: 0;
   left: 0;
   height: var(--tab-h);
   line-height: var(--tab-h);
-  padding: 0 clamp(10px, 0.73vw, 14px);
-  color: var(--on-wood);
+  padding: 0 clamp(12px, 0.83vw, 16px);
+  color: var(--engrave);
   border: 0;
   font-size: clamp(13px, 0.833vw, 16px);
-  font-style: italic;
-  text-shadow: none;
+  font-style: normal;
+  /* lettering cut into the plate catches the light on its lower edge */
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+  box-shadow: var(--brass-edge);
 }
 .room-name-label::selection {
   background: var(--on-wood);
@@ -1015,7 +1045,9 @@ body,
   background: var(--brass);
 }
 
-/* Passenger particulars: a printed card lying on the wood */
+/* Passenger particulars: a printed White Star ticket lying on the wood,
+   ruled thick and thin round its edge, the line's burgee in the corner
+   and the cabin rubber-stamped by the purser */
 .character-display {
   left: clamp(14px, 1.25vw, 24px);
   width: clamp(250px, 17.2vw, 330px);
@@ -1025,7 +1057,10 @@ body,
   transform: translateY(-50%);
 }
 .character-card {
-  padding: clamp(6px, 0.52vw, 10px) clamp(14px, 1.15vw, 22px) clamp(6px, 0.52vw, 10px) clamp(6px, 0.52vw, 10px);
+  position: relative;
+  border: 2px solid #2a221a;
+  box-shadow: inset 0 0 0 3px var(--paper), inset 0 0 0 4px #2a221a, 0 2px 6px rgba(0, 0, 0, 0.45);
+  padding: clamp(8px, 0.63vw, 12px) clamp(34px, 2.4vw, 44px) clamp(8px, 0.63vw, 12px) clamp(8px, 0.63vw, 12px);
   grid-template-columns: clamp(50px, 3.6vw, 69px) minmax(0, auto);
   grid-template-areas:
     "avatar info"
@@ -1036,6 +1071,15 @@ body,
   box-sizing: border-box;
   max-width: none;
   align-items: start;
+}
+.character-card::after {
+  content: "";
+  position: absolute;
+  top: clamp(9px, 0.63vw, 12px);
+  right: clamp(9px, 0.63vw, 12px);
+  width: clamp(20px, 1.35vw, 26px);
+  aspect-ratio: 60 / 36;
+  background: var(--burgee) center / contain no-repeat;
 }
 .avatar-frame {
   width: clamp(50px, 3.6vw, 69px);
@@ -1079,15 +1123,21 @@ body,
   opacity: 1;
 }
 #character-cabin {
-  color: var(--red);
+  display: inline-block;
+  padding: 0 4px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  color: var(--stamp);
   font-size: var(--t-small);
-  font-weight: 400;
+  font-weight: 700;
+  line-height: 1.25;
   text-decoration: none;
+  transform: rotate(-4deg);
+  opacity: 0.9;
+  margin-left: 1px;
 }
 #character-cabin:hover {
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 2px;
+  opacity: 1;
 }
 .character-card-money {
   width: auto;
@@ -1107,18 +1157,24 @@ body,
   font-variant-numeric: lining-nums tabular-nums;
 }
 
-/* Needs: an italic label, then a groove cut in the board with the game's
-   own colour running in it: green when full, through amber, to red when
-   empty. The hue the game writes (120 to 0) is mapped onto the same
-   green-amber-red run in OKLCH, so every step has the same lightness and
-   the colour is toned to sit with the wood. A need that runs low (the
-   game's own 20 per cent) also has its label set in red */
+/* Needs: an ivory-painted panel let into the board, like the panelling of
+   the first-class cabins. Each need is an italic label, then a groove with
+   the game's own colour running in it: green when full, through amber, to
+   red when empty. The hue the game writes (120 to 0) is mapped onto the
+   same green-amber-red run in OKLCH, so every step has the same lightness.
+   A need that runs low (the game's own 20 per cent) has its label in red */
 .status-bars {
   left: clamp(290px, 21.6vw, 415px);
   bottom: auto;
   top: calc(50% + 1px);
   transform: translateY(-50%);
-  width: clamp(330px, 28vw, 538px);
+  box-sizing: border-box;
+  width: clamp(360px, 30vw, 576px);
+  padding: clamp(8px, 0.63vw, 12px) clamp(14px, 1.04vw, 20px);
+  background-color: #ece5d2;
+  background-image: var(--paper-tex);
+  background-size: 512px 512px;
+  box-shadow: inset 0 1px 2px rgba(40, 25, 10, 0.3), inset 0 0 0 1px rgba(40, 25, 10, 0.4), 0 1px 0 rgba(255, 236, 214, 0.12);
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(3, auto);
   grid-auto-flow: column;
@@ -1132,7 +1188,7 @@ body,
 }
 .status-bar label {
   flex: 0 0 5.9em;
-  color: var(--on-wood-2);
+  color: var(--ink-2);
   font-size: var(--t-label);
   font-style: italic;
   text-shadow: none;
@@ -1140,7 +1196,7 @@ body,
   line-height: 1.2;
 }
 .status-bar:has(.bar[style*="pulse"]) label {
-  color: var(--red-on-wood);
+  color: var(--red);
 }
 .bar-container {
   position: relative;
@@ -1148,10 +1204,10 @@ body,
   width: auto;
   height: clamp(7px, 0.47vw, 9px);
   padding: 0;
-  background: rgba(6, 3, 1, 0.74);
+  background: rgba(33, 26, 19, 0.16);
   border: 0;
   border-radius: 0;
-  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.6), 0 1px 0 rgba(236, 226, 205, 0.14);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.5);
   overflow: hidden;
 }
 /* quarter marks scored in the floor of the groove; the colour runs over
@@ -1162,7 +1218,7 @@ body,
   inset: 1px 0 0;
   z-index: 0;
   pointer-events: none;
-  --mark: linear-gradient(rgba(236, 226, 205, 0.2), rgba(236, 226, 205, 0.2));
+  --mark: linear-gradient(rgba(33, 26, 19, 0.28), rgba(33, 26, 19, 0.28));
   background:
     var(--mark) 25% 0 / 1px 100% no-repeat,
     var(--mark) 50% 0 / 1px 100% no-repeat,
@@ -1189,9 +1245,9 @@ body,
 .bar.bladder { --h: var(--bladder-hue, 120); }
 .bar.intoxication { --h: var(--intoxication-hue, 120); }
 
-/* Menus: recessed plates let into the board. The board shows through a
-   shade darker, so every control reads as one before it is hovered;
-   hover darkens it, pressing takes it near black with brass lettering */
+/* Menus. The ship's menu is green leather tooled in gilt, the passenger's
+   own tabs are engraved brass plates. Both are flat, with a fine grain (the
+   paper tile multiplied in): hover lightens them, pressing darkens them */
 .panel1-buttons,
 .panel2-buttons {
   top: calc(50% + 1px);
@@ -1219,45 +1275,86 @@ body,
 }
 .panel-btn,
 .panel2-buttons .panel-btn {
-  background: var(--plate);
-  box-shadow: var(--plate-edge);
-  color: var(--on-wood);
+  position: relative;
   border: 0;
   border-radius: 0;
   padding: 0 6px;
-  text-shadow: none;
   font-size: var(--t-ui);
   font-weight: 400;
   line-height: 1.1;
+  background-image: var(--paper-tex);
+  background-size: 256px 256px;
+  background-blend-mode: multiply;
   transition: background-color 0.12s, color 0.12s;
 }
 .panel-btn:hover,
 .panel2-buttons .panel-btn:hover {
-  background: var(--plate-hover);
-  color: #fff8ec;
   padding-top: 0;
 }
-.panel-btn:active,
-.panel2-buttons .panel-btn:active {
-  background: var(--plate-down);
-  color: var(--brass-light);
+/* the ship's menu: green leather with a gilt fillet tooled round it */
+.panel1-buttons .panel-btn {
+  background-color: var(--leather);
+  color: var(--gilt);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 1px #0c130e, 0 1px 2px rgba(0, 0, 0, 0.45);
 }
-/* The plate whose card is open stays pressed in, lettered in brass. The
-   game shows its cards with an inline display: block, which is what CSS
-   reads here; the port should set aria-expanded on the button instead */
+.panel1-buttons .panel-btn::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(211, 176, 106, 0.5);
+  pointer-events: none;
+}
+.panel1-buttons .panel-btn:hover {
+  background-color: var(--leather-hover);
+  color: #e8cc8e;
+}
+.panel1-buttons .panel-btn:active {
+  background-color: var(--leather-down);
+}
+/* the passenger's own tabs: brass plates, the lettering cut in so it
+   catches the light on its lower edge */
+.panel2-buttons .panel-btn {
+  background-color: var(--brass-plate);
+  color: var(--engrave);
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+  box-shadow: var(--brass-edge), 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.panel2-buttons .panel-btn:hover {
+  background-color: var(--brass-plate-hover);
+  color: var(--engrave);
+}
+.panel2-buttons .panel-btn:active {
+  background-color: var(--brass-plate-down);
+}
+/* The button whose card is open stays pressed in. The game shows its cards
+   with an inline display: block, which is what CSS reads here; game.js
+   could set aria-expanded on the button instead */
 body:has(#settings-popup[style*="display: block"]) #settings-btn,
 body:has(#deckplans-popup[style*="display: block"]) #deckplans-btn,
-body:has(#rules-popup[style*="display: block"]) #rules-btn,
+body:has(#rules-popup[style*="display: block"]) #rules-btn {
+  background-color: var(--leather-down);
+  color: #efd79c;
+  box-shadow: 0 0 0 1px #0c130e, inset 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+body:has(#settings-popup[style*="display: block"]) #settings-btn::before,
+body:has(#deckplans-popup[style*="display: block"]) #deckplans-btn::before,
+body:has(#rules-popup[style*="display: block"]) #rules-btn::before {
+  border-color: var(--gilt);
+}
 body:has(#report-modal[style*="display: block"]) #report-btn {
-  background: var(--plate-down);
-  color: var(--brass-light);
+  background-color: var(--brass-plate-down);
+  box-shadow: 0 0 0 1px var(--brass-rim), inset 0 1px 3px rgba(30, 18, 4, 0.5);
 }
 
 /* ================= Printed cards: settings, rules, menus ================= */
+/* every card lifts off what is under it and is ruled round inside its edge */
 .settings-popup {
   border: 0;
   border-radius: 0;
-  box-shadow: none;
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -7px;
   padding: 22px 26px 24px;
   width: clamp(300px, 21.9vw, 420px);
 }
@@ -1267,12 +1364,18 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
 }
 .settings-content h2 {
   margin: 0 0 4px;
-  padding: 0 28px 10px 0;
-  border-bottom: 1px solid var(--ink);
+  padding: 0 28px 9px 0;
+  /* a printer's double rule under the title */
+  border-bottom: 3px double var(--ink);
   font-size: var(--t-title);
   font-weight: 400;
   color: var(--ink);
   line-height: 1.1;
+}
+/* the rules are a printed notice, titled on the centre line */
+#rules-popup .settings-content h2 {
+  text-align: center;
+  padding-left: 28px;
 }
 .close-settings,
 .close-rules,
@@ -1475,7 +1578,9 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
 .profile-popup {
   border: 0;
   border-radius: 0;
-  box-shadow: none;
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -7px;
   color: var(--ink);
 }
 .profile-content {
@@ -1503,7 +1608,9 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
 .player-info-card {
   border: 0;
   border-radius: 0;
-  box-shadow: none;
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -7px;
   color: var(--ink);
   padding: 24px 28px;
 }
@@ -1644,7 +1751,9 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
 .modal-content {
   border: 0;
   border-radius: 0;
-  box-shadow: none;
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -7px;
   max-width: 520px;
   animation: none;
   margin: 12vh auto 0;
@@ -1726,7 +1835,7 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
   transform: none;
   box-shadow: none;
 }
-/* Cancel is a plain word; the one button is a mahogany plate */
+/* Cancel is a plain word; the one button is an engraved brass plate */
 .btn-secondary,
 .btn-secondary:hover {
   background: none;
@@ -1742,17 +1851,21 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
 }
 .btn-primary,
 .btn-primary:hover {
-  color: var(--on-wood);
+  color: var(--engrave);
   border: 0;
   padding: 10px 24px;
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+  box-shadow: var(--brass-edge);
 }
+/* game.css gives these a gold gradient, so the plate is restated in full */
 .btn-primary:hover {
-  box-shadow: var(--darken);
-  color: #fff8ec;
+  background: var(--paper-tex) 0 0 / 256px 256px, var(--brass-plate-hover);
+  background-blend-mode: multiply;
 }
 .btn-primary:active {
-  box-shadow: var(--press);
-  color: var(--brass-light);
+  background: var(--paper-tex) 0 0 / 256px 256px, var(--brass-plate-down);
+  background-blend-mode: multiply;
+  box-shadow: 0 0 0 1px var(--brass-rim), inset 0 1px 3px rgba(30, 18, 4, 0.5);
 }
 
 /* ================= Route chart and loading ================= */
