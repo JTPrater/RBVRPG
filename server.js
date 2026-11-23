@@ -19,24 +19,16 @@ const cors = require("cors");
 const fetch = require("node-fetch");
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
+const {
+  TIMELINE_MS,
+  getCurrentVoyageState: computeVoyageStateAt,
+} = require("./lib/voyageState");
+const { lookupMenuItem } = require("./lib/menuCatalog");
+const { createSocketGameAuth } = require("./lib/socketGameAuth");
 
 // Initialize Express and Server
 const app = express();
 const server = http.createServer(app);
-
-// Timeline constants (milliseconds from departure)
-const TIMELINE_MS = {
-  DEPARTURE_DELAY: 12 * 60 * 1000, // 12 minutes between prep and actual departure
-  SOUTHAMPTON_WATER_END: 20 * 60 * 1000, // 20 minutes - 6 knots
-  NEEDLES_PASS: 4_650_000, // 1h 17.5m - Isle of Wight passage start
-  NEEDLES_COMPLETE: 5_130_000, // ~8 minutes after Needles start
-  CHANNEL_COMPLETE: 5 * 60 * 60 * 1000, // 5 hours - English Channel complete
-  APPROACH_COMPLETE: 18_900_000, // 15 minutes of Cherbourg approach (12 knots)
-  BERTHING_COMPLETE: 19_500_000, // 10 minutes harbor entry to stop
-};
-
-const CHERBOURG_DECEL_RATE =
-  19 / ((TIMELINE_MS.BERTHING_COMPLETE - TIMELINE_MS.CHANNEL_COMPLETE) / 1000); // knots per second needed to reach 0 by berthing
 
 // Socket.IO configuration for production
 const io = socketIo(server, {
@@ -61,11 +53,10 @@ io.use((socket, next) => {
 // Global voyage start time (loaded from DB or set on first boot)
 // Begin from Southampton (real-time progression)
 let voyageStartTime = Date.now(); // temporary default, overwritten by DB in startServer()
-console.debug("⏰ Voyage start time placeholder set (will sync from DB).");
 
 // Narrative events for server-side synchronization (times are seconds)
 const narrativeEvents = [
-  { time: 0, text: "Final preparations are being made for departure..." },
+  { time: 0, text: "Final preparations are being made for departure." },
   {
     time: 720,
     text: "The ship's horn echoes across Southampton Water. The moorings are cast off, and Britannic slowly pulls away from the dock.",
@@ -84,7 +75,7 @@ const narrativeEvents = [
   },
   {
     time: 4980,
-    text: "We are now passing the Nab Tower, a few miles East of us.",
+    text: "We are now passing the Nab Tower, a few miles east of us.",
   },
   {
     time: 5460,
@@ -120,9 +111,6 @@ let serverNarrativeIndex = 0;
   }
   serverNarrativeIndex = idx;
   if (serverNarrativeIndex > 0) {
-    console.debug(
-      `🔁 Server narrative synced to index ${serverNarrativeIndex}`,
-    );
   }
 }
 
@@ -138,7 +126,6 @@ const narrativeInterval = setInterval(() => {
         text: next.text,
         time: next.time,
       });
-      console.debug(`📢 Broadcast narrative event: ${next.text}`);
       serverNarrativeIndex += 1;
     }
   }
@@ -153,7 +140,7 @@ const voyageStateInterval = setInterval(() => {
     io.emit("voyage-start-time", voyageStartTime);
     // Throttle logging to avoid noise in production; verbose logs are disabled by default
   } catch (err) {
-    console.error("❌ Failed to broadcast periodic voyage-state:", err.message);
+    console.error("Failed to broadcast periodic voyage-state:", err.message);
   }
 }, 3000); // every 3s keeps clients in sync without too much traffic
 
@@ -170,7 +157,7 @@ function validateEnvironment() {
 
   if (missing.length > 0) {
     console.error(
-      "❌ Missing required environment variables:",
+      "Missing required environment variables:",
       missing.join(", "),
     );
     console.error(
@@ -179,7 +166,7 @@ function validateEnvironment() {
     process.exit(1);
   }
 
-  console.info("✅ Environment variables validated");
+  console.info("Environment variables validated");
 }
 
 // Cloudinary Configuration
@@ -189,7 +176,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-console.info("✅ Cloudinary configured");
+console.info("Cloudinary configured");
 
 // MongoDB Configuration
 const initMongoDB = async () => {
@@ -198,36 +185,16 @@ const initMongoDB = async () => {
     const uri = process.env.MONGO_URL;
 
     await mongoose.connect(uri);
-    console.info("✅ MongoDB connected successfully");
+    console.info("MongoDB connected successfully");
   } catch (err) {
-    console.error("❌ MongoDB connection error:", err);
+    console.error("MongoDB connection error:", err);
     process.exit(1);
   }
 };
 
-// Prefer the shared User model so admin flags, helpers, and migrations stay consistent
 const User = require("./models/User");
 const ServerState = require("./models/ServerState");
-// If you're testing locally and don't yet have the model file available, fall back
-// to an inline schema (but production should use ./models/User.js)
-if (!User) {
-  const FallbackSchema = new mongoose.Schema({
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    character: {
-      forename: { type: String, required: true },
-      surname: { type: String, required: true },
-      birthdate: { type: Date, required: true },
-      cabin: { type: String, required: true },
-      cabin_number: { type: String, required: true },
-      bio: String,
-      avatar: String,
-    },
-    isAdmin: { type: Boolean, default: false },
-  });
-
-  module.exports = mongoose.model("User", FallbackSchema);
-}
+const { requireSessionUser } = createSocketGameAuth(User);
 
 // Multer Configuration with Cloudinary
 const storage = new CloudinaryStorage({
@@ -243,7 +210,8 @@ const storage = new CloudinaryStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  // 5MB avatar; text fields (names, bio) are small, so cap them well below multer's 1MB default
+  limits: { fileSize: 5 * 1024 * 1024, fieldSize: 16 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     if (!allowedTypes.includes(file.mimetype)) {
@@ -253,6 +221,15 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+const REGISTRATION_FIELD_LIMITS = { forename: 40, surname: 40, bio: 2000 };
+
+// Chat colours come from an <input type="color">, which always gives #rrggbb
+const CHAT_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+
+function isChatColor(value) {
+  return typeof value === "string" && CHAT_COLOR_PATTERN.test(value);
+}
 
 function getStartingMoneyForCabin(cabinType) {
   if (typeof cabinType !== "string") return 0;
@@ -280,6 +257,9 @@ function getAvatarUploadErrorMessage(error) {
     if (error.code === "LIMIT_FILE_SIZE") {
       return "Avatar image must be 5MB or smaller";
     }
+    if (error.code === "LIMIT_FIELD_VALUE") {
+      return "One of the fields is too long";
+    }
     return error.message;
   }
 
@@ -291,7 +271,9 @@ function getAvatarUploadErrorMessage(error) {
     return "Avatar must be a JPG, PNG, GIF, or WebP image";
   }
 
-  return error.message || "Avatar upload failed";
+  // Anything else (a database error, say) is not the visitor's business: its
+  // text names collections and indexes
+  return "Registration failed. Please try again.";
 }
 
 async function postJson(urlString, payload) {
@@ -352,7 +334,52 @@ app.use(
   }),
 );
 
+// Headers every answer should carry (set by hand: nothing new to install
+// hours before a test)
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
+
+// Not for the public: the room editor's backups of the deck data, and the
+// editor's own page (it is served through /admin/room-editor, which checks
+// the admin flag; the static copy skipped that check)
+app.use((req, res, next) => {
+  if (/\.bak$/i.test(req.path) || /^\/game\/tools\//i.test(req.path)) {
+    return res.sendStatus(404);
+  }
+  next();
+});
+
+// The scripts, stylesheets and pages go out minified (lib/minifyAssets.js);
+// RBV_PLAIN_ASSETS=1 sends them as written
+const { buildAssets, assetMiddleware, pageSender } = require("./lib/minifyAssets");
+const minifiedAssets = new Map();
+const assetsReady =
+  process.env.RBV_PLAIN_ASSETS === "1"
+    ? Promise.resolve()
+    : buildAssets(__dirname)
+        .then(({ map, failed }) => {
+          map.forEach((value, key) => minifiedAssets.set(key, value));
+          console.info(`Minified ${map.size} scripts, stylesheets and pages`);
+          if (failed.length) console.warn("Sent as written:", failed.join(", "));
+        })
+        .catch((error) => console.error("Minifying failed; files sent as written:", error.message));
+const sendPage = pageSender(minifiedAssets, __dirname);
+
+// Of lib/, the browser loads only these; the rest is the server's own code
+const BROWSER_LIB = new Set(["/astro.js", "/voyageState.js", "/weather.js"]);
+app.use("/lib", (req, res, next) =>
+  BROWSER_LIB.has(req.path) ? next() : res.sendStatus(404),
+);
+
+app.use(assetMiddleware(minifiedAssets));
+// no icon of its own yet: an empty answer, not an error in every console
+app.get("/favicon.ico", (req, res) => res.status(204).end());
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/lib", express.static(path.join(__dirname, "lib")));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -373,6 +400,31 @@ const sessionMiddleware = session({
 });
 
 app.use(sessionMiddleware);
+
+// A signed-in session gets a new id, so an id planted on someone before they
+// log in is worth nothing afterwards
+function regenerateSession(req) {
+  return new Promise((resolve, reject) =>
+    req.session.regenerate((error) => (error ? reject(error) : resolve())),
+  );
+}
+
+// Log out: the session ends on the server and its cookie is cleared
+app.post("/api/logout", (req, res) => {
+  if (!req.session) return res.json({ success: true });
+  req.session.destroy((error) => {
+    res.clearCookie("connect.sid", {
+      path: "/",
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+    if (error) {
+      console.error("Logout error:", error.message);
+      return res.status(500).json({ success: false });
+    }
+    res.json({ success: true });
+  });
+});
 
 // Rate limiting
 const limiter = rateLimit({
@@ -411,22 +463,56 @@ app.post("/api/register", authLimiter, async (req, res) => {
     await runAvatarUpload(req, res);
 
     console.info(
-      `📝 Registration attempt from IP: ${req.ip}, Email: ${req.body.email}`,
+      `Registration attempt from IP: ${req.ip}, Email: ${req.body.email}`,
     );
 
     if (!req.file) {
       console.warn(
-        `❌ Registration failed: No avatar file uploaded for ${req.body.email}`,
+        `Registration failed: No avatar file uploaded for ${req.body.email}`,
       );
       return res
         .status(400)
         .json({ success: false, error: "No avatar file uploaded" });
     }
 
+    if (
+      typeof req.body.email !== "string" ||
+      req.body.email.length > 320 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(req.body.email)
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Please enter a valid email address" });
+    }
+    if (
+      typeof req.body.password !== "string" ||
+      req.body.password.length < 6 ||
+      req.body.password.length > 72
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: "Password must be 6 to 72 characters",
+      });
+    }
+
+    // Names end up in every chat message (and /me expands to them), so keep them short
+    const tooLong = Object.entries(REGISTRATION_FIELD_LIMITS).find(
+      ([field, max]) =>
+        typeof req.body[field] === "string" && req.body[field].length > max,
+    );
+    if (tooLong) {
+      const [field, max] = tooLong;
+      console.warn(`Registration failed: ${field} longer than ${max}`);
+      return res.status(400).json({
+        success: false,
+        error: `${field[0].toUpperCase()}${field.slice(1)} must be ${max} characters or fewer`,
+      });
+    }
+
     const existingUser = await User.findOne({ email: req.body.email });
     if (existingUser) {
       console.warn(
-        `❌ Registration failed: Email already registered: ${req.body.email}`,
+        `Registration failed: Email already registered: ${req.body.email}`,
       );
       return res
         .status(400)
@@ -436,11 +522,16 @@ app.post("/api/register", authLimiter, async (req, res) => {
     const cabinType = req.body.cabin;
     const cabinNumber = req.body.cabin_number;
 
-    console.debug(`🏠 Checking cabin: ${cabinType} - ${cabinNumber}`);
-
-    if (!cabins[cabinType] || !cabins[cabinType][cabinNumber]) {
+    // Own keys only: "constructor" / "name" are properties of every object and
+    // passed the old check
+    if (
+      typeof cabinType !== "string" ||
+      typeof cabinNumber !== "string" ||
+      !Object.prototype.hasOwnProperty.call(cabins, cabinType) ||
+      !Object.prototype.hasOwnProperty.call(cabins[cabinType], cabinNumber)
+    ) {
       console.warn(
-        `❌ Registration failed: Invalid cabin selected: ${cabinType} - ${cabinNumber}`,
+        `Registration failed: Invalid cabin selected: ${cabinType} - ${cabinNumber}`,
       );
       return res
         .status(400)
@@ -452,7 +543,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
       cabins[cabinType][cabinNumber].capacity
     ) {
       console.warn(
-        `❌ Registration failed: Cabin fully booked: ${cabinType} - ${cabinNumber}`,
+        `Registration failed: Cabin fully booked: ${cabinType} - ${cabinNumber}`,
       );
       return res
         .status(400)
@@ -482,6 +573,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
     });
 
     await newUser.save();
+    await regenerateSession(req);
     req.session.userId = newUser._id;
     await new Promise((resolve, reject) => {
       req.session.save((sessionError) => {
@@ -496,7 +588,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
     cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
     io.emit("new-passenger", newUser.character);
     console.info(
-      `✅ New user registered: ${req.body.email}, Cabin: ${cabinNumber}`,
+      `New user registered: ${req.body.email}, Cabin: ${cabinNumber}`,
     );
     res.json({
       success: true,
@@ -504,7 +596,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
       email: newUser.email,
     });
   } catch (error) {
-    console.error("❌ Registration error:", error);
+    console.error("Registration error:", error);
 
     const statusCode =
       error instanceof multer.MulterError || error.http_code === 400
@@ -520,23 +612,37 @@ app.post("/api/register", authLimiter, async (req, res) => {
 
 app.post("/api/check-credentials", authLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
+    // Strings only. An object here ({"$regex": "^a"}) is a Mongo query
+    // operator: it would match someone else's account and turn the login
+    // into a password guess against every account at once.
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      !email ||
+      !password ||
+      email.length > 320 ||
+      password.length > 1024
+    ) {
+      return res.json({ success: false });
+    }
     const user = await User.findOne({ email });
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      console.warn(`❌ Login failed for email: ${email}`);
+      console.warn("Login failed");
       return res.json({ success: false });
     }
 
+    await regenerateSession(req);
     req.session.userId = user._id;
-    console.info(`✅ User logged in: ${email}`);
+    console.info(`User logged in: ${user._id}`);
     res.json({
       success: true,
       character: user.character, // Return the full character object
     });
   } catch (error) {
-    console.error("❌ Login error:", error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error("Login error:", error);
+    res.status(500).json({ success: false, error: "Login failed. Please try again." });
   }
 });
 
@@ -579,7 +685,7 @@ app.post("/api/admin/reset-password", authLimiter, async (req, res) => {
     // reset link or sending the temporary password via an admin-only channel.
     // Log that a temp password was generated, but do not print the plaintext password to logs
     console.info(
-      `🔐 [ADMIN] Temporary password generated for ${email} (not logged)`,
+      `[ADMIN] Temporary password generated for ${email} (not logged)`,
     );
 
     // (Optional) Here you could send an email with nodemailer — omitted for brevity.
@@ -589,7 +695,7 @@ app.post("/api/admin/reset-password", authLimiter, async (req, res) => {
       message: "Temporary password generated and saved",
     });
   } catch (error) {
-    console.error("❌ Admin reset-password error:", error);
+    console.error("Admin reset-password error:", error);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -621,11 +727,164 @@ app.post("/api/admin/reset-voyage", authLimiter, async (req, res) => {
     io.emit("voyage-state", getCurrentVoyageState());
 
     console.info(
-      `⏰ Voyage reset by admin at ${new Date(voyageStartTime).toISOString()}`,
+      `Voyage reset by admin at ${new Date(voyageStartTime).toISOString()}`,
     );
     res.json({ success: true, voyageStartTime });
   } catch (error) {
-    console.error("❌ Admin reset-voyage error:", error);
+    console.error("Admin reset-voyage error:", error);
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+// ── Deck room editor: save deckRooms.js from the admin tool ──────────────
+// Regenerates public/game/data/deckRooms.js from a validated payload. Values
+// are written via JSON.stringify over a whitelisted schema, so nothing the
+// client sends can become executable code in the generated module.
+const DECK_ROOMS_PATH = path.join(
+  __dirname,
+  "public/game/data/deckRooms.js",
+);
+const ROOM_CLASSES = ["first", "second", "third", "crew"];
+
+function sanitizeRoom(r) {
+  if (!r || typeof r !== "object") return null;
+  const id = String(r.id || "").trim();
+  const name = String(r.name || "").trim();
+  if (!id || !name) return null;
+  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return null;
+  const out = { id, name: name.slice(0, 120) };
+  out.class = ROOM_CLASSES.includes(r.class) ? r.class : "first";
+  if (r.type) out.type = String(r.type).trim().slice(0, 60);
+  if (r.coordinates != null) {
+    const coords = String(r.coordinates).trim();
+    // only numbers, spaces, commas, dots, minus — never code
+    if (coords && /^[-0-9.,\s]+$/.test(coords))
+      out.coordinates = coords.replace(/\s+/g, " ").slice(0, 8000);
+  }
+  if (typeof r.x === "number" && isFinite(r.x)) out.x = r.x;
+  if (typeof r.y === "number" && isFinite(r.y)) out.y = r.y;
+  if (r.isSVG) out.isSVG = true;
+  const loc = r.location && typeof r.location === "object" ? r.location : {};
+  const location = {};
+  if (Array.isArray(loc.images))
+    location.images = loc.images
+      .filter((s) => typeof s === "string")
+      .map((s) => s.slice(0, 200))
+      .slice(0, 40);
+  else if (loc.image) location.image = String(loc.image).slice(0, 200);
+  else location.image = "placeholder.jpg";
+  location.chatRoom = String(loc.chatRoom || id).slice(0, 100);
+  out.location = location;
+  return out;
+}
+
+function buildDeckRoomsFile(deckRooms, deckViewBoxes, roomClassColors) {
+  const cleanRooms = {};
+  for (const [deck, rooms] of Object.entries(deckRooms)) {
+    if (!/^[a-z0-9_]{1,40}$/.test(deck) || !Array.isArray(rooms)) continue;
+    cleanRooms[deck] = rooms.map(sanitizeRoom).filter(Boolean);
+  }
+  const cleanVB = {};
+  for (const [deck, vb] of Object.entries(deckViewBoxes || {}))
+    if (
+      /^[a-z0-9_]{1,40}$/.test(deck) &&
+      typeof vb === "string" &&
+      /^[-0-9.\s]+$/.test(vb)
+    )
+      cleanVB[deck] = vb.trim();
+  const cleanColors = {};
+  for (const c of ROOM_CLASSES) {
+    const v = roomClassColors && roomClassColors[c];
+    cleanColors[c] =
+      typeof v === "string" && /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : "#4195f7";
+  }
+  return `(function (RBV) {
+  // Deck room data. Each room: id, name, class (first|second|third|crew),
+  // type (semantic tag), coordinates (SVG polygon "x,y x,y ..." in the deck
+  // image's pixel space = deckViewBoxes[deck]), optional x/y marker, and
+  // location (image + chatRoom). Ship-deck overlays are built from this by
+  // game.js. Generated by the room editor (/admin/room-editor) — hand edits
+  // are fine but will be overwritten on the next editor save.
+  const roomClassColors = ${JSON.stringify(cleanColors, null, 2)};
+
+  const deckViewBoxes = ${JSON.stringify(cleanVB, null, 2)};
+
+  const deckRooms = ${JSON.stringify(cleanRooms, null, 2)};
+
+  RBV.data = RBV.data || {};
+  RBV.data.deckRooms = deckRooms;
+  RBV.data.deckViewBoxes = deckViewBoxes;
+  RBV.data.roomClassColors = roomClassColors;
+  window.deckRooms = deckRooms;
+  window.deckViewBoxes = deckViewBoxes;
+  window.roomClassColors = roomClassColors;
+  console.debug("✅ Defined deckRooms:", deckRooms);
+})(window.RBV);
+`;
+}
+
+app.get("/admin/room-editor", async (req, res) => {
+  if (!req.session?.userId) return res.redirect("/");
+  try {
+    const admin = await User.findById(req.session.userId);
+    if (!admin?.isAdmin) return res.status(403).send("Forbidden");
+  } catch (e) {
+    return res.status(500).send("Server error");
+  }
+  res.sendFile(path.join(__dirname, "public/game/tools/room-editor.html"));
+});
+
+app.post("/api/admin/save-rooms", authLimiter, async (req, res) => {
+  try {
+    if (!req.session?.userId)
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    const admin = await User.findById(req.session.userId);
+    if (!admin?.isAdmin)
+      return res.status(403).json({ success: false, error: "Forbidden" });
+
+    const { deckRooms, deckViewBoxes, roomClassColors } = req.body || {};
+    if (!deckRooms || typeof deckRooms !== "object")
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing deckRooms" });
+
+    const fileText = buildDeckRoomsFile(
+      deckRooms,
+      deckViewBoxes,
+      roomClassColors,
+    );
+    // sanity: the regenerated file must parse and expose the decks
+    const probe = { RBV: {}, console: { debug() {} } };
+    try {
+      new Function("window", "console", fileText)(probe, probe.console);
+      if (!probe.deckRooms || typeof probe.deckRooms !== "object")
+        throw new Error("no deckRooms");
+    } catch (e) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Generated file invalid: " + e.message });
+    }
+
+    // timestamped backup, then write
+    try {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      await fs.copyFile(
+        DECK_ROOMS_PATH,
+        DECK_ROOMS_PATH + "." + stamp + ".bak",
+      );
+    } catch (e) {
+      /* first save or no prior file — non-fatal */
+    }
+    await fs.writeFile(DECK_ROOMS_PATH, fileText, "utf8");
+
+    const total = Object.values(probe.deckRooms).reduce(
+      (n, a) => n + (Array.isArray(a) ? a.length : 0),
+      0,
+    );
+    console.info(`deckRooms.js saved by admin — ${total} rooms`);
+    res.json({ success: true, rooms: total });
+  } catch (error) {
+    console.error("save-rooms error:", error);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -641,14 +900,14 @@ app.get("/api/get-songs", async (req, res) => {
       .map((file) => `/sounds/music/${file}`);
 
     if (songs.length === 0) {
-      console.warn("❌ No MP3 files found in music directory");
+      console.warn("No MP3 files found in music directory");
       return res.status(404).json({ error: "No MP3 files found" });
     }
 
-    console.info(`✅ Retrieved ${songs.length} songs from music directory`);
+    console.info(`Retrieved ${songs.length} songs from music directory`);
     res.json(songs);
   } catch (err) {
-    console.error("❌ Error reading music directory:", err);
+    console.error("Error reading music directory:", err);
     res.status(500).json({
       error: "Failed to load music files",
       details: err.message,
@@ -657,9 +916,28 @@ app.get("/api/get-songs", async (req, res) => {
 });
 
 // Report endpoint with Discord webhook
-app.post("/api/report", async (req, res) => {
+const reportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 6, // a player's reports, not a firehose into the moderators' channel
+  message: { success: false, error: "Too many reports. Please wait a while." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.post("/api/report", reportLimiter, async (req, res) => {
   try {
-    const { type, description, reportedUser, reporterName, room } = req.body;
+    if (!req.session || !req.session.userId) {
+      return res
+        .status(401)
+        .json({ success: false, error: "Please log in to send a report" });
+    }
+    const body = req.body || {};
+    const asText = (v, max) =>
+      typeof v === "string" ? v.slice(0, max) : "";
+    const type = asText(body.type, 60);
+    const description = asText(body.description, 2000);
+    const reportedUser = asText(body.reportedUser, 120);
+    const reporterName = asText(body.reporterName, 120);
+    const room = asText(body.room, 120);
 
     if (!description || !type) {
       return res
@@ -669,7 +947,7 @@ app.post("/api/report", async (req, res) => {
 
     const webhookUrl = String(process.env.DISCORD_WEBHOOK_URL || "").trim();
     if (!webhookUrl) {
-      console.warn("⚠️ Report endpoint called without DISCORD_WEBHOOK_URL set");
+      console.warn("Report endpoint called without DISCORD_WEBHOOK_URL set");
       return res.status(503).json({
         success: false,
         error: "Reporting is not configured on this deployment",
@@ -733,7 +1011,7 @@ app.post("/api/report", async (req, res) => {
 
     if (!webhookResponse.ok) {
       console.error(
-        "❌ Discord webhook failed:",
+        "Discord webhook failed:",
         webhookResponse.status,
         webhookBody,
       );
@@ -742,51 +1020,47 @@ app.post("/api/report", async (req, res) => {
         error: "Failed to send report",
         details: isCloudflareRateLimit
           ? "Discord is rate-limiting webhook requests from the server right now. Wait a minute and try again."
-          : webhookBody || `Webhook returned ${webhookResponse.status}`,
+          : "The report could not be delivered. Please try again later.",
       });
     }
 
     console.info(
-      `✅ Report sent to Discord: ${type} by ${
+      `Report sent to Discord: ${type} by ${
         reporterName || "Anonymous"
       } from ${room || "Unknown Room"}`,
     );
     res.json({ success: true, message: "Report submitted successfully" });
   } catch (error) {
-    console.error("❌ Report error:", error);
+    console.error("Report error:", error);
     res.status(500).json({
       success: false,
       error: "Internal server error",
-      details: error.message,
     });
   }
 });
 
 // Page Routes
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/main/registration.html"));
+  sendPage(res, "public/main/registration.html");
 });
 
 app.get("/game", (req, res) => {
-  console.debug(
-    `🎮 Game access attempt - Session userId: ${req.session.userId}`,
-  );
 
   // Check if user is logged in
   if (!req.session.userId) {
     console.warn(
-      `🚫 Game access denied: No session userId, redirecting to login`,
+      `Game access denied: No session userId, redirecting to login`,
     );
     return res.redirect("/");
   }
   console.info(
-    `✅ Game access granted: User ${req.session.userId} accessing game`,
+    `Game access granted: User ${req.session.userId} accessing game`,
   );
-  res.sendFile(path.join(__dirname, "public/game/game.html"));
+  sendPage(res, "public/game/game.html");
 });
 
 app.get("/list", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/main/list.html"));
+  sendPage(res, "public/main/list.html");
 });
 
 // At the top of server.js, maintain a user-color mapping
@@ -894,14 +1168,14 @@ try {
   });
   if (newlyAdded.length) {
     console.info(
-      `✅ Auto-added ${
+      `Auto-added ${
         newlyAdded.length
       } room(s) to allowedRooms: ${newlyAdded.join(", ")}`,
     );
   }
 } catch (err) {
   console.error(
-    "❌ Failed to auto-extend allowedRooms from game.js:",
+    "Failed to auto-extend allowedRooms from game.js:",
     err.message,
   );
 }
@@ -926,10 +1200,26 @@ function addMessageToRoomHistory(room, message) {
   }
 }
 
+// Engine order telegraph (bridge/wheelhouse roleplay prop): last order
+// signaled per room, kept only in memory so a late joiner sees the current
+// needle position (mirrors roomMessageHistory above).
+const TELEGRAPH_LABELS = {
+  STOP: "STOP",
+  STAND_BY: "STAND BY",
+  DEAD_SLOW_AHEAD: "DEAD SLOW AHEAD",
+  SLOW_AHEAD: "SLOW AHEAD",
+  HALF_AHEAD: "HALF AHEAD",
+  FULL_AHEAD: "FULL AHEAD",
+  FULL_ASTERN: "FULL ASTERN",
+  HALF_ASTERN: "HALF ASTERN",
+  SLOW_ASTERN: "SLOW ASTERN",
+  DEAD_SLOW_ASTERN: "DEAD SLOW ASTERN",
+};
+const telegraphState = {};
+
 // Add this function at the top level of server.js
 function emitRoomCount(roomId) {
   const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-  console.debug(`📊 Room ${roomId} has ${roomSize} user(s)`);
   // Emit to all connected clients, not just room members
   io.emit("room-count", {
     roomId: roomId,
@@ -937,126 +1227,8 @@ function emitRoomCount(roomId) {
   });
 }
 
-// Function to get current voyage state
 function getCurrentVoyageState() {
-  const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);
-
-  let location = "Southampton";
-  let speed = "0 knots";
-  let speedValue = 0; // Actual current speed
-  let targetSpeed = 0; // Target speed for smooth acceleration
-
-  const {
-    DEPARTURE_DELAY,
-    SOUTHAMPTON_WATER_END,
-    NEEDLES_COMPLETE,
-    CHANNEL_COMPLETE,
-    APPROACH_COMPLETE,
-    BERTHING_COMPLETE,
-  } = TIMELINE_MS;
-
-  // Acceleration rate: 0.012 knots per second squared (matches client)
-  const ACCELERATION = 0.012;
-
-  // Departure happens DEPARTURE_DELAY milliseconds into the voyage
-  const elapsedSinceDeparture = Math.max(
-    0,
-    elapsedSeconds - DEPARTURE_DELAY / 1000,
-  );
-
-  if (elapsedSeconds < DEPARTURE_DELAY / 1000) {
-    // Before departure
-    location = "Southampton";
-    speed = "0 knots";
-    speedValue = 0;
-    targetSpeed = 0;
-  } else if (elapsedSinceDeparture * 1000 < SOUTHAMPTON_WATER_END) {
-    // Southampton Water - accelerating to 6 knots
-    location = "Southampton Water";
-    targetSpeed = 6;
-
-    // Calculate current speed based on acceleration from 0 to 6 knots
-    // Time to reach 6 knots: 6 / 0.012 = 500 seconds
-    const timeToReach6Knots = 6 / ACCELERATION;
-    if (elapsedSinceDeparture < timeToReach6Knots) {
-      speedValue = Math.min(6, elapsedSinceDeparture * ACCELERATION);
-    } else {
-      speedValue = 6;
-    }
-    speed = `${speedValue.toFixed(1)} knots`;
-  } else if (elapsedSinceDeparture * 1000 < NEEDLES_COMPLETE) {
-    // The Solent - accelerating from 6 to 12 knots
-    location = "The Solent";
-    targetSpeed = 12;
-
-    // Calculate time elapsed since entering The Solent
-    const elapsedInSolent =
-      elapsedSinceDeparture - SOUTHAMPTON_WATER_END / 1000;
-
-    // Time to accelerate from 6 to 12 knots: (12 - 6) / 0.012 = 500 seconds
-    const timeToReach12Knots = (12 - 6) / ACCELERATION;
-
-    if (elapsedInSolent < timeToReach12Knots) {
-      // Still accelerating from 6 to 12
-      speedValue = Math.min(12, 6 + elapsedInSolent * ACCELERATION);
-    } else {
-      // Reached 12 knots
-      speedValue = 12;
-    }
-    speed = `${speedValue.toFixed(1)} knots`;
-  } else if (elapsedSinceDeparture * 1000 < CHANNEL_COMPLETE) {
-    // English Channel - accelerating from 12 to 19 knots, then cruising
-    location = "English Channel";
-    targetSpeed = 19;
-
-    // Calculate time elapsed since entering English Channel
-    const elapsedInChannel = elapsedSinceDeparture - NEEDLES_COMPLETE / 1000;
-
-    // Time to accelerate from 12 to 19 knots: (19 - 12) / 0.012 = 583.33 seconds
-    const timeToReach19Knots = (19 - 12) / ACCELERATION;
-
-    if (elapsedInChannel < timeToReach19Knots) {
-      // Still accelerating from 12 to 19
-      speedValue = Math.min(19, 12 + elapsedInChannel * ACCELERATION);
-    } else {
-      // Reached 19 knots, cruising
-      speedValue = 19;
-    }
-    speed = `${speedValue.toFixed(1)} knots`;
-  } else if (elapsedSinceDeparture * 1000 < BERTHING_COMPLETE) {
-    // Continuous Cherbourg deceleration from 19 knots down to 0 by berthing
-    const elapsedSinceChannelEntry = Math.max(
-      0,
-      elapsedSinceDeparture - CHANNEL_COMPLETE / 1000,
-    );
-    const drop = elapsedSinceChannelEntry * CHERBOURG_DECEL_RATE;
-    speedValue = Math.max(0, 19 - drop);
-    targetSpeed = Math.max(0, speedValue - CHERBOURG_DECEL_RATE);
-
-    if (speedValue > 6) {
-      location = "Approaching Cherbourg";
-    } else if (speedValue > 0) {
-      location = "Cherbourg Harbor";
-    } else {
-      location = "Cherbourg";
-    }
-
-    speed = `${speedValue.toFixed(1)} knots`;
-  } else {
-    // Berthed - full stop
-    location = "Cherbourg";
-    speed = "0 knots";
-    speedValue = 0;
-    targetSpeed = 0;
-  }
-
-  return {
-    location,
-    speed,
-    speedValue,
-    targetSpeed,
-    elapsedSeconds,
-  };
+  return computeVoyageStateAt(voyageStartTime);
 }
 
 // Add cabin data
@@ -1141,24 +1313,22 @@ async function syncCabinOccupancyFromDB() {
       }
     }
 
-    console.info("✅ Synchronized cabin occupancy from DB");
+    console.info("Synchronized cabin occupancy from DB");
   } catch (err) {
-    console.error("❌ Failed to sync cabin occupancy from DB:", err.message);
+    console.error("Failed to sync cabin occupancy from DB:", err.message);
   }
 }
 
 app.get("/api/get_available_cabins", (req, res) => {
   const cabinType = req.query.cabin_type;
-  console.debug(`📋 Cabin request received for type: ${cabinType}`);
 
   if (!cabinType) {
-    console.error("❌ No cabin type provided in request");
+    console.error("No cabin type provided in request");
     return res.status(400).json({ error: "Cabin type is required" });
   }
 
   if (!cabins[cabinType]) {
-    console.error(`❌ Invalid cabin type requested: ${cabinType}`);
-    console.debug(`Available cabin types: ${Object.keys(cabins).join(", ")}`);
+    console.error(`Invalid cabin type requested: ${cabinType}`);
     return res.status(400).json({
       error: "Invalid cabin type",
       availableTypes: Object.keys(cabins),
@@ -1166,7 +1336,6 @@ app.get("/api/get_available_cabins", (req, res) => {
   }
 
   const cabinEntries = Object.entries(cabins[cabinType]);
-  console.debug(`📊 Found ${cabinEntries.length} cabins in ${cabinType}`);
 
   // Return detailed cabin availability so the client can show capacities
   const availableCabins = cabinEntries
@@ -1179,7 +1348,7 @@ app.get("/api/get_available_cabins", (req, res) => {
     }));
 
   console.info(
-    `✅ Returning ${
+    `Returning ${
       availableCabins.length
     } available cabins: ${availableCabins.join(", ")}`,
   );
@@ -1208,15 +1377,12 @@ async function handleLoadStats(socket) {
   try {
     const targetEmail = await populateSocketUserEmail(socket, true);
     if (!targetEmail) {
-      console.error("❌ No user email available for stats loading");
+      console.error("No user email available for stats loading");
       return;
     }
 
     const user = await User.findOne({ email: targetEmail });
     if (!user || !user.stats) {
-      console.debug(
-        `📊 No stats found for user ${targetEmail}, sending defaults`,
-      );
       socket.emit("stats-loaded", {
         hunger: 100,
         thirst: 100,
@@ -1244,7 +1410,7 @@ async function handleLoadStats(socket) {
       const cabinValue = user.character?.cabin;
       const startingMoney = getStartingMoneyForCabin(cabinValue);
       console.info(
-        `💰 Money migration for ${targetEmail}: cabin="${cabinValue}", startingMoney=${startingMoney}, oldMoney=${user.stats.money}`,
+        `Money migration for ${targetEmail}: cabin="${cabinValue}", startingMoney=${startingMoney}, oldMoney=${user.stats.money}`,
       );
       await User.updateOne(
         { _id: user._id },
@@ -1270,11 +1436,11 @@ async function handleLoadStats(socket) {
     };
 
     console.info(
-      `📊 Loaded stats for ${targetEmail}: money=${currentStats.money}`,
+      `Loaded stats for ${targetEmail}: money=${currentStats.money}`,
     );
     socket.emit("stats-loaded", currentStats);
   } catch (error) {
-    console.error(`❌ Error loading stats: ${error.message}`);
+    console.error(`Error loading stats: ${error.message}`);
   }
 }
 
@@ -1282,125 +1448,126 @@ async function handleSaveStats(socket, statsData) {
   try {
     const targetEmail = await populateSocketUserEmail(socket);
     if (!targetEmail) {
-      console.error("❌ No user email available for stats saving");
+      console.error("No user email available for stats saving");
       return;
     }
 
+    // The client sends these; whatever it sends, a need is a number from 0
+    // to 100 (and no account is made up for an email that has none)
+    const data = statsData && typeof statsData === "object" ? statsData : {};
+    const need = (v) => Math.min(100, Math.max(0, Number(v) || 0));
     await User.findOneAndUpdate(
       { email: targetEmail },
       {
         $set: {
-          "stats.hunger": statsData.hunger,
-          "stats.thirst": statsData.thirst,
-          "stats.energy": statsData.energy,
-          "stats.hygiene": statsData.hygiene,
-          "stats.bladder": statsData.bladder,
-          "stats.intoxication": statsData.intoxication,
+          "stats.hunger": need(data.hunger),
+          "stats.thirst": need(data.thirst),
+          "stats.energy": need(data.energy),
+          "stats.hygiene": need(data.hygiene),
+          "stats.bladder": need(data.bladder),
+          "stats.intoxication": need(data.intoxication),
           "stats.lastUpdated": Date.now(),
         },
       },
-      { upsert: true },
     );
-
-    console.info(`💾 Saved stats for ${targetEmail}:`, statsData);
   } catch (error) {
-    console.error(`❌ Error saving stats: ${error.message}`);
+    console.error(`Error saving stats: ${error.message}`);
   }
+}
+
+// A bad payload or a failing handler must never take the server down. Every socket
+// handler runs through this guard, which logs what it throws or rejects with instead
+// of letting it reach the unhandledRejection handler (which exits the process).
+function guardSocketHandler(event, handler) {
+  return (...args) => {
+    try {
+      const result = handler(...args);
+      if (result && typeof result.catch === "function") {
+        result.catch((err) =>
+          console.error(`❌ Error in socket "${event}" handler:`, err),
+        );
+      }
+      return result;
+    } catch (err) {
+      console.error(`Error in socket "${event}" handler:`, err);
+    }
+  };
 }
 
 // Socket.IO Setup
 io.on("connection", async (socket) => {
-  console.debug(`🔌 New connection: ${socket.id}`);
+  // A flood guard: past 40 events in one second a socket is ignored until
+  // the second is over (a chat or telegraph flood is relayed to every player
+  // and costs a database read each time).
+  let floodWindow = 0;
+  let floodCount = 0;
+  const onEvent = (event, handler) =>
+    socket.on(
+      event,
+      guardSocketHandler(event, (...args) => {
+        if (event !== "disconnect") {
+          const now = Date.now();
+          if (now - floodWindow > 1000) {
+            floodWindow = now;
+            floodCount = 0;
+          }
+          if (++floodCount > 40) return undefined;
+        }
+        return handler(...args);
+      }),
+    );
   userCount++;
   io.emit("global-user-count", userCount); // Global site-wide count
-  console.info(`👥 User count increased: ${userCount}`);
+  console.info(`User count increased: ${userCount}`);
 
   socket.isGameClient = false;
 
   // Send voyage start time to client for synchronization
   socket.emit("voyage-start-time", voyageStartTime);
-  console.debug(
-    `⏰ Sent voyage start time to ${socket.id}: ${voyageStartTime}`,
-  );
 
   // Send current voyage state for immediate sync
   const currentVoyageState = getCurrentVoyageState();
   socket.emit("voyage-state", currentVoyageState);
-  console.debug(
-    `🚢 Sent current voyage state to ${socket.id}:`,
-    currentVoyageState,
-  );
 
-  // Identify authenticated user by server session (safer than trusting client handshake)
+  let assignedColor = "#c0932b";
   const sessionUserId = socket.request?.session?.userId;
-  let assignedColor = "#c0932b"; // default chat color
 
   if (sessionUserId) {
     try {
-      const dbUser =
-        await User.findById(sessionUserId).select("email chatColor");
+      const dbUser = await User.findById(sessionUserId).select(
+        "email chatColor character",
+      );
       if (dbUser) {
         socket.userEmail = dbUser.email;
-        if (dbUser.chatColor) {
+        socket.character = dbUser.character || null;
+        socket.sessionUserId = dbUser._id;
+        if (isChatColor(dbUser.chatColor)) {
           assignedColor = dbUser.chatColor;
-          console.debug(
-            `🎨 Loaded saved chat color for ${socket.userEmail}: ${assignedColor}`,
-          );
         }
-      } else {
-        console.debug(`🎨 Session user ${sessionUserId} not found in DB`);
       }
     } catch (err) {
       console.error(
-        `❌ Error loading chat color for userId ${sessionUserId}:`,
+        `Error loading session user ${sessionUserId}:`,
         err.message,
       );
     }
   } else {
-    // No authenticated session — fall back to any email provided in handshake, but do not persist
-    const handshakeEmail = socket.handshake.auth?.email;
-    socket.userEmail = handshakeEmail || null;
-    if (handshakeEmail) {
-      try {
-        const tmpUser = await User.findOne({ email: handshakeEmail }).select(
-          "chatColor",
-        );
-        if (tmpUser && tmpUser.chatColor) {
-          assignedColor = tmpUser.chatColor;
-          console.debug(
-            `🎨 Loaded saved chat color for ${handshakeEmail}: ${assignedColor}`,
-          );
-        }
-      } catch (err) {
-        console.error(
-          `❌ Error loading chat color for handshake email ${handshakeEmail}:`,
-          err.message,
-        );
-      }
-    } else {
-      console.debug(
-        `🎨 Anonymous user connected, using default color: ${assignedColor}`,
-      );
-    }
   }
 
   userChatColors[socket.id] = assignedColor;
-  console.debug(`🎨 Assigned color to ${socket.id}: ${assignedColor}`);
 
-  if (socket.userEmail || socket.request?.session?.userId) {
+  if (socket.sessionUserId) {
     handleLoadStats(socket);
   }
 
   // Send the assigned color to the connected client
   socket.emit("assign-chat-color", assignedColor);
   socket.emit("game-user-count", gameClientCount);
-  console.debug(`📩 Sent assigned chat color to ${socket.id}`);
 
   // Send existing passengers to ALL new connections (public feature)
   User.find({}, "character")
     .then((users) => {
       const passengers = users.map((user) => user.character);
-      console.debug("🗂️ Sending initial passengers:", passengers);
       socket.emit("initial-passengers", passengers);
       // If there is a last narrative event, tell this client where server is currently
       if (
@@ -1413,34 +1580,55 @@ io.on("connection", async (socket) => {
           text: narrativeEvents[idx].text,
           time: narrativeEvents[idx].time,
         });
-        console.debug(`📣 Sent current narrative index ${idx} to ${socket.id}`);
       }
     })
     .catch((err) => {
-      console.error("❌ Error fetching passengers:", err);
+      console.error("Error fetching passengers:", err);
     });
 
   // Initialize per-socket variables
   let currentRoom = null;
   let currentCharacter = null;
 
-  socket.on("load-stats", () => {
+  onEvent("load-stats", async () => {
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      socket.emit("auth-error", { message: auth.error });
+      return;
+    }
     handleLoadStats(socket);
   });
 
-  socket.on("save-stats", (statsData) => {
+  onEvent("save-stats", async (statsData) => {
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      socket.emit("auth-error", { message: auth.error });
+      return;
+    }
     handleSaveStats(socket, statsData);
   });
 
   // Handle 'join-room' event
-  socket.on("join-room", async (data) => {
-    const { room, character } = data;
+  onEvent("join-room", async (data) => {
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      socket.emit("auth-error", { message: auth.error });
+      return;
+    }
+
+    const { room } = data || {};
+    const character = socket.character;
+
+    if (!room || !character) {
+      console.warn(`join-room missing room or server character for ${socket.id}`);
+      return;
+    }
 
     if (!socket.isGameClient) {
       socket.isGameClient = true;
       gameClientCount++;
       io.emit("game-user-count", gameClientCount);
-      console.info(`🎮 Game client count increased: ${gameClientCount}`);
+      console.info(`Game client count increased: ${gameClientCount}`);
     }
     if (allowedRooms.includes(room)) {
       // Leave old room if switching rooms
@@ -1467,27 +1655,59 @@ io.on("connection", async (socket) => {
       const roomHistory = roomMessageHistory[room] || [];
       if (roomHistory.length > 0) {
         socket.emit("room-message-history", { room, messages: roomHistory });
-        console.debug(
-          `📚 Sent ${roomHistory.length} messages from history for room: ${room}`,
-        );
       }
 
-      console.info(`✅ User joined room: ${room}`);
+      // Send the current engine order telegraph position, if this room has
+      // one set (bridge/wheelhouse only) — so a late joiner sees the same
+      // needle position everyone else does instead of it resetting to STOP
+      if (telegraphState[room]) {
+        socket.emit("telegraph-update", {
+          room,
+          position: telegraphState[room],
+          initial: true, // late-join sync: place the lever, don't ring it
+        });
+      }
+
+      console.info(`User joined room: ${room}`);
     }
   });
 
   // Handle 'chat-message' event (corrected)
-  socket.on("chat-message", (data = {}) => {
-    const roomId = data.room;
-    const text = typeof data.message === "string" ? data.message.trim() : "";
-
-    if (!roomId || !allowedRooms.includes(roomId)) {
-      console.warn(`⚠️ Message sent to invalid or missing room: ${roomId}`);
+  onEvent("chat-message", async (data) => {
+    if (!data || typeof data !== "object") return;
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      socket.emit("auth-error", { message: auth.error });
       return;
     }
 
+    const roomId = data.room;
+    const text = typeof data.message === "string" ? data.message.trim() : "";
+
+    if (
+      typeof roomId !== "string" ||
+      !roomId ||
+      !allowedRooms.includes(roomId)
+    ) {
+      console.warn("Message sent to invalid or missing room");
+      return;
+    }
+
+    // Every line goes to every player: no more than 6 in 8 seconds from one
+    const chatNow = Date.now();
+    socket.chatTimes = (socket.chatTimes || []).filter(
+      (t) => chatNow - t < 8000,
+    );
+    if (socket.chatTimes.length >= 6) return;
+    socket.chatTimes.push(chatNow);
+
     if (!text) {
-      console.warn("⚠️ Ignoring empty chat message payload");
+      console.warn("Ignoring empty chat message payload");
+      return;
+    }
+
+    if (text.length > 500) {
+      console.warn(`Chat message too long from ${socket.id}`);
       return;
     }
 
@@ -1518,13 +1738,19 @@ io.on("connection", async (socket) => {
       processedMessage = text.replaceAll("/me", meName);
     }
 
+    // /me expands to the player's name, so cap the result as well as the typed text
+    if (processedMessage.length > 1000) {
+      console.warn(`Chat message too long after /me expansion from ${socket.id}`);
+      return;
+    }
+
     const outboundMessage = {
       room: roomId,
       message: processedMessage,
       timestamp: Date.now(),
       type: "user",
       userId: socket.id,
-      color: userChatColors[socket.id] || data.color || "#c0932b",
+      color: userChatColors[socket.id] || "#c0932b",
       character: safeCharacter,
       cabin: cabinRef,
       isAction: startsWithMe || text.includes("/me"),
@@ -1533,30 +1759,75 @@ io.on("connection", async (socket) => {
 
     addMessageToRoomHistory(roomId, outboundMessage);
     io.emit("chat-message", outboundMessage);
-    console.debug(
-      `📤 Broadcasted message from ${socket.id} to all clients from room: ${roomId}`,
-    );
+  });
+
+  // Handle 'telegraph-set' event: bridge/wheelhouse engine order telegraph.
+  // Roleplay only — this never touches the ship's actual speed/timeline,
+  // it just records which order is currently signaled for that room and
+  // relays it to everyone present, plus a chat narration line.
+  onEvent("telegraph-set", async (data) => {
+    if (!data || typeof data !== "object") return;
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      socket.emit("auth-error", { message: auth.error });
+      return;
+    }
+
+    const { room, position } = data;
+    if (typeof room !== "string" || !room || !allowedRooms.includes(room)) {
+      console.warn("Telegraph order sent to invalid or missing room");
+      return;
+    }
+    // Only from the room one stands in, and not faster than a hand can ring it
+    if (room !== currentRoom) return;
+    const telegNow = Date.now();
+    if (telegNow - (socket.lastTelegraph || 0) < 400) return;
+    socket.lastTelegraph = telegNow;
+    if (!Object.prototype.hasOwnProperty.call(TELEGRAPH_LABELS, position)) {
+      console.warn(`Unknown telegraph position: ${position}`);
+      return;
+    }
+
+    telegraphState[room] = position;
+    io.to(room).emit("telegraph-update", { room, position });
+
+    const activeCharacter = socket.character || {};
+    const orderedBy =
+      [activeCharacter.forename, activeCharacter.surname]
+        .filter(Boolean)
+        .join(" ") || "A crew member";
+    const systemMessage = {
+      type: "system",
+      message: `Engine order telegraph rung to ${TELEGRAPH_LABELS[position]} by ${orderedBy}.`,
+      room,
+      timestamp: Date.now(),
+    };
+    addMessageToRoomHistory(room, systemMessage);
+    io.emit("chat-message", systemMessage);
   });
 
   // Handle 'change-chat-color' event
-  socket.on("change-chat-color", async (color) => {
+  onEvent("change-chat-color", async (color) => {
     try {
+      if (!isChatColor(color)) {
+        console.warn(`Ignoring invalid chat color from ${socket.id}`);
+        return;
+      }
       // Prefer server-side session for authentication — do not accept client-supplied email
       const sessionUserId = socket.request?.session?.userId;
       if (!sessionUserId) {
-        console.warn("⚠️ Unauthenticated attempt to change chat color");
+        console.warn("Unauthenticated attempt to change chat color");
         return;
       }
 
       const user = await User.findById(sessionUserId);
       if (!user) {
-        console.warn(`⚠️ No user found for session ${sessionUserId}`);
+        console.warn(`No user found for session ${sessionUserId}`);
         return;
       }
 
       user.chatColor = color;
       await user.save();
-      console.debug(`🎨 Updated chat color for ${user.email}: ${color}`);
 
       // Update in-memory color for this socket
       userChatColors[socket.id] = color;
@@ -1567,15 +1838,20 @@ io.on("connection", async (socket) => {
         userId: user._id,
         color,
       });
-      console.debug(`📤 Broadcasted color change for ${socket.id}`);
     } catch (error) {
-      console.error(`❌ Error updating chat color: ${error.message}`);
+      console.error(`Error updating chat color: ${error.message}`);
     }
   });
 
   // Handle 'leave-room' event
-  socket.on("leave-room", (data) => {
-    const { room, character } = data;
+  onEvent("leave-room", async (data) => {
+    const auth = await requireSessionUser(socket);
+    if (!auth.ok) {
+      return;
+    }
+
+    const { room } = data || {};
+    const character = socket.character;
     if (allowedRooms.includes(room)) {
       socket.leave(room);
       socket
@@ -1589,7 +1865,7 @@ io.on("connection", async (socket) => {
     }
   });
 
-  socket.on("request-room-users", (roomId) => {
+  onEvent("request-room-users", (roomId) => {
     if (allowedRooms.includes(roomId)) {
       const roomSockets = io.sockets.adapter.rooms.get(roomId);
       if (roomSockets) {
@@ -1598,29 +1874,25 @@ io.on("connection", async (socket) => {
           return { socketId, character: userSocket.character };
         });
         socket.emit("room-users", { roomId, users: userList });
-        console.debug(`📤 Sent user list for ${roomId} to ${socket.id}`);
       } else {
         socket.emit("room-users", { roomId, users: [] });
-        console.debug(`📤 Sent empty user list for ${roomId} to ${socket.id}`);
       }
     }
   });
 
-  socket.on("request-all-room-counts", () => {
+  onEvent("request-all-room-counts", () => {
     allowedRooms.forEach((roomId) => {
       emitRoomCount(roomId);
     });
-    console.debug(`📊 Sent room counts for all rooms to ${socket.id}`);
   });
 
-  socket.on("request-room-count", (roomId) => {
+  onEvent("request-room-count", (roomId) => {
     if (allowedRooms.includes(roomId)) {
       emitRoomCount(roomId);
-      console.debug(`📊 Sent room count for ${roomId} to ${socket.id}`);
     }
   });
 
-  socket.on("request-room-counts", (payload) => {
+  onEvent("request-room-counts", (payload) => {
     const roomIds = Array.isArray(payload)
       ? payload
       : Array.isArray(payload?.rooms)
@@ -1637,12 +1909,9 @@ io.on("connection", async (socket) => {
         emitRoomCount(roomId);
       });
 
-    console.debug(
-      `📊 Sent batched room counts for ${roomIds.length} room(s) to ${socket.id}`,
-    );
   });
 
-  socket.on("request-room-players", (roomId) => {
+  onEvent("request-room-players", (roomId) => {
     if (allowedRooms.includes(roomId)) {
       const roomSockets = io.sockets.adapter.rooms.get(roomId);
       if (roomSockets) {
@@ -1665,7 +1934,6 @@ io.on("connection", async (socket) => {
           .filter(Boolean);
 
         socket.emit("room-players", { roomId, players });
-        console.debug(`👥 Sent player list for ${roomId} to ${socket.id}`);
       }
     }
   });
@@ -1769,26 +2037,33 @@ io.on("connection", async (socket) => {
   }
 
   // poker-deal: client sends { bet }
-  socket.on("poker-deal", async ({ bet }) => {
+  onEvent("poker-deal", async (payload) => {
     try {
-      if (!socket.userEmail) return;
+      const { bet } = payload || {};
+      const auth = await requireSessionUser(socket);
+      if (!auth.ok) return;
       const betAmount = Number(bet) || 0;
       if (!VALID_BETS.includes(betAmount)) return;
 
-      const user = await User.findOne({ email: socket.userEmail });
-      if (!user) return;
-
-      if (betAmount > 0 && (user.stats.money || 0) < betAmount) {
-        socket.emit("poker-error", { message: "Not enough money!" });
-        return;
-      }
-
-      // Deduct bet atomically
+      // The bet leaves the account only if the money is there, checked and
+      // taken in ONE update (a read followed by a separate write let twenty
+      // deals sent together all pass and run the balance below zero).
+      let balance;
       if (betAmount > 0) {
-        await User.findOneAndUpdate(
-          { email: socket.userEmail },
+        const paid = await User.findOneAndUpdate(
+          { email: socket.userEmail, "stats.money": { $gte: betAmount } },
           { $inc: { "stats.money": -betAmount } },
+          { new: true },
         );
+        if (!paid) {
+          socket.emit("poker-error", { message: "Not enough money!" });
+          return;
+        }
+        balance = paid.stats.money;
+      } else {
+        const user = await User.findOne({ email: socket.userEmail });
+        if (!user) return;
+        balance = user.stats.money;
       }
 
       const deck = createShuffledDeck();
@@ -1797,23 +2072,29 @@ io.on("connection", async (socket) => {
       // Store game state on the socket (not accessible to client)
       socket.pokerGame = { deck, hand, bet: betAmount };
 
-      const updatedUser = await User.findOne({ email: socket.userEmail });
       socket.emit("poker-dealt", {
         hand,
-        money: updatedUser.stats.money,
+        money: balance,
       });
     } catch (error) {
-      console.error(`❌ Poker deal error: ${error.message}`);
+      console.error(`Poker deal error: ${error.message}`);
     }
   });
 
   // poker-hold: client sends { held: [bool, bool, bool, bool, bool] }
-  socket.on("poker-hold", async ({ held }) => {
+  onEvent("poker-hold", async (payload) => {
     try {
-      if (!socket.userEmail || !socket.pokerGame) return;
+      const { held } = payload || {};
+      const auth = await requireSessionUser(socket);
+      if (!auth.ok) return;
       if (!Array.isArray(held) || held.length !== 5) return;
 
+      // Claim the hand BEFORE the first database call. It used to be cleared
+      // only after them, so thirty "poker-hold" events sent together all found
+      // the hand still there and each was paid.
       const game = socket.pokerGame;
+      if (!game) return;
+      socket.pokerGame = null;
       // Draw replacements from the stored deck
       for (let i = 0; i < 5; i++) {
         if (!held[i]) {
@@ -1843,26 +2124,51 @@ io.on("connection", async (socket) => {
         bet: game.bet,
         money: updatedUser.stats.money,
       });
-
-      // Clear game state
-      socket.pokerGame = null;
     } catch (error) {
-      console.error(`❌ Poker hold error: ${error.message}`);
+      console.error(`Poker hold error: ${error.message}`);
     }
   });
 
-  // ─── Server-authoritative purchases ───────────────────────────────────────
-  socket.on("purchase-item", async ({ price }) => {
+  // ─── Server-authoritative purchases (price from menu catalog, not client) ─
+  onEvent("purchase-item", async (payload = {}) => {
     try {
-      if (!socket.userEmail) return;
-      const cost = Number(price) || 0;
+      const auth = await requireSessionUser(socket);
+      if (!auth.ok) {
+        socket.emit("purchase-result", {
+          success: false,
+          message: auth.error,
+        });
+        return;
+      }
+
+      const menuItem = lookupMenuItem({
+        itemKey: payload.itemKey,
+        topCategory: payload.topCategory,
+        subCategory: payload.subCategory,
+        name: payload.name,
+      });
+
+      if (!menuItem) {
+        socket.emit("purchase-result", {
+          success: false,
+          message: "Unknown menu item",
+        });
+        return;
+      }
+
+      const cost = Number(menuItem.price) || 0;
       if (cost <= 0) {
         socket.emit("purchase-result", { success: true, money: null });
         return;
       }
 
-      const user = await User.findOne({ email: socket.userEmail });
-      if (!user || (user.stats.money || 0) < cost) {
+      // Checked and taken in one update (see poker-deal)
+      const paid = await User.findOneAndUpdate(
+        { email: socket.userEmail, "stats.money": { $gte: cost } },
+        { $inc: { "stats.money": -cost } },
+        { new: true },
+      );
+      if (!paid) {
         socket.emit("purchase-result", {
           success: false,
           message: "Not enough money!",
@@ -1870,38 +2176,33 @@ io.on("connection", async (socket) => {
         return;
       }
 
-      await User.findOneAndUpdate(
-        { email: socket.userEmail },
-        { $inc: { "stats.money": -cost } },
-      );
-
-      const updatedUser = await User.findOne({ email: socket.userEmail });
       socket.emit("purchase-result", {
         success: true,
-        money: updatedUser.stats.money,
+        money: paid.stats.money,
+        itemKey: typeof payload.itemKey === "string" ? payload.itemKey : null,
       });
     } catch (error) {
-      console.error(`❌ Purchase error: ${error.message}`);
+      console.error(`Purchase error: ${error.message}`);
+      socket.emit("purchase-result", {
+        success: false,
+        message: "Purchase failed",
+      });
     }
   });
 
-  socket.on("disconnect", () => {
-    console.info(`👤 User disconnected: ${socket.id}`);
+  onEvent("disconnect", () => {
+    console.info(`User disconnected: ${socket.id}`);
     try {
-      console.debug("👤 User disconnected:", socket.id);
       userCount--; // Keep this decrement
-      console.info(`👥 User count decremented: ${userCount}`);
+      console.info(`User count decremented: ${userCount}`);
 
       // Emit the updated user count to all clients
       io.emit("global-user-count", userCount); // Use this event consistently
-      console.debug(
-        "📣 Emitted updated user count to all clients after disconnect",
-      );
 
       if (socket.isGameClient) {
         gameClientCount = Math.max(0, gameClientCount - 1);
         io.emit("game-user-count", gameClientCount);
-        console.info(`🎮 Game client count decremented: ${gameClientCount}`);
+        console.info(`Game client count decremented: ${gameClientCount}`);
       }
 
       if (currentRoom && currentCharacter) {
@@ -1911,7 +2212,7 @@ io.on("connection", async (socket) => {
           socketId: socket.id,
           roomId: currentRoom,
         });
-        console.info(`🔒 ${socket.id} disconnected from room: ${currentRoom}`);
+        console.info(`${socket.id} disconnected from room: ${currentRoom}`);
 
         // Emit the updated room count to all clients in the room
         const roomSizeAfterDisconnect =
@@ -1920,20 +2221,16 @@ io.on("connection", async (socket) => {
           roomId: currentRoom,
           count: roomSizeAfterDisconnect,
         });
-        console.debug(
-          `📊 Emitted updated room count for ${currentRoom}: ${roomSizeAfterDisconnect}`,
-        );
       }
 
       // Remove the user's character data
       if (users[socket.id]) {
         delete users[socket.id];
-        console.debug(`🗑️ Removed character data for ${socket.id}`);
       }
 
-      console.info("👤 Client disconnected");
+      console.info("Client disconnected");
     } catch (error) {
-      console.error(`❌ Error during disconnect: ${error.message}`);
+      console.error(`Error during disconnect: ${error.message}`);
     } finally {
       // Always clean up socket-keyed maps, even if an error occurred above
       delete users[socket.id];
@@ -1944,9 +2241,9 @@ io.on("connection", async (socket) => {
 
 // Initialize Server
 const startServer = async () => {
-  console.info("🚀 Initializing server...");
+  console.info("Initializing server...");
   validateEnvironment();
-  console.info("🚀 Initializing MongoDB...");
+  console.info("Initializing MongoDB...");
   await initMongoDB();
 
   // Load or initialize persistent voyage start time
@@ -1954,7 +2251,7 @@ const startServer = async () => {
   if (savedState) {
     voyageStartTime = savedState.value;
     console.info(
-      `⏰ Voyage start time loaded from DB: ${new Date(voyageStartTime).toISOString()}`,
+      `Voyage start time loaded from DB: ${new Date(voyageStartTime).toISOString()}`,
     );
   } else {
     voyageStartTime = Date.now();
@@ -1963,7 +2260,7 @@ const startServer = async () => {
       value: voyageStartTime,
     });
     console.info(
-      `⏰ Voyage start time initialized and saved to DB: ${new Date(voyageStartTime).toISOString()}`,
+      `Voyage start time initialized and saved to DB: ${new Date(voyageStartTime).toISOString()}`,
     );
   }
 
@@ -1976,16 +2273,29 @@ const startServer = async () => {
   }
   serverNarrativeIndex = idx;
   console.info(
-    `🔁 Narrative synced to index ${serverNarrativeIndex} (${elapsedSeconds}s elapsed)`,
+    `Narrative synced to index ${serverNarrativeIndex} (${elapsedSeconds}s elapsed)`,
   );
 
-  console.info("🔁 Syncing cabin occupancy from DB...");
+  console.info("Syncing cabin occupancy from DB...");
   await syncCabinOccupancyFromDB();
   const PORT = process.env.PORT || 3000;
+  await assetsReady; // players get the minified files from the first request
   server.listen(PORT, () => {
-    console.info(`🚀 Server running on port ${PORT}`);
+    console.info(`Server running on port ${PORT}`);
   });
 };
+
+// A malformed request body, or anything a route lets slip: a plain answer,
+// never a stack trace (Express prints one unless NODE_ENV is "production")
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const code = Number(err && (err.status || err.statusCode)) || 500;
+  const status = code >= 400 && code < 500 ? code : 500;
+  if (status === 500) console.error("Unhandled route error:", err);
+  res
+    .status(status)
+    .json({ success: false, error: status === 500 ? "Server error" : "Bad request" });
+});
 
 // Error Handling
 process.on("unhandledRejection", (err) => {
@@ -1993,17 +2303,17 @@ process.on("unhandledRejection", (err) => {
   // Swallow it gracefully — the route handler already sent a 400 to the client.
   if (err && err.http_code === 400 && /invalid image/i.test(err.message)) {
     console.warn(
-      "⚠️ Cloudinary rejected an image upload (invalid image file) — handled gracefully.",
+      "Cloudinary rejected an image upload (invalid image file) — handled gracefully.",
     );
     return;
   }
-  console.error("❌ Unhandled Promise Rejection:", err);
+  console.error("Unhandled Promise Rejection:", err);
   process.exit(1);
 });
 
 // Graceful shutdown: clear intervals and close connections
 function gracefulShutdown() {
-  console.info("🛑 Shutting down gracefully...");
+  console.info("Shutting down gracefully...");
   clearInterval(narrativeInterval);
   clearInterval(voyageStateInterval);
   server.close(() => {

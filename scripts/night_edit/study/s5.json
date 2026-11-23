@@ -1,0 +1,5 @@
+{"rows": [[{"p": "work/desun_night/1st A overlook prom5.png", "box": [100,340,700,640], "k": 1.5, "tag": "in the game now: 1st A overlook prom5 (night)"},
+           {"p": "G:1st A overlook prom5.png", "box": [100,340,700,640], "k": 1.5, "tag": "day"}],
+          [{"p": "work/desun_night/1st A port prom8.png", "box": [420,300,1000,720], "k": 1.0, "tag": "in the game now: 1st A port prom8 (night)"},
+           {"p": "work/desun_night/1st A overlook prom3.png", "box": [1300,0,1920,700], "k": 1.0, "tag": "in the game now: 1st A overlook prom3"},
+           {"p": "G:1st A overlook prom3.png", "box": [1300,0,1920,700], "k": 1.0, "tag": "day"}]]}

@@ -5230,7 +5230,7 @@ const MENU_DATA = [
   {
     "name": "Whiskey Tea",
     "image": "https://titanicvoyage-images.b-cdn.net/game/food/LyonsTea.png",
-    "localImage": "/images/game/menu/alcoholic_beverages/cocktails/LyonsTea.png",
+    "localImage": "/images/game/menu/soft_beverages/tea/LyonsTea.png",
     "topCategory": "alcoholic_beverages",
     "subCategory": "cocktails",
     "hungry": 0,
@@ -5243,7 +5243,7 @@ const MENU_DATA = [
   {
     "name": "Brandy Coffee",
     "image": "https://titanicvoyage-images.b-cdn.net/game/food/CafeauLait.png",
-    "localImage": "/images/game/menu/alcoholic_beverages/cocktails/CafeauLait.png",
+    "localImage": "/images/game/menu/soft_beverages/coffee/CafeauLait.png",
     "topCategory": "alcoholic_beverages",
     "subCategory": "cocktails",
     "hungry": 0,

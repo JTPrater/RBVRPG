@@ -1,0 +1,2302 @@
+/* =====================================================================
+   The game's look: White Star printed paper on the ship's mahogany.
+   Loaded after game.css and overrides its styling. What you read is
+   printed paper (Caslon, hairline rules, one red ink), what you press is
+   wood, and aged brass marks the bars' inlay and the pressed, current and
+   focus states. Needs keep the game's green-to-red colour.
+   Libre Caslon has no small capitals, so none are used and the browser
+   is not allowed to fake any (font-synthesis: none).
+   Textures are in public/images/ui/: wood-top.jpg and wood-bottom.jpg
+   (graded from Poly Haven's CC0 dark_wood), paper.jpg (generated) and
+   logo-ink.png (the logo lifted off the old loading screen).
+   ===================================================================== */
+
+:root {
+  /* Paper dims a little after dark, like a card under a cabin lamp.
+     --night-ink (0 by day, up to 0.45 at night) is set by celestial.js */
+  --paper: color-mix(in srgb, #bdb29b calc(var(--night-ink, 0) * 80%), #f2ebdc);
+  --paper-deep: color-mix(in srgb, #b3a78e calc(var(--night-ink, 0) * 80%), #e6dcc6);
+  --paper-field: #faf6ec;
+  --ink: #211a13;
+  --ink-2: #574a3b;
+  --ink-3: #85776a;
+  --rule: rgba(33, 26, 19, 0.26);
+  --red: #a1261c;
+
+  /* the printed stock: one 512px tile; the night tone is laid over it as a
+     veil so the grain survives */
+  --paper-tex: url("../images/ui/paper.jpg");
+  --paper-night: linear-gradient(rgb(189 178 155 / calc(var(--night-ink, 0) * 0.8)), rgb(189 178 155 / calc(var(--night-ink, 0) * 0.8)));
+
+  /* the mahogany: the bars' own boards, also used for the strips over the
+     room picture */
+  --wood: #43241a;
+  --wood-tex: url("../images/ui/wood-top.jpg");
+  --on-wood: #ece2cd;
+  --on-wood-2: #bfb197;
+  --rule-on-wood: rgba(236, 226, 205, 0.24);
+  /* hovered and pressed wood: the board a shade or two darker */
+  --darken: inset 0 0 0 100vmax rgba(10, 5, 2, 0.42);
+  --press: inset 0 0 0 100vmax rgba(0, 0, 0, 0.82);
+
+  /* aged brass, never bright gold */
+  --brass: #a3824a;
+  --brass-light: #c6a86a;
+  --brass-ink: #8a6a2f; /* brass dark enough to read on paper */
+
+  /* Engraved brass plates and green leather tooled in gilt, both flat:
+     the material shows in its colour and grain, never in a sheen */
+  --brass-plate: #b3925a;
+  --brass-plate-hover: #c19f66;
+  --brass-plate-down: #8f7140;
+  --brass-rim: #4a3618;
+  /* a plate's dark rim, with one hairline of light along its top edge */
+  --brass-edge: 0 0 0 1px var(--brass-rim), inset 0 1px 0 rgba(255, 238, 200, 0.45);
+  --engrave: #2a1d0c;
+  --leather: #27412f;
+  --leather-hover: #2f4d39;
+  --leather-down: #1a2c20;
+  --gilt: #d3b06a;
+  --stamp: #b3261e;
+  /* the White Star burgee, printed on the passenger's ticket */
+  --burgee: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 36'%3E%3Cpath d='M0 0H60L44 18L60 36H0Z' fill='%23b0201d'/%3E%3Cpolygon points='22,9 24.12,15.09 30.56,15.22 25.42,19.11 27.29,25.28 22,21.6 16.71,25.28 18.58,19.11 13.44,15.22 19.88,15.09' fill='%23fbf7ee'/%3E%3C/svg%3E");
+  /* a printed card lying over the game */
+  --card-shadow: 0 0 0 1px rgba(33, 26, 19, 0.3), 0 2px 5px rgba(8, 4, 2, 0.3), 0 12px 28px rgba(8, 4, 2, 0.4);
+
+  /* Old Standard TT carries the Cyrillic (Libre Caslon has none); a browser
+     fetches it only for pages that show Cyrillic */
+  --f-text: "Libre Caslon Text", "Old Standard TT", Georgia, serif;
+
+  --t-ui: clamp(12px, 0.78vw, 15px);
+  --t-small: clamp(12px, 0.68vw, 13px);
+  --t-label: clamp(12px, 0.73vw, 14px);
+  --t-chat: clamp(13px, 0.81vw, 15.5px);
+  --t-title: clamp(20px, 1.3vw, 25px);
+  --tab-h: clamp(26px, 1.77vw, 34px);
+}
+
+html {
+  font-synthesis: none;
+}
+
+/* ---------- One text face everywhere (icons excepted) ---------- */
+body,
+.game-container *:not(.material-icons):not(.material-symbols-outlined),
+.vp-overlay,
+.vp-overlay *,
+#report-modal *:not(.material-icons),
+#route-map-panel *:not(.material-icons),
+#room-tooltip,
+#dev-na-show,
+#dev-na-panel *,
+#loading-screen * {
+  font-family: var(--f-text) !important;
+  font-variant-caps: normal;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Icon ligatures */
+.material-icons,
+#dev-na-show::before,
+#players-btn .players-toggle-arrow::before,
+.edm-arrow::before {
+  font-family: "Material Icons" !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-style: normal !important;
+  font-weight: 400 !important;
+  font-feature-settings: "liga" !important;
+  -webkit-font-feature-settings: "liga" !important;
+}
+
+/* Keyboard focus: a brass rule inside the control, never a glow */
+.game-container button:focus-visible,
+.game-container input:focus-visible,
+.game-container select:focus-visible,
+.game-container a:focus-visible,
+.game-container [class*="btn"]:focus-visible,
+#report-modal button:focus-visible,
+#report-modal select:focus-visible {
+  outline: 2px solid var(--brass-ink);
+  outline-offset: -2px;
+}
+/* on the wood the rule is the lighter brass */
+.game-container .panel-btn:focus-visible,
+.game-container .eat-drink-button:focus-visible,
+.game-container .cabin-action-btn:focus-visible,
+.game-container #refresh-location-btn:focus-visible,
+.game-container #players-btn:not(.open):focus-visible,
+.game-container #send-message:focus-visible,
+.game-container #route-globe-btn:focus-visible,
+#report-modal .btn-primary:focus-visible {
+  outline: 1px solid var(--brass-light);
+  outline-offset: -4px;
+}
+.game-container ::selection,
+#report-modal ::selection {
+  background: rgba(161, 38, 28, 0.18);
+}
+
+/* ================= Materials ================= */
+/* Paper: everything that is read or filled in */
+.info-bar,
+.narrative-panel,
+.chat-container,
+.character-card,
+.players-drawer.open,
+.room-name-label,
+.settings-popup,
+.eat-drink-popup,
+.edm-tooltip,
+.games-popup,
+.profile-popup,
+.player-info-card,
+.modal-content,
+.room-tooltip,
+#route-map-panel,
+#dev-na-panel {
+  background-color: var(--paper);
+  background-image: var(--paper-night), var(--paper-tex);
+  background-size: auto, 512px 512px;
+  background-repeat: no-repeat, repeat;
+  background-position: 0 0, 0 0;
+}
+
+/* Wood: the passengers' tab and the telegraph's header over the room
+   picture and the loading screen's Start are cut from
+   the same mahogany as the bars, at the top board's scale */
+.players-drawer:not(.open),
+.teleg-header,
+#start-button,
+#dev-na-show {
+  background-color: var(--wood);
+  background-image: var(--wood-tex);
+  background-size: 100vw 100%;
+  background-repeat: no-repeat;
+  background-position: 0 50%;
+}
+/* the passengers' tab shows another stretch of the board */
+.players-drawer:not(.open) {
+  background-position: 100% 50%;
+}
+
+/* Brass: the room's own buttons (Eat & Drink, Tobacco, Games, the cabin's
+   shower, toilet and bed, Go Aboard), Send and the report's button are
+   engraved brass plates, like the passenger's own tabs on the bottom board.
+   Flat metal with a fine grain (the paper tile multiplied in) */
+.eat-drink-button,
+#cabin-action-buttons,
+.enter-britannic-btn,
+#send-message,
+#deal-draw-btn,
+.btn-primary {
+  background-color: var(--brass-plate);
+  background-image: var(--paper-tex);
+  background-size: 256px 256px;
+  background-repeat: repeat;
+  background-blend-mode: multiply;
+}
+
+/* ================= Top bar: a mahogany board with a paper slip ================= */
+.top-bar > img.game-gui {
+  /* the top bar takes its height from this image: 34px at 1920 */
+  aspect-ratio: 1920 / 34;
+}
+/* the board's lower edge, with a brass strip let in along it */
+.top-bar::after,
+.top-bar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.top-bar::after {
+  bottom: 0;
+  height: calc(100vw * 2 / 1920);
+  background: #1b120c;
+}
+.top-bar::before {
+  bottom: calc(100vw * 2 / 1920);
+  height: 1px;
+  background: var(--brass);
+}
+.info-bar {
+  top: calc(50% - 100vw / 1920);
+  width: auto;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0 clamp(4px, 0.42vw, 8px);
+  height: calc(var(--tab-h) - clamp(10px, 0.63vw, 12px));
+  align-items: center;
+  color: var(--ink);
+  font-size: var(--t-label);
+  line-height: 1;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.info-bar span {
+  flex: 0 0 auto;
+  padding: 0 clamp(10px, 0.94vw, 18px);
+}
+.info-bar span:not(:last-child)::after {
+  top: 0;
+  height: 100%;
+  background: var(--rule);
+}
+/* the chart globe: centred on the board now that there is no gilt band */
+#route-globe-btn {
+  top: calc(50% - 100vw / 1920);
+  color: var(--on-wood-2);
+}
+#route-globe-btn:hover {
+  color: var(--on-wood);
+}
+#route-globe-btn.open {
+  color: var(--brass-light);
+}
+
+/* ================= Ship's notice (story panel) ================= */
+.narrative-panel {
+  top: calc(var(--tab-h) + clamp(8px, 0.83vw, 16px));
+  right: clamp(8px, 0.83vw, 16px);
+  width: clamp(260px, 18.2vw, 350px);
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  /* a printed card over the sky, ruled round inside its edge */
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -6px;
+  padding: clamp(9px, 0.73vw, 14px) clamp(11px, 0.83vw, 16px) clamp(8px, 0.63vw, 12px);
+  color: var(--ink);
+}
+.narrative-content {
+  gap: clamp(6px, 0.52vw, 10px);
+}
+/* The measure is set so the welcome breaks after "RMS Britannic." */
+#story-text {
+  display: block;
+  text-align: left;
+  font-size: clamp(13px, 0.833vw, 16px);
+  line-height: 1.38;
+  max-width: 18.6em;
+  color: var(--ink);
+  margin: 0;
+}
+.weather-info {
+  text-align: left;
+  border-top: 1px solid var(--rule);
+  padding-top: clamp(5px, 0.42vw, 8px);
+}
+#current-weather {
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  font-style: italic;
+  line-height: 1.42;
+}
+
+/* Admin test-scenario chip: a small wood plate with a Material icon */
+#dev-na-show {
+  top: calc(var(--tab-h) + 10px);
+  left: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 0;
+  border: 0;
+  color: var(--on-wood-2);
+  font-size: 0;
+  opacity: 0.85;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+#dev-na-show::before {
+  content: "tune";
+  font-size: 16px;
+  line-height: 1;
+}
+#dev-na-panel {
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  color: var(--ink);
+}
+.dev-na-title {
+  color: var(--ink);
+}
+
+/* ================= Chat: the log, printed on a sheet ================= */
+.chat-container {
+  border: 0;
+  padding: clamp(12px, 1.04vw, 20px) clamp(14px, 1.25vw, 24px) clamp(12px, 0.94vw, 18px);
+}
+.chat-messages {
+  height: calc(100% - clamp(40px, 2.86vw, 55px));
+  padding: 0 clamp(36px, 2.6vw, 50px) 0 0;
+  font-size: var(--t-chat);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-3) transparent;
+}
+.chat-message {
+  font-size: var(--t-chat);
+  line-height: 1.55;
+  margin: 0;
+}
+/* Speakers keep the hue of their chosen colour; its lightness is pinned
+   dark enough to read as ink on the ivory sheet */
+.chat-message.user {
+  -webkit-text-fill-color: oklch(from currentColor min(l, 0.47) min(c, 0.13) h);
+}
+.chat-message.system {
+  color: var(--ink-2);
+  font-style: italic;
+}
+/* the "(Cabin A3)" room tag in the global log: a fine rule, not a web link */
+.chat-message span[style*="underline"] {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.chat-input-container {
+  padding: clamp(8px, 0.73vw, 14px) 0 0;
+  gap: clamp(8px, 0.63vw, 12px);
+  align-items: stretch;
+}
+/* a ruled box, as on the report form */
+#chat-input {
+  background: var(--paper-field);
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  padding: clamp(5px, 0.42vw, 8px) clamp(8px, 0.52vw, 10px);
+  font-size: var(--t-chat);
+  color: var(--ink);
+  box-shadow: none;
+}
+#chat-input::placeholder {
+  color: var(--ink-3);
+  font-style: italic;
+}
+#chat-input:focus {
+  border-color: var(--ink);
+  outline: 1px solid var(--ink);
+  outline-offset: -2px;
+}
+/* Send is a small engraved brass plate */
+#send-message {
+  color: var(--engrave);
+  border: 0;
+  border-radius: 0;
+  font-size: var(--t-ui);
+  font-weight: 400;
+  padding: 0 clamp(16px, 1.25vw, 24px);
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+  box-shadow: var(--brass-edge);
+}
+#send-message:hover {
+  background-color: var(--brass-plate-hover);
+  background-image: var(--paper-tex);
+  color: var(--engrave);
+}
+#send-message:active {
+  background-color: var(--brass-plate-down);
+  background-image: var(--paper-tex);
+  box-shadow: 0 0 0 1px var(--brass-rim), inset 0 1px 3px rgba(30, 18, 4, 0.5);
+}
+#global-chat-toggle {
+  top: clamp(8px, 0.73vw, 14px);
+  right: clamp(10px, 0.94vw, 18px);
+  width: clamp(24px, 1.67vw, 32px);
+  height: clamp(24px, 1.67vw, 32px);
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+}
+#global-chat-toggle:hover {
+  background: transparent;
+}
+#global-chat-toggle .material-icons {
+  color: var(--ink-2);
+  font-size: clamp(16px, 1.04vw, 20px);
+}
+#global-chat-toggle:hover .material-icons {
+  color: var(--red);
+}
+
+/* ================= Room picture ================= */
+/* An empty mount until a room photograph is drawn over it, with a small
+   printed card lying on it */
+.location-display {
+  background: #211a14;
+  border: 0;
+  /* what lies on the picture stands this far in from its corners */
+  --ov-gap: clamp(6px, 0.52vw, 10px);
+  --ov-h: clamp(24px, 1.56vw, 30px);
+  --lift: 0 1px 2px rgba(8, 4, 2, 0.35), 0 3px 8px rgba(8, 4, 2, 0.25);
+}
+.location-display::before {
+  /* the words are in the element's attribute, so they can be translated */
+  content: attr(data-i18n-content);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: clamp(8px, 0.63vw, 12px) clamp(14px, 1.15vw, 22px);
+  white-space: nowrap;
+  background-color: var(--paper);
+  background-image: var(--paper-night), var(--paper-tex);
+  background-size: auto, 512px 512px;
+  color: var(--ink-2);
+  font-family: var(--f-text);
+  font-style: italic;
+  font-size: var(--t-ui);
+  pointer-events: none;
+}
+.location-canvas {
+  position: relative;
+}
+
+/* What lies on the picture, each to its job: the room's name is a printed
+   caption card (it is read, so italic on paper), the room's own buttons are
+   brass push plates (roman), Refresh is a small square of smoked glass that
+   keeps out of the way, and Passengers is a mahogany tab let into the board
+   below. The card and the plates stand a little in from the corners and
+   cast a faint shadow on the picture */
+.room-name-label {
+  top: var(--ov-gap);
+  left: var(--ov-gap);
+  height: var(--ov-h);
+  line-height: var(--ov-h);
+  padding: 0 clamp(10px, 0.73vw, 14px);
+  color: var(--ink);
+  border: 0;
+  font-size: clamp(13px, 0.833vw, 16px);
+  font-style: italic;
+  text-shadow: none;
+  /* the card's edge, its shadow, and a printed rule inside the edge */
+  box-shadow: 0 0 0 1px rgba(33, 26, 19, 0.45), var(--lift);
+  outline: 1px solid var(--rule);
+  outline-offset: -4px;
+}
+.room-name-label::selection {
+  background: rgba(161, 38, 28, 0.18);
+  color: var(--ink);
+}
+
+/* the cabin's shower, toilet and bed: one brass plate in three */
+#cabin-action-buttons {
+  top: var(--ov-gap) !important;
+  right: var(--ov-gap) !important;
+  gap: 0 !important;
+  box-shadow: var(--brass-edge), var(--lift);
+}
+.cabin-action-btn,
+.cabin-action-btn:hover,
+.cabin-action-btn:focus,
+.cabin-action-btn:active {
+  width: calc(var(--ov-h) + 6px);
+  height: var(--ov-h);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+.cabin-action-btn + .cabin-action-btn {
+  border-left: 1px solid rgba(74, 54, 24, 0.55);
+}
+.cabin-action-btn:hover,
+.cabin-action-btn:active {
+  background-image: var(--paper-tex);
+  background-size: 256px 256px;
+  background-blend-mode: multiply;
+}
+.cabin-action-btn:hover {
+  background-color: var(--brass-plate-hover);
+}
+.cabin-action-btn:active {
+  background-color: var(--brass-plate-down);
+}
+.cabin-action-btn .material-icons,
+.cabin-action-btn:active .material-icons {
+  color: var(--engrave);
+  font-size: clamp(16px, 1.04vw, 20px);
+}
+
+/* Eat & Drink, Tobacco, Games */
+.eat-drink-button,
+#eat-drink-btn,
+#games-toggle-btn {
+  top: var(--ov-gap) !important;
+  right: var(--ov-gap) !important;
+  height: var(--ov-h);
+  min-width: 0;
+  padding: 0 clamp(12px, 0.83vw, 16px);
+  color: var(--engrave);
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--brass-edge), var(--lift);
+  font-size: var(--t-ui);
+  font-weight: 400;
+  /* lettering cut into the plate catches the light on its lower edge */
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+}
+.eat-drink-button:hover {
+  background-color: var(--brass-plate-hover);
+  color: var(--engrave);
+}
+/* pressed, and while its menu is open */
+.eat-drink-button:active,
+.location-display:has(.eat-drink-popup[data-owner="eat-drink-btn"]) #eat-drink-btn,
+.location-display:has(.eat-drink-popup[data-owner="tobacco-btn"]) #tobacco-btn,
+.location-display:has(.games-popup) #games-toggle-btn {
+  background-color: var(--brass-plate-down);
+  box-shadow: var(--brass-edge);
+  color: var(--engrave);
+  text-shadow: none;
+}
+
+/* The room's buttons share one row (a smoking room has three: Tobacco,
+   Eat & Drink, Games), so none sits on top of another. */
+/* The room's name and its buttons share one row along the picture's top:
+   the buttons keep their size, the name gives way (ending in "...") rather
+   than run under them in a narrow window or a longer language */
+.room-actions {
+  position: absolute;
+  top: var(--ov-gap);
+  left: var(--ov-gap);
+  right: var(--ov-gap);
+  z-index: 12;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: clamp(6px, 0.52vw, 10px);
+  pointer-events: none;
+}
+.room-actions > * {
+  pointer-events: auto;
+}
+.room-actions .room-name-label {
+  position: static;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.room-actions .eat-drink-button {
+  position: static !important;
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Refresh */
+#refresh-location-btn {
+  left: var(--ov-gap);
+  bottom: var(--ov-gap);
+  width: var(--ov-h);
+  height: var(--ov-h);
+  border: 0;
+  border-radius: 0;
+  background: rgba(16, 10, 6, 0.5);
+  color: var(--on-wood);
+  box-shadow: 0 0 0 1px rgba(236, 226, 205, 0.28);
+}
+#refresh-location-btn .material-icons {
+  font-size: clamp(16px, 1.04vw, 20px);
+}
+#refresh-location-btn:hover {
+  background: rgba(16, 10, 6, 0.72);
+  box-shadow: 0 0 0 1px rgba(236, 226, 205, 0.45);
+}
+#refresh-location-btn:active {
+  background: rgba(0, 0, 0, 0.85);
+  color: var(--brass-light);
+}
+
+/* Passengers: a mahogany tab that opens upward into a printed list. The
+   open list is sized in whole rows, so no passenger is cut through */
+.players-drawer {
+  --prow: round(clamp(40px, 2.6vw, 50px), 1px);
+  --plist: round(down, calc(var(--hud-panel-height) - 2 * var(--tab-h) - 12px), var(--prow));
+  width: min(clamp(210px, 14vw, 270px), calc(100% - 10px));
+  max-height: var(--tab-h);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.players-drawer.open {
+  height: auto;
+  max-height: calc(var(--tab-h) + 1px + var(--plist) + 1px);
+  border-top: 1px solid var(--ink);
+  border-left: 1px solid var(--ink);
+}
+#players-btn.players-toggle-btn {
+  height: var(--tab-h);
+  padding: 0 clamp(10px, 0.73vw, 14px);
+  color: var(--on-wood);
+  background: transparent;
+  font-size: var(--t-ui);
+  line-height: 1;
+  border: 0;
+}
+#players-btn.players-toggle-btn:hover {
+  box-shadow: var(--darken);
+}
+#players-btn.players-toggle-btn:active {
+  box-shadow: var(--press);
+}
+#players-btn.players-toggle-btn.open {
+  color: var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+#players-btn.players-toggle-btn.open:hover {
+  box-shadow: none;
+  background: rgba(33, 26, 19, 0.06);
+}
+#players-btn .players-toggle-arrow {
+  font-size: 0;
+  color: inherit;
+  display: inline-flex;
+}
+#players-btn .players-toggle-arrow::before {
+  content: "expand_less";
+  font-size: 18px;
+  line-height: 1;
+}
+#players-popup,
+#players-popup.open {
+  height: auto;
+  max-height: var(--plist);
+  padding: 0 clamp(10px, 0.73vw, 14px);
+}
+#players-popup:not(.open) {
+  max-height: 0;
+}
+#players-popup .players-list {
+  gap: 0;
+  height: auto;
+  max-height: var(--plist);
+  scroll-snap-type: y mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-3) transparent;
+}
+#players-popup .room-player-item,
+#players-popup .room-player-item:hover {
+  box-sizing: border-box;
+  height: var(--prow);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 0;
+  gap: 12px;
+  align-items: center;
+  scroll-snap-align: start;
+}
+#players-popup .room-player-item:last-child {
+  border-bottom-color: transparent;
+}
+#players-popup .room-player-item:hover .player-name {
+  color: var(--red);
+}
+#players-popup .player-avatar {
+  height: calc(var(--prow) - 14px);
+  width: calc((var(--prow) - 14px) * 0.84);
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  background: var(--paper-deep);
+}
+/* name on the first line; "Passenger · B47" set as one line beneath */
+#players-popup .player-info {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0;
+  row-gap: 1px;
+}
+#players-popup .player-name {
+  flex: 0 0 100%;
+  font-size: var(--t-ui);
+  font-weight: 400;
+  color: var(--ink);
+  text-shadow: none;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#players-popup .player-class {
+  font-size: var(--t-small);
+  font-style: italic;
+  color: var(--ink-2);
+  text-shadow: none;
+  line-height: 1.25;
+}
+#players-popup .player-class::after {
+  content: "\00a0\00b7\00a0";
+  font-style: normal;
+}
+#players-popup .player-cabin {
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  text-shadow: none;
+  line-height: 1.25;
+}
+#players-popup .no-players {
+  color: var(--ink-2);
+  font-style: italic;
+  text-shadow: none;
+  font-size: var(--t-small);
+}
+
+/* ================= Bill of fare (eat & drink menu) ================= */
+/* A printed bill in two columns, each dish with its little picture beside
+   it. Rows have a fixed height and the sheet holds a whole number of them;
+   scrolling snaps row by row, so no dish is ever cut by the edge. The
+   category list uses half rows, so it divides the same height evenly.
+   The measures are set so all 450 dish names fit their two lines at 1920
+   (two at 1536 are shortened, and shown whole in the particulars below);
+   narrower than that the bill drops to one column */
+.eat-drink-popup {
+  --fare-row: round(clamp(32px, 2.08vw, 40px), 1px);
+  --fare-pad: clamp(6px, 0.52vw, 10px);
+  --fare-side: clamp(140px, 8.33vw, 160px);
+  --fare-inset: clamp(6px, 0.52vw, 10px);
+  --fare-gutter: clamp(10px, 0.63vw, 12px);
+  --fare-colgap: clamp(12px, 0.83vw, 16px);
+  --fare-vig: calc(var(--fare-row) - 8px);
+  --fare-name: clamp(12px, 0.68vw, 13px);
+  --fare-body: round(down, calc(var(--hud-panel-height) - 2 * var(--tab-h) - 18px - 2 * var(--fare-pad)), var(--fare-row));
+  top: calc((var(--hud-panel-height) - var(--fare-body) - 2 * var(--fare-pad) - 2px) / 2);
+  bottom: auto;
+  left: var(--fare-inset);
+  right: var(--fare-inset);
+  height: auto;
+  padding: var(--fare-pad) 0;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: none;
+}
+.edm-body {
+  flex: none;
+  height: var(--fare-body);
+}
+.edm-sidebar {
+  width: var(--fare-side);
+  min-width: var(--fare-side);
+  background: transparent;
+  border-right: 1px solid var(--rule);
+  padding: 0;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+}
+.edm-category-header {
+  height: calc(var(--fare-row) / 2);
+  box-sizing: border-box;
+  font-size: clamp(12px, 0.7vw, 13.5px);
+  font-weight: 400;
+  color: var(--ink);
+  padding: 0 6px 0 4px;
+  gap: 2px;
+  white-space: nowrap;
+  scroll-snap-align: start;
+}
+.edm-category-header:hover {
+  background: transparent;
+  color: var(--red);
+}
+.edm-arrow {
+  font-size: 0;
+  width: 17px;
+  color: var(--ink-3);
+  display: inline-flex;
+}
+.edm-arrow::before {
+  content: "chevron_right";
+  font-size: 16px;
+  line-height: 1;
+}
+.edm-category.open .edm-arrow::before {
+  content: "expand_more";
+}
+.edm-subcategories {
+  padding: 0 6px 0 23px;
+  gap: 0;
+}
+.edm-subcat-btn,
+.edm-subcat-btn:hover,
+.edm-subcat-btn.active {
+  height: calc(var(--fare-row) / 2);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  font-size: clamp(12px, 0.7vw, 13.5px);
+  color: var(--ink-2);
+  padding: 0;
+  line-height: 1;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-weight: 400;
+  white-space: nowrap;
+  scroll-snap-align: start;
+}
+.edm-subcat-btn:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.edm-subcat-btn.active {
+  color: var(--red);
+  font-style: italic;
+}
+.edm-content {
+  container-type: inline-size;
+  padding: 0 var(--fare-gutter);
+  scroll-snap-type: y mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-3) transparent;
+}
+.edm-items-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: var(--fare-row);
+  gap: 0 var(--fare-colgap);
+  align-items: stretch;
+}
+@container (max-width: 320px) {
+  .edm-items-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.edm-item-card,
+.edm-item-card:hover,
+.edm-item-card:active {
+  display: grid;
+  grid-template-columns: var(--fare-vig) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--fare-vgap, clamp(6px, 0.52vw, 10px));
+  border-radius: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  padding: 0;
+  text-align: left;
+  scroll-snap-align: start;
+}
+/* the dish's picture, as a small colour vignette printed beside it:
+   multiplied into the stock and a little less glossy than the source art */
+.edm-item-card img {
+  display: block;
+  width: var(--fare-vig);
+  height: calc(var(--fare-row) - 6px);
+  object-fit: contain;
+  border-radius: 0;
+  mix-blend-mode: multiply;
+  filter: saturate(0.8) contrast(0.95);
+}
+.edm-item-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--fare-name);
+  color: var(--ink);
+  line-height: 1.18;
+  max-width: none;
+  text-align: left;
+  word-break: normal;
+}
+.edm-item-card:hover .edm-item-name {
+  color: var(--red);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.edm-item-card:active .edm-item-name {
+  font-style: italic;
+}
+.edm-no-items {
+  color: var(--ink-2);
+  font-style: italic;
+  font-size: 13px;
+  text-align: left;
+  padding: 10px 0;
+}
+/* The dish's particulars lie over the foot of the bill. The slip is at
+   least three rows tall and starts on a row line, so no dish shows half
+   above it */
+.edm-tooltip {
+  left: calc(var(--fare-side) + 1px);
+  right: 0;
+  bottom: 0;
+  min-height: calc(3 * var(--fare-row) + var(--fare-pad));
+  box-sizing: border-box;
+  border: 0;
+  border-top: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 8px clamp(12px, 0.94vw, 18px) var(--fare-pad);
+}
+.edm-tooltip-title {
+  font-size: clamp(13px, 0.78vw, 15px);
+  font-weight: 400;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+.edm-tooltip-desc {
+  font-size: clamp(12px, 0.68vw, 13px);
+  font-style: italic;
+  line-height: 1.3;
+  color: var(--ink-2);
+}
+.edm-stat,
+.edm-stat-hunger,
+.edm-stat-thirst,
+.edm-stat-drunk,
+.edm-stat-warm,
+.edm-stat-price {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* Games (first class smoking room, lounge): a paper slip under the
+   buttons listing the tables, one ruled line each */
+.games-popup {
+  position: absolute;
+  top: calc(var(--tab-h) + 14px);
+  right: 16px;
+  z-index: 14;
+  min-width: 160px;
+  padding: 2px 0;
+  border: 1px solid var(--ink);
+}
+.gp-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px 9px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: var(--t-ui);
+  color: var(--ink);
+  cursor: pointer;
+}
+.gp-item + .gp-item {
+  border-top: 1px solid var(--rule);
+}
+.gp-item:hover {
+  box-shadow: inset 0 0 0 100vmax rgba(33, 26, 19, 0.06);
+}
+
+/* Bridge telegraph: a wood strip that drops a mahogany board carrying the
+   dial (a brass instrument is mounted on wood, not printed on paper) */
+.teleg-header,
+.teleg-header:hover {
+  color: var(--on-wood);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  height: var(--tab-h);
+  font-size: var(--t-ui);
+  padding: 0 clamp(10px, 0.73vw, 14px);
+}
+.teleg-header:hover {
+  box-shadow: var(--darken);
+}
+.teleg-header-order {
+  color: var(--brass-light);
+  font-style: italic;
+  font-weight: 400;
+}
+.teleg-header-caret {
+  color: var(--on-wood-2);
+}
+.telegraph-widget {
+  top: 0;
+  right: 0;
+}
+/* open, the strip runs the width of the board it carries */
+.telegraph-widget.teleg-open .teleg-header {
+  align-self: stretch;
+  justify-content: flex-end;
+}
+.teleg-panel {
+  margin-top: 0;
+  background: var(--wood) url("../images/ui/wood-bottom.jpg") 50% 50% / cover no-repeat;
+  border: 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.5);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Enter Britannic (gangway): a wood plate standing clear of the strips */
+/* Go Aboard: the gangway's brass plate. game.css gives it a green gradient
+   when hovered and pressed, so the plate is restated in full */
+.enter-britannic-btn,
+.enter-britannic-btn:hover,
+.enter-britannic-btn:active {
+  bottom: calc(var(--tab-h) + 12px) !important;
+  transform: translateX(-50%);
+  color: var(--engrave);
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--brass-edge), var(--lift);
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+  font-weight: 400;
+  font-size: clamp(14px, 0.89vw, 17px);
+  padding: 10px 26px;
+}
+.enter-britannic-btn:hover {
+  background: var(--paper-tex) 0 0 / 256px 256px, var(--brass-plate-hover);
+  background-blend-mode: multiply;
+}
+.enter-britannic-btn:active {
+  background: var(--paper-tex) 0 0 / 256px 256px, var(--brass-plate-down);
+  background-blend-mode: multiply;
+  box-shadow: var(--brass-edge);
+}
+
+/* ================= Bottom bar: the mahogany board ================= */
+.bottom-bar > img.game-gui {
+  /* fill 100vw x --bottom-bar-height without stretching the grain */
+  object-fit: cover;
+}
+/* the board's upper edge, with the brass strip under it */
+.bottom-bar::before,
+.bottom-bar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.bottom-bar::before {
+  top: 0;
+  height: calc(var(--bottom-bar-height) * 2 / 132);
+  background: #1b120c;
+}
+.bottom-bar::after {
+  top: calc(var(--bottom-bar-height) * 2 / 132);
+  height: 1px;
+  background: var(--brass);
+}
+
+/* Passenger particulars: a printed White Star ticket lying on the wood,
+   ruled thick and thin round its edge, the line's burgee in the corner
+   and the cabin rubber-stamped by the purser */
+.character-display {
+  left: clamp(14px, 1.25vw, 24px);
+  width: clamp(250px, 17.2vw, 330px);
+  height: auto;
+  top: calc(50% + 1px);
+  bottom: auto;
+  transform: translateY(-50%);
+}
+.character-card {
+  position: relative;
+  border: 2px solid #2a221a;
+  box-shadow: inset 0 0 0 3px var(--paper), inset 0 0 0 4px #2a221a, 0 2px 6px rgba(0, 0, 0, 0.45);
+  padding: clamp(8px, 0.63vw, 12px) clamp(34px, 2.4vw, 44px) clamp(8px, 0.63vw, 12px) clamp(8px, 0.63vw, 12px);
+  grid-template-columns: clamp(50px, 3.6vw, 69px) minmax(0, auto);
+  grid-template-areas:
+    "avatar info"
+    "avatar money";
+  column-gap: clamp(10px, 0.83vw, 16px);
+  row-gap: clamp(2px, 0.21vw, 4px);
+  width: 100%;
+  box-sizing: border-box;
+  max-width: none;
+  align-items: start;
+}
+.character-card::after {
+  content: "";
+  position: absolute;
+  top: clamp(9px, 0.63vw, 12px);
+  right: clamp(9px, 0.63vw, 12px);
+  width: clamp(20px, 1.35vw, 26px);
+  aspect-ratio: 60 / 36;
+  background: var(--burgee) center / contain no-repeat;
+}
+.avatar-frame {
+  width: clamp(50px, 3.6vw, 69px);
+  height: clamp(60px, 4.32vw, 83px);
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  background: var(--paper-deep);
+  box-shadow: none;
+  padding: 0;
+}
+#character-avatar {
+  display: block;
+}
+.character-info {
+  gap: clamp(1px, 0.1vw, 2px);
+  min-width: 0;
+}
+#character-name {
+  color: var(--ink);
+  font-size: clamp(14px, 0.99vw, 19px);
+  text-shadow: none;
+  line-height: 1.15;
+}
+#character-class {
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+  text-shadow: none;
+}
+.character-cabin-row {
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  text-shadow: none;
+  gap: 0.3em;
+}
+.character-cabin-label {
+  color: var(--ink-2);
+  font-style: italic;
+  opacity: 1;
+}
+#character-cabin {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  color: var(--stamp);
+  font-size: var(--t-small);
+  font-weight: 700;
+  line-height: 1.25;
+  text-decoration: none;
+  transform: rotate(-4deg);
+  opacity: 0.9;
+  margin-left: 1px;
+}
+#character-cabin:hover {
+  opacity: 1;
+}
+.character-card-money {
+  width: auto;
+  align-self: end;
+}
+#character-money {
+  display: inline-block;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  color: var(--ink);
+  font-size: var(--t-ui);
+  font-weight: 400;
+  text-align: left;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* Needs: an ivory-painted panel let into the board, like the panelling of
+   the first-class cabins. Each need is an italic label, then a groove with
+   the game's own colour running in it: green when full, through amber, to
+   red when empty. The hue the game writes (120 to 0) is mapped onto the
+   same green-amber-red run in OKLCH, so every step has the same lightness.
+   A need that runs low (the game's own 20 per cent) has its label in red */
+.status-bars {
+  left: clamp(290px, 21.6vw, 415px);
+  bottom: auto;
+  top: calc(50% + 1px);
+  transform: translateY(-50%);
+  box-sizing: border-box;
+  width: clamp(360px, 30vw, 576px);
+  padding: clamp(8px, 0.63vw, 12px) clamp(14px, 1.04vw, 20px);
+  background-color: #ece5d2;
+  background-image: var(--paper-tex);
+  background-size: 512px 512px;
+  box-shadow: inset 0 1px 2px rgba(40, 25, 10, 0.3), inset 0 0 0 1px rgba(40, 25, 10, 0.4), 0 1px 0 rgba(255, 236, 214, 0.12);
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(3, auto);
+  grid-auto-flow: column;
+  column-gap: clamp(20px, 1.67vw, 32px);
+  row-gap: clamp(8px, 0.73vw, 14px);
+}
+.status-bar {
+  flex-direction: row;
+  align-items: center;
+  gap: clamp(8px, 0.63vw, 12px);
+}
+.status-bar label {
+  flex: 0 0 5.9em;
+  color: var(--ink-2);
+  font-size: var(--t-label);
+  font-style: italic;
+  text-shadow: none;
+  margin: 0;
+  line-height: 1.2;
+}
+.status-bar:has(.bar[style*="pulse"]) label {
+  color: var(--red);
+}
+.bar-container {
+  position: relative;
+  flex: 1 1 auto;
+  width: auto;
+  height: clamp(7px, 0.47vw, 9px);
+  padding: 0;
+  background: rgba(33, 26, 19, 0.16);
+  border: 0;
+  border-radius: 0;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+}
+/* quarter marks scored in the floor of the groove; the colour runs over
+   them, so they show only in the part of the need that is used up */
+.bar-container::after {
+  content: "";
+  position: absolute;
+  inset: 1px 0 0;
+  z-index: 0;
+  pointer-events: none;
+  --mark: linear-gradient(rgba(33, 26, 19, 0.28), rgba(33, 26, 19, 0.28));
+  background:
+    var(--mark) 25% 0 / 1px 100% no-repeat,
+    var(--mark) 50% 0 / 1px 100% no-repeat,
+    var(--mark) 75% 0 / 1px 100% no-repeat;
+}
+/* --h is the game's hue, 120 (full) to 0 (empty). Green, olive, amber and
+   brick red; the red end is a little deeper and stronger so it reads as a
+   warning at a glance */
+.bar-container > .bar {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  top: 1px;
+  bottom: 0;
+  height: auto;
+  max-width: 100%;
+  animation: none !important;
+  background-color: oklch(calc(0.6 + var(--h, 120) * 0.0005) calc(0.15 - var(--h, 120) * 0.00025) calc(29 + var(--h, 120) * 0.94));
+}
+.bar.hunger { --h: var(--hunger-hue, 120); }
+.bar.thirst { --h: var(--thirst-hue, 120); }
+.bar.energy { --h: var(--energy-hue, 120); }
+.bar.hygiene { --h: var(--hygiene-hue, 120); }
+.bar.bladder { --h: var(--bladder-hue, 120); }
+.bar.intoxication { --h: var(--intoxication-hue, 120); }
+
+/* Narrow windows (under 1270px, e.g. a 1366 x 768 laptop at 125%): there is
+   no room for the bars' panel at its full width, and it ran under the brass
+   buttons. It now ends before them, the six bars three across with each
+   name above its bar (a name gives way, "...", only below about 1050px) */
+@media (max-width: 1269px) {
+  .status-bars {
+    left: 276px;
+    width: calc(
+      100vw - var(--location-panel-width) - clamp(16px, 1.667vw, 32px) -
+        clamp(150px, 11.46vw, 220px) - 12px - 276px
+    );
+    padding: 8px 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, auto);
+    grid-auto-flow: row;
+    column-gap: 10px;
+    row-gap: 7px;
+  }
+  .status-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    min-width: 0;
+  }
+  .status-bar label {
+    flex: none;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .bar-container {
+    flex: none;
+    width: 100%;
+  }
+}
+
+/* Menus. The ship's menu is green leather tooled in gilt, the passenger's
+   own tabs are engraved brass plates. Both are flat, with a fine grain (the
+   paper tile multiplied in): hover lightens them, pressing darkens them */
+.panel1-buttons,
+.panel2-buttons {
+  top: calc(50% + 1px);
+  bottom: auto;
+  transform: translateY(-50%);
+  display: grid;
+  gap: clamp(4px, 0.31vw, 6px);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  grid-template-rows: repeat(2, clamp(28px, 2.08vw, 40px));
+}
+.panel2-buttons {
+  left: calc(100vw - var(--location-panel-width) - clamp(16px, 1.667vw, 32px) - clamp(150px, 11.46vw, 220px));
+  width: clamp(150px, 11.46vw, 220px);
+  grid-template-columns: repeat(2, 1fr);
+}
+.panel1-buttons {
+  left: calc(100vw - var(--location-panel-width) + clamp(16px, 1.667vw, 32px));
+  width: calc(var(--location-panel-width) - 2 * clamp(16px, 1.667vw, 32px));
+  grid-template-columns: repeat(3, 1fr);
+}
+.panel-btn,
+.panel2-buttons .panel-btn {
+  position: relative;
+  border: 0;
+  border-radius: 0;
+  padding: 0 6px;
+  font-size: var(--t-ui);
+  font-weight: 400;
+  line-height: 1.1;
+  background-image: var(--paper-tex);
+  background-size: 256px 256px;
+  background-blend-mode: multiply;
+  transition: background-color 0.12s, color 0.12s;
+}
+.panel-btn:hover,
+.panel2-buttons .panel-btn:hover {
+  padding-top: 0;
+}
+/* the ship's menu: green leather with a gilt fillet tooled round it */
+.panel1-buttons .panel-btn {
+  background-color: var(--leather);
+  color: var(--gilt);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 1px #0c130e, 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.panel1-buttons .panel-btn::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(211, 176, 106, 0.5);
+  pointer-events: none;
+}
+.panel1-buttons .panel-btn:hover {
+  background-color: var(--leather-hover);
+  color: #e8cc8e;
+}
+.panel1-buttons .panel-btn:active {
+  background-color: var(--leather-down);
+}
+/* the passenger's own tabs: brass plates, the lettering cut in so it
+   catches the light on its lower edge */
+.panel2-buttons .panel-btn {
+  background-color: var(--brass-plate);
+  color: var(--engrave);
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+  box-shadow: var(--brass-edge), 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.panel2-buttons .panel-btn:hover {
+  background-color: var(--brass-plate-hover);
+  color: var(--engrave);
+}
+.panel2-buttons .panel-btn:active {
+  background-color: var(--brass-plate-down);
+}
+/* The button whose card is open stays pressed in. The game shows its cards
+   with an inline display: block, which is what CSS reads here; game.js
+   could set aria-expanded on the button instead */
+body:has(#settings-popup[style*="display: block"]) #settings-btn,
+body:has(#deckplans-popup[style*="display: block"]) #deckplans-btn,
+body:has(#rules-popup[style*="display: block"]) #rules-btn {
+  background-color: var(--leather-down);
+  color: #efd79c;
+  box-shadow: 0 0 0 1px #0c130e, inset 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+body:has(#settings-popup[style*="display: block"]) #settings-btn::before,
+body:has(#deckplans-popup[style*="display: block"]) #deckplans-btn::before,
+body:has(#rules-popup[style*="display: block"]) #rules-btn::before {
+  border-color: var(--gilt);
+}
+body:has(#report-modal[style*="display: block"]) #report-btn {
+  background-color: var(--brass-plate-down);
+  box-shadow: 0 0 0 1px var(--brass-rim), inset 0 1px 3px rgba(30, 18, 4, 0.5);
+}
+
+/* ================= Printed cards: settings, rules, menus ================= */
+/* every card lifts off what is under it and is ruled round inside its edge */
+.settings-popup {
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -7px;
+  padding: 22px 26px 24px;
+  width: clamp(300px, 21.9vw, 420px);
+}
+.settings-content {
+  color: var(--ink);
+  font-size: 15px;
+}
+.settings-content h2 {
+  margin: 0 0 4px;
+  padding: 0 28px 9px 0;
+  /* a printer's double rule under the title */
+  border-bottom: 3px double var(--ink);
+  font-size: var(--t-title);
+  font-weight: 400;
+  color: var(--ink);
+  line-height: 1.1;
+}
+/* the rules are a printed notice, titled on the centre line */
+#rules-popup .settings-content h2 {
+  text-align: center;
+  padding-left: 28px;
+}
+.close-settings,
+.close-rules,
+.close-eat-drink,
+.close-profile {
+  position: absolute;
+  cursor: pointer;
+  z-index: 1;
+  top: -6px;
+  right: -8px;
+  left: auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--ink-2);
+}
+.close-settings:hover,
+.close-rules:hover,
+.close-eat-drink:hover,
+.close-profile:hover {
+  color: var(--red);
+}
+.music-controls {
+  gap: 14px;
+  margin-top: 14px;
+}
+.now-playing {
+  text-align: left;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-2);
+  margin: 0;
+}
+.song-select,
+#song-select,
+.form-group select {
+  appearance: base-select;
+  width: 100%;
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  background: var(--paper-field);
+  color: var(--ink);
+  font-size: 15px;
+  padding: 6px 10px;
+}
+.song-select::picker-icon,
+.form-group select::picker-icon {
+  content: "expand_more";
+  font-family: "Material Icons";
+  font-size: 20px;
+  line-height: 1;
+  font-feature-settings: "liga";
+  color: var(--ink-2);
+}
+::picker(select) {
+  appearance: base-select;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: none;
+}
+/* transport: a plain row of icons, no boxes */
+.audio-controls {
+  display: flex;
+  justify-content: space-between;
+  gap: 0;
+  padding: 2px 4px;
+  background: none;
+  border: 0;
+}
+.control-btn,
+.control-btn:hover {
+  width: 40px;
+  height: 34px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  transform: none;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.control-btn:hover {
+  color: var(--red);
+}
+.control-btn.active {
+  background: none;
+  color: var(--red);
+}
+.control-btn .material-icons {
+  font-size: 24px;
+}
+.volume-control {
+  justify-content: flex-start;
+  gap: 12px;
+}
+.slider-label {
+  color: var(--ink-2);
+  font-size: 14px;
+  font-style: italic;
+  text-align: left;
+  min-width: 76px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.slider-label .material-icons {
+  font-size: 17px;
+  color: var(--ink-2);
+}
+#volume-slider,
+#sfx-slider {
+  flex: 1;
+  width: auto;
+  height: 1px;
+  background: var(--ink);
+  border-radius: 0;
+}
+#volume-slider::-webkit-slider-thumb,
+#sfx-slider::-webkit-slider-thumb {
+  width: 8px;
+  height: 16px;
+  border-radius: 0;
+  background: var(--ink);
+  border: 0;
+  box-shadow: none;
+}
+.chat-color-selector {
+  margin-top: 18px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+/* Field labels in sentence case: "Chat color:", "Report type:" */
+.chat-color-selector label,
+.form-group label {
+  text-transform: lowercase !important;
+}
+.chat-color-selector label::first-letter,
+.form-group label::first-letter {
+  text-transform: uppercase !important;
+}
+.chat-color-selector label {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-style: italic;
+  white-space: nowrap;
+  min-width: 76px;
+}
+/* Language: a ruled row like the chat colour's */
+.language-selector {
+  margin-top: 12px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.language-selector label {
+  margin: 0;
+  min-width: 76px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-style: italic;
+  white-space: nowrap;
+}
+.language-selector select {
+  flex: 1;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+}
+.chat-color-selector input[type="color"] {
+  flex: 1;
+  height: 28px;
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  padding: 3px;
+  background: var(--paper-field);
+}
+.chat-color-selector input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.chat-color-selector input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 0;
+}
+
+/* Rules card */
+.rules-content {
+  margin-top: 4px;
+  color: var(--ink);
+}
+.rule-section h3 {
+  font-size: 16px;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--ink);
+  margin: 16px 0 4px;
+}
+.rule-section ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 15px;
+  line-height: 1.45;
+  list-style-type: "\2013\00a0\00a0";
+}
+.rule-section li::marker {
+  color: var(--ink-2);
+}
+
+/* Profile and passenger bio cards */
+.profile-popup {
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -7px;
+  color: var(--ink);
+}
+.profile-content {
+  color: var(--ink);
+}
+.profile-info h2 {
+  font-size: var(--t-title);
+  font-weight: 400;
+  color: var(--ink);
+}
+/* "Date of Birth:" and "Bio:" are labels, so italic, not bold */
+.profile-info strong {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--ink-2);
+}
+.profile-avatar img {
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+}
+.player-info-popup {
+  background: rgba(20, 15, 10, 0.5);
+  backdrop-filter: none;
+}
+.player-info-card {
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -7px;
+  color: var(--ink);
+  padding: 24px 28px;
+}
+.player-popup-avatar {
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  background: var(--paper-deep);
+}
+.player-popup-name {
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--ink);
+}
+.player-popup-birthdate {
+  font-size: 15px;
+  font-style: italic;
+  color: var(--ink-2);
+}
+.player-popup-bio {
+  font-size: 16px;
+  color: var(--ink);
+}
+.close-player-info {
+  border-radius: 0;
+  background: none;
+  color: var(--ink-2);
+}
+.close-player-info:hover {
+  color: var(--red);
+}
+
+/* ================= Deck plans ================= */
+.deckplans-popup {
+  /* the white sheet is kept, as chosen; the plan keeps a thin brass line */
+  background: #fff;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 20px 24px 24px;
+}
+.deckplan-display {
+  border: 1px solid var(--brass);
+}
+.deckplans-content h2 {
+  margin: 0 0 10px;
+  font-size: var(--t-title);
+  font-weight: 400;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.close-deckplans {
+  top: -8px;
+  right: -8px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--ink-2);
+}
+.close-deckplans:hover {
+  color: var(--red);
+}
+/* the deck index: one ruled line of names; the current deck in red */
+.deck-buttons,
+.southampton-category-buttons {
+  gap: 0;
+  justify-content: flex-start;
+  margin: 0 0 14px;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+.deck-btn,
+.deck-btn:hover,
+.deck-btn.active,
+.southampton-category-btn,
+.southampton-category-btn:hover,
+.southampton-category-btn.active {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ink-2);
+  font-size: 15px;
+  font-weight: 400;
+  padding: 8px 14px 7px;
+  transform: none;
+  text-decoration: none;
+}
+.deck-btn:first-child,
+.southampton-category-btn:first-child {
+  padding-left: 0;
+}
+.deck-btn:hover,
+.southampton-category-btn:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+/* The game never marks the Britannic deck buttons active, so read the
+   current deck from the plan image that is showing */
+.deck-btn.active,
+.southampton-category-btn.active,
+.deckplans-content:has(#current-deck[src$="/boat_deck.jpg"]) .deck-btn[data-deck="boat_deck"],
+.deckplans-content:has(#current-deck[src$="/a_deck.jpg"]) .deck-btn[data-deck="a_deck"],
+.deckplans-content:has(#current-deck[src$="/b_deck.jpg"]) .deck-btn[data-deck="b_deck"],
+.deckplans-content:has(#current-deck[src$="/c_deck.jpg"]) .deck-btn[data-deck="c_deck"],
+.deckplans-content:has(#current-deck[src$="/d_deck.jpg"]) .deck-btn[data-deck="d_deck"],
+.deckplans-content:has(#current-deck[src$="/e_deck.jpg"]) .deck-btn[data-deck="e_deck"],
+.deckplans-content:has(#current-deck[src$="/f_deck.jpg"]) .deck-btn[data-deck="f_deck"],
+.deckplans-content:has(#current-deck[src$="/lo_deck.jpg"]) .deck-btn[data-deck="lo_deck"],
+.deckplans-content:has(#current-deck[src$="/tank_deck.jpg"]) .deck-btn[data-deck="tank_deck"] {
+  color: var(--red);
+  background: none;
+  text-decoration: underline;
+  text-decoration-color: var(--red);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+/* The room highlights on the plans are left exactly as the game draws them */
+.room-tooltip {
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 14px;
+  padding: 5px 10px;
+}
+
+/* ================= Report form ================= */
+.modal {
+  background-color: rgba(20, 15, 10, 0.55);
+  backdrop-filter: none;
+}
+.modal-content {
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -7px;
+  max-width: 520px;
+  animation: none;
+  margin: 12vh auto 0;
+}
+.modal-header {
+  background: none;
+  color: var(--ink);
+  border-radius: 0;
+  border-bottom: 1px solid var(--ink);
+  margin: 0 28px;
+  padding: 24px 0 10px;
+}
+.modal-header h2 {
+  font-size: var(--t-title);
+  font-weight: 400;
+  color: var(--ink);
+  text-shadow: none;
+  line-height: 1.1;
+}
+.close-modal {
+  color: var(--ink-2);
+  font-size: 26px;
+  font-weight: 400;
+}
+.close-modal:hover {
+  color: var(--red);
+}
+.modal-body {
+  padding: 18px 28px 26px;
+}
+.form-group {
+  margin-bottom: 16px;
+}
+.form-group label {
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 400;
+  font-style: italic;
+  margin-bottom: 5px;
+}
+.form-group input,
+.form-group textarea {
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  background: var(--paper-field);
+  color: var(--ink);
+  font-size: 15px;
+  padding: 8px 10px;
+  box-shadow: none;
+}
+.form-group select {
+  background: var(--paper-field);
+}
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+  color: var(--ink-3);
+  font-style: italic;
+}
+.form-group select:focus,
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: var(--ink);
+  box-shadow: none;
+  outline: 1px solid var(--ink);
+  outline-offset: -2px;
+}
+.form-actions {
+  gap: 22px;
+  margin-top: 22px;
+  align-items: center;
+}
+.btn-primary,
+.btn-secondary,
+.btn-primary:hover,
+.btn-secondary:hover {
+  border-radius: 0;
+  font-size: 15px;
+  font-weight: 400;
+  transform: none;
+  box-shadow: none;
+}
+/* Cancel is a plain word; the one button is an engraved brass plate */
+.btn-secondary,
+.btn-secondary:hover {
+  background: none;
+  color: var(--ink-2);
+  border: 0;
+  padding: 9px 2px;
+}
+.btn-secondary:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+.btn-primary,
+.btn-primary:hover {
+  color: var(--engrave);
+  border: 0;
+  padding: 10px 24px;
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+  box-shadow: var(--brass-edge);
+}
+/* game.css gives these a gold gradient, so the plate is restated in full */
+.btn-primary:hover {
+  background: var(--paper-tex) 0 0 / 256px 256px, var(--brass-plate-hover);
+  background-blend-mode: multiply;
+}
+.btn-primary:active {
+  background: var(--paper-tex) 0 0 / 256px 256px, var(--brass-plate-down);
+  background-blend-mode: multiply;
+  box-shadow: 0 0 0 1px var(--brass-rim), inset 0 1px 3px rgba(30, 18, 4, 0.5);
+}
+
+/* ================= Route chart and loading ================= */
+#route-map-panel {
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: none;
+}
+.rm-toolbar button,
+.rm-toolbar button:hover {
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 0;
+}
+/* the chart's title and place names in the same face, not tracked caps */
+.rm-title {
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.rm-label {
+  font-weight: 400;
+  fill: var(--ink);
+  stroke: var(--paper);
+}
+.rm-tick {
+  fill: var(--ink-3);
+}
+/* Loading: the stock parchment and its painted frame give way to a plain
+   printed card of the same ivory, ruled once round the edge. The logo is
+   lifted off the old parchment (tools/make_logo.py) and printed onto the
+   new stock with multiply, at the size and place it had */
+#loading-screen {
+  background-color: var(--paper);
+  background-image: url("../images/ui/logo-ink.png"), var(--paper-tex);
+  background-size: 25.5vw auto, 512px 512px;
+  background-position: 50% calc(27.4vh - 7.18vw), 0 0;
+  background-repeat: no-repeat, repeat;
+  background-blend-mode: multiply, normal;
+}
+#loading-screen::after {
+  content: "";
+  position: absolute;
+  inset: clamp(14px, 1.25vw, 24px);
+  border: 1px solid var(--ink-3);
+  pointer-events: none;
+}
+#start-button,
+#start-button:hover {
+  color: var(--on-wood);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  font-size: 18px;
+  padding: 11px 40px;
+}
+#start-button:hover {
+  box-shadow: var(--darken);
+  color: #fff8ec;
+}
+#start-button:active {
+  box-shadow: var(--press);
+  color: var(--brass-light);
+}
+.progress-bar {
+  background: var(--rule);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  height: 3px;
+}
+.progress {
+  background: var(--brass-ink);
+  border-radius: 0;
+}
+.progress::after {
+  display: none;
+}
+.progress-text {
+  color: var(--ink-2);
+  text-shadow: none;
+}
+
+/* The rules that read inline styles (the open-card plates, the low-need
+   label, the !important positions on the room strips) stand in for classes
+   or aria attributes that game.js could set instead. */
+
+/* ================= Draw poker ================= */
+/* A card table laid over the room picture, the room still in sight round
+   its edge, dimmed: a plain baize; the pay table printed on a card strip
+   across the top, as on the tables; the hand; the stake and Deal. Every size
+   is taken from the picture (container units), so the table fits it at any
+   window size. It sits above the room's name, buttons and passengers' tab. */
+.vp-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1100;
+  display: none;
+  container-type: size;
+  background: rgba(10, 6, 3, 0.5);
+  color: var(--on-wood);
+}
+.vp-overlay.open {
+  display: block;
+}
+.vp-overlay *,
+.vp-overlay *::before,
+.vp-overlay *::after {
+  box-sizing: border-box;
+}
+.vp-overlay button:focus-visible {
+  outline: 1px solid var(--brass-light);
+  outline-offset: 2px;
+}
+.vp-panel {
+  position: absolute;
+  inset: 3cqh 2.2cqw;
+  display: flex;
+  flex-direction: column;
+  padding: 2.6cqh 2.6cqw 3cqh;
+  background-color: #2c5a40;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    inset 0 0 6cqh rgba(0, 0, 0, 0.35),
+    0 0.8cqh 2.4cqh rgba(0, 0, 0, 0.45);
+  font-size: max(10px, 4.3cqh);
+  line-height: 1.25;
+}
+/* the pay table, and the cross that closes the table */
+.vp-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.6cqw;
+}
+.close-video-poker {
+  flex: 0 0 auto;
+  margin-top: -0.8cqh;
+  padding: 0 0.4cqw;
+  border: 0;
+  background: none;
+  font-size: max(16px, 7cqh);
+  line-height: 1;
+  color: var(--on-wood-2);
+  cursor: pointer;
+}
+.close-video-poker:hover {
+  color: var(--brass-light);
+}
+
+/* the pay table: a printed card strip, three columns of three */
+.vp-payouts {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, auto);
+  grid-auto-flow: column;
+  padding: 0.8cqh 0;
+  background-color: var(--paper);
+  background-image: var(--paper-night), var(--paper-tex);
+  background-size: auto, 512px 512px;
+  background-repeat: no-repeat, repeat;
+  box-shadow: 0 0.3cqh 0.9cqh rgba(0, 0, 0, 0.35);
+  color: var(--ink);
+  font-size: max(9px, 3.7cqh);
+  line-height: 1.25;
+}
+.vp-pay {
+  display: flex;
+  justify-content: space-between;
+  gap: 1cqw;
+  padding: 0.2cqh 1.6cqw;
+  white-space: nowrap;
+}
+.vp-pay:nth-child(n + 4) {
+  border-left: 1px solid var(--rule);
+}
+.vp-pay span:last-child {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.vp-pay.win {
+  color: var(--red);
+}
+
+/* the hand */
+.vp-cards {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.6cqw;
+  padding-top: 2.2cqh;
+}
+.vp-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: default;
+}
+.vp-overlay[data-phase="deal"] .vp-card:not(.card-back) {
+  cursor: pointer;
+}
+.vp-card img {
+  display: block;
+  height: min(40cqh, 24cqw);
+  width: auto;
+  aspect-ratio: 220 / 319;
+  filter: drop-shadow(0 0.25cqh 0.4cqh rgba(0, 0, 0, 0.5));
+  user-select: none;
+  transition: transform 0.12s ease;
+}
+.vp-card.held img {
+  transform: translateY(-2.2cqh);
+}
+.vp-card.dealt img {
+  animation: vp-drop 0.22s ease-out var(--deal-delay, 0ms) backwards;
+}
+@keyframes vp-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-3cqh);
+  }
+}
+.vp-held {
+  padding-top: 0.8cqh;
+  visibility: hidden;
+  font-size: max(9px, 3.4cqh);
+  font-style: italic;
+  line-height: 1;
+  color: var(--on-wood);
+}
+.vp-card.held .vp-held {
+  visibility: visible;
+}
+
+.vp-status {
+  min-height: 1.3em;
+  margin: 1.2cqh 0 1cqh;
+  font-style: italic;
+  text-align: center;
+  color: var(--on-wood);
+}
+.vp-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqw;
+  padding-top: 1.4cqh;
+  border-top: 1px solid rgba(236, 226, 205, 0.22);
+}
+/* the stakes: a line of figures, the one chosen in brass */
+.vp-stakes {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.vp-stakes-label {
+  margin-right: 0.8cqw;
+  font-style: italic;
+  color: var(--on-wood-2);
+}
+.vp-stake {
+  padding: 0.4cqh 1cqw;
+  border: 0;
+  background: none;
+  font-size: inherit;
+  color: var(--on-wood-2);
+  cursor: pointer;
+}
+.vp-stake:hover {
+  color: var(--on-wood);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.vp-stake[aria-pressed="true"] {
+  color: var(--brass-light);
+  text-decoration: underline;
+  text-decoration-color: var(--brass-light);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.vp-stake:disabled {
+  cursor: default;
+  text-decoration: none;
+  opacity: 0.5;
+}
+.vp-stake[aria-pressed="true"]:disabled {
+  opacity: 1;
+  text-decoration: underline;
+}
+/* Deal / Draw: an engraved brass plate, like Send */
+#deal-draw-btn {
+  flex: 0 0 auto;
+  min-width: 17cqw;
+  height: max(24px, 8.6cqh);
+  padding: 0 3cqw;
+  border: 0;
+  border-radius: 0;
+  color: var(--engrave);
+  font-size: inherit;
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+  box-shadow: var(--brass-edge);
+  cursor: pointer;
+}
+#deal-draw-btn:hover {
+  background-color: var(--brass-plate-hover);
+}
+#deal-draw-btn:active {
+  background-color: var(--brass-plate-down);
+  box-shadow: 0 0 0 1px var(--brass-rim), inset 0 1px 3px rgba(30, 18, 4, 0.5);
+}
+#deal-draw-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

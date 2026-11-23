@@ -1,0 +1,9 @@
+{"rows": [[{"p": "work/desun_night/Bridge6.png", "box": [300,60,1100,620], "k": 0.6, "tag": "GAME night Bridge6"},
+           {"p": "work/t24n/Bridge6.png", "box": [300,60,1100,620], "k": 0.6, "tag": "NOW"},
+           {"p": "work/desun_twilight/Bridge5.png", "box": [200,400,1400,1080], "k": 0.42, "tag": "GAME sunset Bridge5"},
+           {"p": "work/t24t/Bridge5.png", "box": [200,400,1400,1080], "k": 0.42, "tag": "NOW"}],
+          [{"p": "work/desun_twilight/1st B starb enclosed prom4.png", "box": [0,150,900,700], "k": 0.55, "tag": "GAME sunset 1st B starb enclosed prom4"},
+           {"p": "work/t24t/1st B starb enclosed prom4.png", "box": [0,150,900,700], "k": 0.55, "tag": "NOW"},
+           {"p": "work/desun_twilight/forecastle2.png", "box": [0,640,460,1080], "k": 0.7, "tag": "GAME sunset forecastle2"},
+           {"p": "work/t24t/forecastle2.png", "box": [0,640,460,1080], "k": 0.7, "tag": "NOW"},
+           {"p": "work/t24n/BD first port prom3.png", "box": [1560,740,1900,960], "k": 0.9, "tag": "NOW night BD first port prom3"}]], "q": 88}

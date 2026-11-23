@@ -1,0 +1,7 @@
+{"rows": [
+ [{"p": "work/desun/1st A starb prom8.png", "box": [1100,340,1400,520], "k": 3, "tag": "sun removed (source)"},
+  {"p": "work/w7_test_tw/1st A starb prom8.png", "box": [1100,340,1400,520], "k": 3, "tag": "sunset new"}],
+ [{"p": "work/w7_test/1st A starb prom8.png", "box": [1180,120,1320,230], "k": 4, "tag": "night new: beam joint"},
+  {"p": "work/desun/1st A starb prom8.png", "box": [1180,120,1320,230], "k": 4, "tag": "source"},
+  {"p": "work/w7_test/1st A starb prom8.png", "box": [0,0,640,330], "k": 1, "tag": "night new: above windows"}]
+]}

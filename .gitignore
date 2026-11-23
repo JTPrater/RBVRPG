@@ -1,3 +1,6 @@
 node_modules
 .env
 
+
+# Room editor timestamped backups of deckRooms.js
+public/game/data/deckRooms.js.*.bak

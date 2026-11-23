@@ -1,0 +1,6 @@
+{"rows": [[{"p": "work/desun_night/1st A starb prom8.png", "k": 0.49, "tag": "IN THE GAME NOW: night"},
+           {"p": "work/t21n/1st A starb prom8.png", "k": 0.49, "tag": "NEW night (material brightness back, smooth)"}],
+          [{"p": "work/desun_night/1st A port prom6.png", "k": 0.49, "tag": "IN THE GAME NOW: night, 1st A port prom6"},
+           {"p": "work/t21n/1st A port prom6.png", "k": 0.49, "tag": "NEW night"}],
+          [{"p": "work/t21n/1st A port prom6.png", "box": [150,240,1110,760], "k": 0.98, "tag": "NEW night, full size"},
+           {"p": "work/t21n/1st A starb prom8.png", "box": [700,60,1620,580], "k": 1.0, "tag": "NEW night, full size: deckhead"}]]}

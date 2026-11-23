@@ -161,6 +161,22 @@ body::before {
   pointer-events: none;
 }
 
+/* the language picker beside the links */
+.nav-lang {
+  margin-left: 1.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--secondary-color);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.nav-lang option {
+  color: #222;
+}
+
 .nav-links {
   list-style: none;
   display: flex;

@@ -529,3 +529,12 @@ h1::after {
     font-size: 0.9rem;
   }
 }
+
+/* the language picker, top right */
+.list-lang {
+  float: right;
+  padding: 0.3rem 0.5rem;
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+}

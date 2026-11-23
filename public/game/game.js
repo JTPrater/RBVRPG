@@ -1,2798 +1,40 @@
-const socket = io({
-  auth: {
-    email: sessionStorage.getItem("userEmail"),
+const socket = window.RBV.socket;
+
+const {
+  TIMELINE_SECONDS,
+  TIMELINE_MS,
+  computeVoyageState,
+  SHIP_ACCELERATION,
+  CHERBOURG_DECEL_RATE,
+} = window.VoyageState;
+
+RBV.gameState = {
+  currentRoom: { name: null, id: null },
+  chatHistory: { rooms: {} },
+  isGlobalChat: false,
+};
+const currentRoom = RBV.gameState.currentRoom;
+const chatHistory = RBV.gameState.chatHistory;
+let isGlobalChat = RBV.gameState.isGlobalChat;
+Object.defineProperty(RBV.gameState, "isGlobalChat", {
+  get() {
+    return isGlobalChat;
+  },
+  set(value) {
+    isGlobalChat = value;
   },
 });
 
-socket.on("stats-loaded", (statsData) => {
-  console.debug("📊 Received stats from server:", statsData);
-  applyStatsToState(statsData);
-  persistStatsLocally();
-  console.debug("📊 Stats loaded and visual bars updated");
-});
+const v = RBV.voyage;
+const narrativeSystem = window.narrativeSystem;
+const musicPlayer = window.musicPlayer;
+const deckRooms = window.deckRooms;
+const roomImages = window.roomImages;
 
-let currentRoom = { name: null, id: null };
-const chatHistory = {
-  rooms: {},
-};
-let isGlobalChat = false; // Global chat toggle state
-console.debug("✅ Initialized socket connection and global variables.");
 
-// Global voyage start time (will be set by server)
-let voyageStartTime = null;
-
-// Store pending sync data until functions are ready
-let pendingVoyageState = null;
-let pendingVoyageStartTime = null;
-let initialSyncDone = false;
-let lastServerElapsed = 0;
-let lastServerElapsedAt = 0;
-let latestVoyageState = null; // Track most recent server-authoritative snapshot
-
-// Mirror the server-side voyage timeline so refreshes show the same speed/location
-const TIMELINE_SECONDS = {
-  DEPARTURE_DELAY: 12 * 60,
-  SOUTHAMPTON_WATER_END: 20 * 60,
-  NEEDLES_COMPLETE: 5130, // 1h 25m 30s
-  CHANNEL_COMPLETE: 5 * 60 * 60,
-  APPROACH_COMPLETE: 18_900,
-  BERTHING_COMPLETE: 19_500,
-};
-
-const SHIP_ACCELERATION = 0.012; // knots per second^2, matches server model
-const CHERBOURG_DECEL_RATE =
-  19 / (TIMELINE_SECONDS.BERTHING_COMPLETE - TIMELINE_SECONDS.CHANNEL_COMPLETE);
-// Speed threshold at which Cherbourg should appear and begin the slow move
-const CHERBOURG_SHOW_KNOTS = 10; // show when ship slowed to 10 knots or below
-// Factor applied to ship speed once Cherbourg begins to drift in. Keep low for a gentle motion.
-const CHERBOURG_SLOW_MOVE_FACTOR = 0.15; // 15% of ship speed (clamped with a minimum)
-
-// Seeded PRNG (mulberry32) — deterministic random from voyageStartTime so all clients match
-function createSeededRng(seed) {
-  let s = seed | 0;
-  return function () {
-    s |= 0;
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// Logging control
-const RBV_LOG_LEVELS = {
-  error: 0,
-  warn: 1,
-  info: 2,
-  log: 2,
-  debug: 3,
-  trace: 4,
-};
-
-const storedLogLevel = localStorage.getItem("rbvrpg:logLevel") || "warn";
-let activeLogLevel = RBV_LOG_LEVELS[storedLogLevel] ?? RBV_LOG_LEVELS.info;
-
-const originalConsole = {
-  log: console.log.bind(console),
-  info: console.info.bind(console),
-  warn: console.warn.bind(console),
-  error: console.error.bind(console),
-  debug: console.debug
-    ? console.debug.bind(console)
-    : console.log.bind(console),
-};
-
-function shouldLog(level) {
-  return activeLogLevel >= (RBV_LOG_LEVELS[level] ?? RBV_LOG_LEVELS.info);
-}
-
-console.log = (...args) => {
-  if (shouldLog("log")) {
-    originalConsole.log("[RBVRPG]", ...args);
-  }
-};
-
-console.info = (...args) => {
-  if (shouldLog("info")) {
-    originalConsole.info("[RBVRPG]", ...args);
-  }
-};
-
-console.warn = (...args) => {
-  if (shouldLog("warn")) {
-    originalConsole.warn("[RBVRPG]", ...args);
-  }
-};
-
-console.error = (...args) => {
-  originalConsole.error("[RBVRPG]", ...args);
-};
-
-console.debug = (...args) => {
-  if (shouldLog("debug")) {
-    originalConsole.debug("[RBVRPG]", ...args);
-  }
-};
-
-window.RBVLog = {
-  setLevel(levelName) {
-    if (levelName in RBV_LOG_LEVELS) {
-      activeLogLevel = RBV_LOG_LEVELS[levelName];
-      localStorage.setItem("rbvrpg:logLevel", levelName);
-    }
-  },
-  getLevel() {
-    return Object.keys(RBV_LOG_LEVELS).find(
-      (key) => RBV_LOG_LEVELS[key] === activeLogLevel,
-    );
-  },
-  levels: Object.keys(RBV_LOG_LEVELS),
-  originalConsole,
-};
-
-// ── DEV-ONLY: North Atlantic override ──────────────────────────────
-// Flip to true to freeze the voyage in open ocean. Change DEV_HOUR
-// to test any time of day (0-23, fractional OK e.g. 17.5 = 5:30 PM).
-// Set back to false when done.
-const DEV_NORTH_ATLANTIC = false;
-const DEV_HOUR = 12; // 0 = midnight, 6 = sunrise, 12 = noon, 17 = sunset, 22 = night
-// ── end dev override ───────────────────────────────────────────────
-
-// Listen for voyage start time from server
-socket.on("voyage-start-time", (serverStartTime) => {
-  voyageStartTime = serverStartTime;
-  pendingVoyageStartTime = serverStartTime;
-  console.debug(
-    `⏰ Received voyage start time from server: ${new Date(
-      voyageStartTime,
-    ).toISOString()}`,
-  );
-
-  // Try to sync immediately if functions are available
-  if (
-    typeof updateInfoBar === "function" &&
-    typeof updateSkyImage === "function"
-  ) {
-    performInitialSync();
-  }
-});
-
-// Listen for current voyage state from server (for immediate sync on refresh)
-socket.on("voyage-state", (currentVoyageState) => {
-  console.debug(
-    "🚢 Received current voyage state from server:",
-    currentVoyageState,
-  );
-
-  // Store for later if functions aren't ready yet
-  pendingVoyageState = currentVoyageState;
-  latestVoyageState = currentVoyageState;
-
-  // Track server elapsed time for clock-skew-free interpolation
-  if (typeof currentVoyageState.elapsedSeconds === "number") {
-    lastServerElapsed = currentVoyageState.elapsedSeconds;
-    lastServerElapsedAt = Date.now();
-  }
-
-  // Keep voyage values in sync; the info bar itself is rendered via updateInfoBar().
-  if (DEV_NORTH_ATLANTIC) {
-    window.currentSpeed = 22;
-    window.targetSpeed = 22;
-  } else {
-    // Set window.currentSpeed for visual effects (smoke, wind)
-    window.currentSpeed = currentVoyageState.speedValue;
-    // Set target speed for smooth acceleration/deceleration
-    window.targetSpeed = currentVoyageState.targetSpeed;
-  }
-  console.debug(
-    `💨 Set window.currentSpeed to ${window.currentSpeed} and targetSpeed to ${window.targetSpeed} for visual effects`,
-  );
-
-  // Update sky immediately with server-synced time if function is available
-  if (typeof updateSkyImage === "function") {
-    updateSkyImage();
-    console.debug("🌤️ Updated sky with server voyage state");
-  }
-
-  if (typeof updateInfoBar === "function") {
-    updateInfoBar();
-  }
-
-  // Try to perform full sync if functions are available
-  if (
-    typeof updateInfoBar === "function" &&
-    typeof updateSkyImage === "function"
-  ) {
-    performInitialSync();
-  }
-});
-
-// Listen for server narrative events (registered once at top level, NOT inside voyage-state)
-socket.on("narrative-event", (data) => {
-  try {
-    // Suppress narrative events in dev North Atlantic mode — show our own text
-    if (DEV_NORTH_ATLANTIC) {
-      const el = document.getElementById("story-text");
-      if (el)
-        el.textContent =
-          "We are now deep in the North Atlantic, making steady progress. The open ocean stretches to every horizon.";
-      return;
-    }
-    console.debug("📣 Received narrative-event from server:", data);
-    const storyTextElement = document.getElementById("story-text");
-    if (storyTextElement) {
-      storyTextElement.style.opacity = "0";
-      setTimeout(() => {
-        storyTextElement.textContent = data.text;
-        storyTextElement.style.opacity = "1";
-      }, 500);
-    }
-
-    // Advance client's narrative index to avoid replaying
-    if (narrativeSystem) {
-      narrativeSystem.currentEventIndex = data.index + 1;
-      sessionStorage.setItem(
-        "narrativeEventIndex",
-        narrativeSystem.currentEventIndex.toString(),
-      );
-    }
-  } catch (err) {
-    console.error("❌ Failed to process narrative-event:", err);
-  }
-});
-
-// Receive the current narrative index for this connection from the server
-socket.on("narrative-current", (data) => {
-  console.debug("📣 Received narrative-current from server:", data);
-  const storyTextElement = document.getElementById("story-text");
-  if (storyTextElement && data && data.text) {
-    storyTextElement.textContent = data.text;
-    storyTextElement.style.opacity = "1";
-  }
-  if (narrativeSystem && data && typeof data.index === "number") {
-    narrativeSystem.currentEventIndex = data.index + 1;
-    sessionStorage.setItem(
-      "narrativeEventIndex",
-      narrativeSystem.currentEventIndex.toString(),
-    );
-  }
-});
-
-// Handle automatic room joining for reconnections
-function handleReconnectionRoomJoin() {
-  // Only auto-join if not already in a room
-  if (currentRoom.name) {
-    console.debug(`🔄 Already in room ${currentRoom.name}, skipping auto-join`);
-    return;
-  }
-
-  const characterData = JSON.parse(sessionStorage.getItem("character"));
-  if (!characterData) {
-    console.warn("⚠️ No character data found, cannot auto-join room");
-    return;
-  }
-
-  const voyageAnchor = voyageStartTime || pendingVoyageStartTime || null;
-  const elapsedSeconds = voyageAnchor
-    ? Math.max(0, Math.floor((Date.now() - voyageAnchor) / 1000))
-    : 0;
-
-  if (!voyageAnchor) {
-    console.warn(
-      "⚠️ Voyage start time not yet available; defaulting spawn to Southampton",
-    );
-  }
-
-  if (elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY) {
-    // Voyage has departed - spawn on ship
-    console.debug(
-      `🚢 Voyage already departed (${Math.floor(
-        elapsedSeconds / 60,
-      )} min elapsed) - auto-joining ship`,
-    );
-
-    // Try to find player's cabin first, otherwise default to promenade
-    const cabinRoom = findPlayerCabin();
-    const defaultShipRoom =
-      (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
-        (r) => r.id === "port_promenade_bd",
-      ) || deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd");
-
-    const fallbackRoom =
-      (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.[0] ||
-      deckRooms?.a?.[0] ||
-      deckRooms?.southampton?.[0] ||
-      null;
-    const spawnRoom = cabinRoom || defaultShipRoom || fallbackRoom;
-    if (spawnRoom) {
-      enterRoom(spawnRoom);
-      console.debug(`🚪 Auto-joined ship room: ${spawnRoom.name}`);
-    } else {
-      console.error("❌ Could not find ship spawn location for reconnection");
-    }
-  } else {
-    // Voyage hasn't departed yet - spawn at Southampton
-    console.debug(
-      `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - auto-joining Southampton`,
-    );
-
-    const initialRoom = deckRooms.southampton?.find(
-      (r) => r.name === "Berth 44 Forward Docks",
-    );
-    const fallbackRoom =
-      initialRoom ||
-      deckRooms?.southampton?.[0] ||
-      (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.[0] ||
-      null;
-
-    if (fallbackRoom) {
-      enterRoom(fallbackRoom);
-      console.debug(`🚪 Auto-joined Southampton room: ${fallbackRoom.name}`);
-    } else {
-      console.error(
-        "❌ Could not determine any spawn location during reconnection",
-      );
-    }
-  }
-}
-
-// Narrative System
-const narrativeSystem = {
-  startTime: null,
-  currentEventIndex: 0,
-  events: [
-    {
-      time: 0,
-      text: "Final preparations are being made for departure...",
-    },
-    {
-      time: 720, // 12 minutes - Departure begins
-      text: "The ship's horn echoes across Southampton Water. The moorings are cast off, and Britannic slowly pulls away from the dock.",
-    },
-    {
-      time: 930, // 15 minutes 30 seconds - Southampton Water end
-      text: "We depart Southampton Water and enter the Solent, increasing to cruising speed.",
-    },
-    {
-      time: 2730, // 45 minutes 30 seconds
-      text: "The Solent stretches ahead as we make our way toward the open sea.",
-    },
-    {
-      time: 4380, // 1h 13m - Isle of Wight visible
-      text: "The Isle of Wight coastline becomes visible on the starboard side.",
-    },
-    {
-      time: 4980, // 1h 23m - Nab Tower
-      text: "We are now passing the Nab Tower, a few miles East of us.",
-    },
-    {
-      time: 5460, // 1h 31m - Isle of Wight fades
-      text: "The Isle of Wight fades astern as we enter the English Channel proper.",
-    },
-    {
-      time: 6330, // 1h 45m 30s
-      text: "The engines settle into their steady rhythm for the channel crossing.",
-    },
-    {
-      time: 11130, // 3h 5m 30s
-      text: "The English coast has disappeared from view. Only open water surrounds us now.",
-    },
-    {
-      time: 14730, // 4h 5m 30s - Mid-channel
-      text: "We are now deep in the English Channel, making steady progress toward France.",
-    },
-    {
-      time: 18330, // 5h 5m 30s - French coast visible
-      text: "The French coast appears on the horizon as we approach Cherbourg.",
-    },
-  ],
-
-  weatherConditions: [
-    "Clear skies, calm seas",
-    "Light clouds, gentle breeze",
-    "Overcast skies, moderate waves",
-    "Sunny intervals, fresh winds",
-    "Scattered clouds, choppy waters",
-    "Clear horizon, steady winds",
-  ],
-
-  init() {
-    // Load current event index from sessionStorage to prevent replaying on reconnect
-    const savedIndex = sessionStorage.getItem("narrativeEventIndex");
-    if (savedIndex !== null) {
-      this.currentEventIndex = parseInt(savedIndex, 10);
-    }
-
-    // startTime will be set by server via socket event
-    // Don't set it here anymore
-    this.updateNarrative();
-    this.updateWeather();
-
-    // Server pushes narrative-event every 5 seconds — no local narrative timer needed
-    // Update weather every 2 minutes
-    this._weatherInterval = setInterval(() => this.updateWeather(), 120000);
-
-    console.debug("✅ Narrative system initialized (waiting for server time)");
-  },
-
-  updateNarrative() {
-    if (!this.startTime) return;
-
-    const elapsed = getElapsedSeconds();
-    const storyTextElement = document.getElementById("story-text");
-
-    if (!storyTextElement) return;
-
-    // Check if we have a new event to display
-    const nextEvent = this.events[this.currentEventIndex];
-    if (nextEvent && elapsed >= nextEvent.time) {
-      storyTextElement.style.opacity = "0";
-
-      setTimeout(() => {
-        storyTextElement.textContent = nextEvent.text;
-        storyTextElement.style.opacity = "1";
-        this.currentEventIndex++;
-
-        // Save current event index to sessionStorage to prevent replaying on reconnect
-        sessionStorage.setItem(
-          "narrativeEventIndex",
-          this.currentEventIndex.toString(),
-        );
-
-        console.debug(`📖 Narrative event: ${nextEvent.text}`);
-      }, 500);
-    }
-  },
-
-  updateWeather() {
-    const weatherElement = document.getElementById("current-weather");
-    if (!weatherElement) return;
-
-    const randomWeather =
-      this.weatherConditions[
-        Math.floor(Math.random() * this.weatherConditions.length)
-      ];
-
-    weatherElement.style.opacity = "0";
-    setTimeout(() => {
-      weatherElement.textContent = `Weather: ${randomWeather}`;
-      weatherElement.style.opacity = "1";
-      console.debug(`🌤️ Weather updated: ${randomWeather}`);
-    }, 300);
-  },
-};
-
-function setScale() {
-  const root = document.documentElement;
-  const styles = getComputedStyle(root);
-  const baseWidth =
-    parseFloat(styles.getPropertyValue("--scene-width")) || 1920;
-
-  const baseHeight =
-    parseFloat(styles.getPropertyValue("--scene-height")) || 1080;
-  const waterBaseline =
-    parseFloat(styles.getPropertyValue("--water-bottom")) || 150;
-  const manualOffset =
-    parseFloat(styles.getPropertyValue("--scene-manual-offset")) || 0;
-
-  const widthRatio = window.innerWidth / baseWidth;
-  const sceneHeight = baseHeight * widthRatio;
-  const viewportHeight = window.innerHeight;
-  // Compute the offset required to keep the waterline touching the viewport bottom.
-  // The water element sits `waterBaseline` px above the scene-layer bottom in design canvas
-  // units. After scaling, that becomes waterBaseline * widthRatio. To compensate so the
-  // water contacts the viewport bottom, set the bottom offset to the negative of that
-  // visual distance.
-  const desiredOffset = viewportHeight - sceneHeight;
-  const waterCorrection = -waterBaseline * widthRatio;
-
-  // Use the larger of the two adjustments so the scene either fills tall viewports
-  // or drops low enough for the water to touch the bottom edge.
-  let bottomOffset = Math.max(desiredOffset, waterCorrection);
-
-  // Add the manual user offset after the clamp.
-  bottomOffset += manualOffset;
-
-  root.style.setProperty("--scale", widthRatio.toString());
-  root.style.setProperty("--scene-bottom-offset", `${bottomOffset}px`);
-}
-
-window.addEventListener("resize", setScale);
-setScale(); // Initial call to set the scale
-
-// Initialize the open_map audio
-const openMapSound = new Audio("/sounds/open_map.mp3");
-openMapSound.preload = "auto";
-
-console.debug("✅ Initialized open_map audio.");
-
-// Initialize door sound effects
-const openDoorSound = new Audio("/sounds/open_door.mp3");
-const closeDoorSound = new Audio("/sounds/close_door.mp3");
-openDoorSound.preload = "auto";
-closeDoorSound.preload = "auto";
-
-const eatSound = new Audio("/sounds/eat.mp3");
-const drinkSound = new Audio("/sounds/drink.mp3");
-eatSound.preload = "auto";
-drinkSound.preload = "auto";
-
-function playConsumptionSound(item) {
-  let soundToPlay = null;
-
-  if (item?.topCategory === "food") {
-    soundToPlay = eatSound;
-  } else if (
-    item?.topCategory === "soft_beverages" ||
-    item?.topCategory === "alcoholic_beverages"
-  ) {
-    soundToPlay = drinkSound;
-  } else if ((item?.hungry ?? 0) > 0) {
-    soundToPlay = eatSound;
-  } else if ((item?.thirsty ?? 0) > 0) {
-    soundToPlay = drinkSound;
-  }
-
-  if (!soundToPlay) {
-    return;
-  }
-
-  soundToPlay.currentTime = 0;
-  soundToPlay.play().catch(() => {});
-}
-
-const interiorSound = new Audio("/sounds/ship_interior.mp3");
-interiorSound.loop = true; // Loop the ambient sound
-interiorSound.volume = 0.5; // Set volume (adjustable as needed)
-
-const exteriorSound = new Audio("/sounds/ship_exterior.mp3");
-exteriorSound.loop = true; // Loop the ambient sound
-exteriorSound.volume = 0.5; // Set volume (adjustable as needed)
-
-const deckRooms = {
-  boat_deck: [
-    {
-      id: "grand_staircase_bd",
-      name: "Grand Staircase",
-      type: "grand-staircase",
-      isSVG: true,
-      location: {
-        image: "grand stair1.png",
-        chatRoom: "grand_staircase_bd",
-      },
-    },
-    {
-      id: "gymnasium_bd",
-      name: "1st Class Gymnasium",
-      x: 59.3,
-      y: 61,
-      type: "gymnasium",
-      isSVG: true,
-      location: {
-        image: "1st gym1.png",
-        chatRoom: "gymnasium_bd",
-      },
-    },
-    {
-      id: "port_promenade_bd",
-      name: "1st Class Port Promenade",
-      x: 36,
-      y: 15,
-      type: "promenade",
-      isSVG: true,
-      location: {
-        image: "first class promenade.webp",
-        chatRoom: "port_promenade_bd",
-      },
-    },
-    {
-      id: "starboard_promenade_bd",
-      name: "1st Class Starboard Promenade",
-      x: 36,
-      y: 83.1, // Mirror position on opposite side
-      type: "promenade",
-      isSVG: true,
-      location: {
-        image: "BD first starb prom1.png",
-        chatRoom: "starboard_promenade_bd",
-      },
-    },
-    {
-      id: "childrens_playroom_bd",
-      name: "Children's Playroom",
-      x: 59.3, // Position adjusted to fit on the deck plan (adjust as needed)
-      y: 30.1, // Position adjusted to fit on the deck plan (adjust as needed)
-      type: "playroom",
-      isSVG: true,
-      location: {
-        image: "Childrens Playroom.png",
-        chatRoom: "childrens_playroom_bd",
-      },
-    },
-    {
-      id: "port_officers_promenade_bd",
-      name: "Port Officer's Promenade",
-      x: 81,
-      y: 15.3,
-      type: "promenade",
-      isSVG: true,
-      location: {
-        image: "Port Officer's Promenade.png", // Ensure this exists
-        chatRoom: "port_officers_promenade_bd",
-      },
-    },
-    {
-      id: "starboard_officers_promenade_bd",
-      name: "Starboard Officer's Promenade",
-      x: 81,
-      y: 71.1,
-      type: "promenade",
-      isSVG: true,
-      location: {
-        image: "Starboard Officer's Promenade.png", // Ensure this image exists
-        chatRoom: "starboard_officers_promenade_bd",
-      },
-    },
-    {
-      id: "port_bridge_wing_bd",
-      name: "Port Bridge Wing",
-      x: 96.1, // Adjust coordinates as needed
-      y: 14, // Adjust coordinates as needed
-      type: "bridge_wing",
-      isSVG: true,
-      location: {
-        image: "Port Bridge Wing.png", // First image
-        chatRoom: "port_bridge_wing_bd",
-      },
-    },
-    {
-      id: "starboard_bridge_wing_bd",
-      name: "Starboard Bridge Wing",
-      x: 96.1, // Same x position
-      y: 62, // Mirrored y position
-      type: "bridge_wing",
-      isSVG: true,
-      location: {
-        image: "Starboard Bridge Wing.png", // First image
-        chatRoom: "starboard_bridge_wing_bd",
-      },
-    },
-    {
-      id: "bridge_bd",
-      name: "the Bridge",
-      x: 96, // Same x position as bridge wings
-      y: 41, // Positioned between port (14) and starboard (62) bridge wings
-      type: "bridge",
-      isSVG: true,
-      location: {
-        image: "Bridge.png", // First image
-        chatRoom: "bridge_bd",
-      },
-    },
-    {
-      id: "wheelhouse_bd",
-      name: "the Wheelhouse",
-      x: 96, // Same x position as bridge
-      y: 41, // Same y position as bridge
-      type: "wheelhouse",
-      isSVG: true,
-      location: {
-        image: "wheelhouse1.png", // First image
-        chatRoom: "wheelhouse_bd",
-      },
-    },
-    {
-      id: "starboard_engineers_promenade_bd",
-      name: "Starboard Engineer's Promenade",
-      type: "promenade",
-      isSVG: true,
-      location: {
-        image: "starb engineers prom1.png", // First image
-        chatRoom: "starboard_engineers_promenade_bd",
-      },
-    },
-    {
-      id: "port_engineers_promenade_bd",
-      name: "Port Engineer's Promenade",
-      type: "promenade",
-      isSVG: true,
-      location: {
-        image: "port engineers prom1.png", // First image
-        chatRoom: "port_engineers_promenade_bd",
-      },
-    },
-    {
-      id: "starboard_2nd_class_promenade_bd",
-      name: "Starboard 2nd Class Promenade",
-      type: "promenade",
-      isSVG: true,
-      location: {
-        image: "starb 2nd class prom1.png", // First image
-        chatRoom: "starboard_2nd_class_promenade_bd",
-      },
-    },
-    {
-      id: "port_2nd_class_promenade_bd",
-      name: "Port 2nd Class Promenade",
-      type: "promenade",
-      isSVG: true,
-      location: {
-        image: "port 2nd class prom1.png", // First image
-        chatRoom: "port_2nd_class_promenade_bd",
-      },
-    },
-    {
-      id: "2nd_class_staircase_bd",
-      name: "2nd Class Staircase",
-      type: "staircase",
-      isSVG: true,
-      location: {
-        image: "2nd class staircasebd1.png", // First image
-        chatRoom: "2nd_class_staircase_bd",
-      },
-    },
-  ],
-  b_deck: [
-    {
-      id: "forecastle_b",
-      name: "Forecastle",
-      type: "forecastle",
-      isSVG: true,
-      location: {
-        image: "forecastle1.png",
-        chatRoom: "forecastle_b",
-      },
-    },
-    {
-      id: "first_class_b_forward_overlooking_promenade",
-      name: "1st Class B-Deck Forward Overlooking Promenade",
-      type: "promenade",
-      isSVG: true,
-      location: {
-        images: [
-          "1C B overlook prom1.png",
-          "1C B overlook prom2.png",
-          "1C B overlook prom3.png",
-          "1C B overlook prom4.png",
-          "1C B overlook prom5.png",
-          "1C B overlook prom6.png",
-        ],
-        chatRoom: "first_class_b_forward_overlooking_promenade",
-      },
-    },
-    {
-      id: "first_class_port_b_enclosed_promenade",
-      name: "1st Class Port B-Deck Enclosed Promenade",
-      type: "promenade",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "first_class_port_b_enclosed_promenade",
-      },
-    },
-    {
-      id: "first_class_starboard_b_enclosed_promenade",
-      name: "1st Class Starboard B-Deck Enclosed Promenade",
-      type: "promenade",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "first_class_starboard_b_enclosed_promenade",
-      },
-    },
-    {
-      id: "poop_deck",
-      name: "Poop Deck",
-      type: "poop-deck",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "poop_deck",
-      },
-    },
-    {
-      id: "grand_staircase_b",
-      name: "Grand Staircase",
-      type: "grand-staircase",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "grand_staircase_b",
-      },
-    },
-    {
-      id: "third_class_smoke_room_b",
-      name: "3rd Class Smoke Room",
-      type: "third-class-smoking-room",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "third_class_smoke_room_b",
-      },
-    },
-    {
-      id: "second_class_smoke_room_b",
-      name: "2nd Class Smoke Room",
-      type: "second-class",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "second_class_smoke_room_b",
-      },
-    },
-    {
-      id: "second_class_starboard_promenade_b",
-      name: "2nd Class Starboard Promenade",
-      type: "second-class",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "second_class_starboard_promenade_b",
-      },
-    },
-    {
-      id: "second_class_port_promenade_b",
-      name: "2nd Class Port Promenade",
-      type: "second-class",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "second_class_port_promenade_b",
-      },
-    },
-    {
-      id: "b_deck_aft_staircase",
-      name: "B-Deck Aft Staircase",
-      type: "first-class",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "b_deck_aft_staircase",
-      },
-    },
-    {
-      id: "restaurant_reception_room",
-      name: "Restaurant Reception Room",
-      type: "first-class",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "restaurant_reception_room",
-      },
-    },
-    {
-      id: "a_la_carte_restaurant",
-      name: "À La Carte Restaurant",
-      type: "first-class",
-      isSVG: true,
-      location: {
-        image: "placeholder.jpg",
-        chatRoom: "a_la_carte_restaurant",
-      },
-    },
-    {
-      id: "cabin_b81",
-      name: "Cabin B-81",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
-        chatRoom: "cabin_b81",
-      },
-    },
-    {
-      id: "cabin_b83",
-      name: "Cabin B-83",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
-        chatRoom: "cabin_b83",
-      },
-    },
-    {
-      id: "cabin_b79",
-      name: "Cabin B-79",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B49 B55 B67 B79.png",
-        chatRoom: "cabin_b79",
-      },
-    },
-    {
-      id: "cabin_b77",
-      name: "Cabin B-77",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
-        chatRoom: "cabin_b77",
-      },
-    },
-    {
-      id: "cabin_b75",
-      name: "Cabin B-75",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B75.png",
-        chatRoom: "cabin_b75",
-      },
-    },
-    {
-      id: "cabin_b73",
-      name: "Cabin B-73",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
-        chatRoom: "cabin_b73",
-      },
-    },
-    {
-      id: "cabin_b71",
-      name: "Cabin B-71",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
-        chatRoom: "cabin_b71",
-      },
-    },
-    {
-      id: "cabin_b69",
-      name: "Cabin B-69",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
-        chatRoom: "cabin_b69",
-      },
-    },
-    {
-      id: "cabin_b67",
-      name: "Cabin B-67",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B49 B55 B67 B79.png",
-        chatRoom: "cabin_b67",
-      },
-    },
-    {
-      id: "cabin_b63",
-      name: "Cabin B-63",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
-        chatRoom: "cabin_b63",
-      },
-    },
-    {
-      id: "cabin_b65",
-      name: "Cabin B-65",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
-        chatRoom: "cabin_b65",
-      },
-    },
-    {
-      id: "cabin_b61",
-      name: "Cabin B-61",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B61.png",
-        chatRoom: "cabin_b61",
-      },
-    },
-    {
-      id: "cabin_b57",
-      name: "Cabin B-57",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
-        chatRoom: "cabin_b57",
-      },
-    },
-    {
-      id: "cabin_b59",
-      name: "Cabin B-59",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
-        chatRoom: "cabin_b59",
-      },
-    },
-    {
-      id: "cabin_b55",
-      name: "Cabin B-55",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B49 B55 B67 B79.png",
-        chatRoom: "cabin_b55",
-      },
-    },
-    {
-      id: "cabin_b53",
-      name: "Cabin B-53",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B63 B57 B53 B71 B77 B83.png",
-        chatRoom: "cabin_b53",
-      },
-    },
-    {
-      id: "cabin_b51",
-      name: "Cabin B-51",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B59 B51 B65 B73 B81.png",
-        chatRoom: "cabin_b51",
-      },
-    },
-    {
-      id: "cabin_b49",
-      name: "Cabin B-49",
-      type: "cabin",
-      isSVG: true,
-      location: {
-        image: "ROOM PIC FOR B49 B55 B67 B79.png",
-        chatRoom: "cabin_b49",
-      },
-    },
-  ],
-  a_deck: [
-    {
-      id: "first_class_lounge_a",
-      name: "First Class Lounge",
-      type: "lounge",
-      isSVG: true,
-      location: {
-        image: "First Class Lounge A Deck.jpg",
-        chatRoom: "first_class_lounge_a",
-      },
-    },
-    {
-      id: "corridor_a",
-      name: "the Corridor",
-      type: "corridor",
-      isSVG: true,
-      location: {
-        image: "Corridor.png", // Adjust image name as needed
-        chatRoom: "corridor_a",
-      },
-    },
-    {
-      id: "corridor",
-      name: "Corridor",
-      type: "corridor",
-      isSVG: true,
-      location: {
-        image: "a corridor1.png",
-        chatRoom: "corridor",
-      },
-    },
-    {
-      id: "reading_writing_room_a",
-      name: "Reading & Writing Room",
-      type: "reading-writing-room",
-      isSVG: true,
-      location: {
-        image: "Reading and Writing Room.jpg", // Adjust this if the image name differs
-        chatRoom: "reading_writing_room_a",
-      },
-    },
-  ],
-  d_deck: [
-    {
-      id: "first_class_reception_d",
-      name: "First Class Reception Room",
-      coordinates: "582,4,675,5,676,105,583,106,582,4",
-      type: "reception-room",
-      isSVG: true,
-      location: {
-        image: "First Class Reception1.png", // Fallback image
-        chatRoom: "first_class_reception_d",
-      },
-    },
-    {
-      id: "first_class_dining_room_d",
-      name: "First Class Dining Room",
-      coordinates:
-        "453,5,581,4,581,44,555,44,555,68,582,68,582,107,454,107,454,69,485,69,485,44,452,44,453,5",
-      type: "dining-room",
-      isSVG: true,
-      location: {
-        image: "First Class Dining Room.jpg", // Fallback image
-        chatRoom: "first_class_dining_room_d",
-      },
-    },
-  ],
-};
-
-deckRooms.a_deck.push({
-  id: "grand_staircase_a",
-  name: "Grand Staircase (A-Deck)",
-  type: "grand-staircase",
-  isSVG: true,
-  location: {
-    image: "gsc A1.png",
-    chatRoom: "grand_staircase_a",
-  },
-});
-
-deckRooms.a_deck.push({
-  id: "aft_corridor_a",
-  name: "Aft Corridor",
-  type: "corridor",
-  isSVG: true,
-  location: {
-    image: "aft corridor.jpg", // First image as fallback
-    chatRoom: "aft_corridor_a",
-  },
-});
-
-deckRooms.a_deck.push({
-  id: "aft_grand_staircase_a",
-  name: "Aft Grand Staircase",
-  type: "grand-staircase",
-  isSVG: true,
-  location: {
-    image: "Aft Grand Staircase.png", // Fallback image
-    chatRoom: "aft_grand_staircase_a",
-  },
-});
-
-deckRooms.a_deck.push({
-  id: "first_class_smoking_room_a",
-  name: "First Class Smoking Room",
-  type: "smoking-room",
-  isSVG: true,
-  location: {
-    image: "First Class Smoking.png", // Fallback image
-    chatRoom: "first_class_smoking_room_a",
-  },
-});
-
-// Palm Court (Verandah) - add deckRooms entry so the SVG overlay can
-// find this room and automatically bind click/tooltip handlers
-deckRooms.a_deck.push({
-  id: "verandah_palm_court_a",
-  name: "Palm Court (A-Deck)",
-  type: "palm-court",
-  isSVG: true,
-  location: {
-    image: "Palm Court.png",
-    chatRoom: "verandah_palm_court_a",
-  },
-});
-
-deckRooms.a_deck.push({
-  id: "first_class_starboard_enclosed_promenade_a",
-  name: "1st Class Starboard Enclosed Promenade",
-  type: "promenade",
-  isSVG: true,
-  location: {
-    image: "1st starb A enclosed prom1.png",
-    chatRoom: "first_class_starboard_enclosed_promenade_a",
-  },
-});
-
-deckRooms.a_deck.push({
-  id: "first_class_port_enclosed_promenade_a",
-  name: "1st Class Port Enclosed Promenade",
-  type: "promenade",
-  isSVG: true,
-  location: {
-    image: "1st port A enclosed prom1.png",
-    chatRoom: "first_class_port_enclosed_promenade_a",
-  },
-});
-
-deckRooms.a_deck.push({
-  id: "first_class_port_promenade_a",
-  name: "1st Class Port Promenade",
-  type: "promenade",
-  isSVG: true,
-  location: {
-    image: "1st A port prom1.png",
-    chatRoom: "first_class_port_promenade_a",
-  },
-});
-
-deckRooms.a_deck.push({
-  id: "first_class_starboard_promenade_a",
-  name: "1st Class Starboard Promenade",
-  type: "promenade",
-  isSVG: true,
-  location: {
-    image: "1st A starb prom1.png",
-    chatRoom: "first_class_starboard_promenade_a",
-  },
-});
-
-deckRooms.a_deck.push({
-  id: "first_a_corridor",
-  name: "1st A Corridor",
-  type: "corridor",
-  isSVG: true,
-  location: {
-    image: "1st A corridor1.png",
-    chatRoom: "first_a_corridor",
-  },
-});
-
-deckRooms.a_deck.push(
-  {
-    id: "cabin_a1",
-    name: "Cabin A1",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "Cabin A1.png",
-      chatRoom: "cabin_a1",
-    },
-  },
-  {
-    id: "cabin_a2",
-    name: "Cabin A2",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "Cabin A2.png",
-      chatRoom: "cabin_a2",
-    },
-  },
-  {
-    id: "cabin_a3",
-    name: "Cabin A3",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "Cabin A3.jpg",
-      chatRoom: "cabin_a3",
-    },
-  },
-  {
-    id: "cabin_a4",
-    name: "Cabin A4",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "Cabin A4.jpg",
-      chatRoom: "cabin_a4",
-    },
-  },
-  {
-    id: "cabin_a5",
-    name: "Cabin A5",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "Cabin A5.jpg",
-      chatRoom: "cabin_a5",
-    },
-  },
-  {
-    id: "cabin_a6",
-    name: "Cabin A6",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "Cabin A6.jpg",
-      chatRoom: "cabin_a6",
-    },
-  },
-  {
-    id: "cabin_a7",
-    name: "Cabin A7",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "Cabin A7.jpg",
-      chatRoom: "cabin_a7",
-    },
-  },
-  {
-    id: "cabin_a8",
-    name: "Cabin A8",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "Cabin A8.jpg",
-      chatRoom: "cabin_a8",
-    },
-  },
-  {
-    id: "cabin_a9",
-    name: "Cabin A9",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "Cabin A9.jpg",
-      chatRoom: "cabin_a9",
-    },
-  },
-  {
-    id: "cabin_a10",
-    name: "Cabin A10",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "Cabin A10.jpg",
-      chatRoom: "cabin_a10",
-    },
-  },
-  {
-    id: "cabin_a11",
-    name: "Cabin A11",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a11",
-    },
-  },
-  {
-    id: "cabin_a12",
-    name: "Cabin A12",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a12",
-    },
-  },
-  {
-    id: "cabin_a14",
-    name: "Cabin A14",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a14",
-    },
-  },
-  {
-    id: "cabin_a15",
-    name: "Cabin A15",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a15",
-    },
-  },
-  {
-    id: "cabin_a16",
-    name: "Cabin A16",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a16",
-    },
-  },
-  {
-    id: "cabin_a17",
-    name: "Cabin A17",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a17",
-    },
-  },
-  {
-    id: "cabin_a18",
-    name: "Cabin A18",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a18",
-    },
-  },
-  {
-    id: "cabin_a19",
-    name: "Cabin A19",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a19",
-    },
-  },
-  {
-    id: "cabin_a20",
-    name: "Cabin A20",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a20",
-    },
-  },
-  {
-    id: "cabin_a21",
-    name: "Cabin A21",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a21",
-    },
-  },
-  {
-    id: "cabin_a22",
-    name: "Cabin A22",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a22",
-    },
-  },
-  {
-    id: "cabin_a23",
-    name: "Cabin A23",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "cabin_a23",
-    },
-  },
-  {
-    id: "cabin_a30",
-    name: "Cabin A30",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "A30.png",
-      chatRoom: "cabin_a30",
-    },
-  },
-  {
-    id: "cabin_a32",
-    name: "Cabin A32",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "A32.png",
-      chatRoom: "cabin_a32",
-    },
-  },
-  {
-    id: "cabin_a34",
-    name: "Cabin A34",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "A34.png",
-      chatRoom: "cabin_a34",
-    },
-  },
-  {
-    id: "cabin_a36",
-    name: "Cabin A36",
-    type: "cabin",
-    isSVG: true,
-    location: {
-      image: "A36.png",
-      chatRoom: "cabin_a36",
-    },
-  },
-  {
-    id: "first_class_forward_overlooking_promenade_a",
-    name: "1st Class Forward Overlooking Promenade",
-    type: "promenade",
-    isSVG: true,
-    location: {
-      image: "1st A overlook prom1.png",
-      chatRoom: "first_class_forward_overlooking_promenade_a",
-    },
-  },
-  {
-    id: "second_class_staircase_a",
-    name: "2nd Class Staircase",
-    type: "staircase",
-    isSVG: true,
-    location: {
-      image: "2nd class staircase1.png",
-      chatRoom: "second_class_staircase_a",
-    },
-  },
-);
-
-// Southampton location (off-ship)
-deckRooms.southampton = [
-  {
-    id: "berth_44_walkaway",
-    name: "Berth 44",
-    type: "walkaway",
-    location: {
-      image: "berth 44 walkaway.jpg",
-      chatRoom: "berth_44_walkaway",
-    },
-  },
-  {
-    id: "dockside_cafe",
-    name: "Dockside Cafe & Bar",
-    type: "cafe",
-    location: {
-      image: "dockside cafe.jpg",
-      chatRoom: "dockside_cafe",
-    },
-  },
-  {
-    id: "berth_44_forward",
-    name: "Berth 44 Forward Docks",
-    type: "docks",
-    location: {
-      image: "berth44 forward1.jpg",
-      chatRoom: "berth_44_forward",
-    },
-  },
-  {
-    id: "first_class_gangway",
-    name: "First Class Gangway",
-    type: "gangway",
-    location: {
-      image: "firstclassgangway.jpg",
-      chatRoom: "first_class_gangway",
-    },
-  },
-  {
-    id: "crew_gangway",
-    name: "Crew Gangway",
-    type: "crew-gangway",
-    location: {
-      image: "crew gangway.jpg",
-      chatRoom: "crew_gangway",
-    },
-  },
-  {
-    id: "third_class_gangway",
-    name: "3rd Class Gangway",
-    type: "third-class-gangway",
-    location: {
-      image: "3rd class gangway.jpg",
-      chatRoom: "third_class_gangway",
-    },
-  },
-  {
-    id: "berth_44_aft",
-    name: "Berth 44 Aft Docks",
-    type: "aft-docks",
-    location: {
-      image: "berth 44 aft docks1.jpg",
-      chatRoom: "berth_44_aft",
-    },
-  },
-  {
-    id: "covered_walkway",
-    name: "1st & 2nd Class Covered Walkway",
-    type: "covered-walkway",
-    location: {
-      image: "berth 44 walkaway.jpg",
-      chatRoom: "covered_walkway",
-    },
-  },
-  {
-    id: "boarding_tower",
-    name: "1st Class Boarding Tower",
-    type: "boarding-tower",
-    location: {
-      image: "placeholder.jpg",
-      chatRoom: "boarding_tower",
-    },
-  },
-];
-
-console.debug("✅ Defined deckRooms:", deckRooms);
-
-// Define room images for rooms with multiple variants
-const roomImages = {
-  grand_staircase_bd: {
-    images: [
-      "grand stair1.png",
-      "grand stair2.png",
-      "grand stair3.png",
-      "grand stair4.png",
-      "grand stair5.png",
-      "grand stair6.png",
-      "grand stair7.png",
-      "grand stair8.png",
-      "grand stair9.png",
-      "grand stair10.png",
-    ],
-    currentIndex: 0,
-  },
-  childrens_playroom_bd: {
-    images: [
-      "Childrens Playroom.png",
-      "Childrens Playroom2.png",
-      "Childrens Playroom3.png",
-    ],
-    currentIndex: 0,
-  },
-  gymnasium_bd: {
-    images: [
-      "1st gym1.png",
-      "1st gym2.png",
-      "1st gym3.png",
-      "1st gym4.png",
-      "1st gym5.png",
-    ],
-    currentIndex: 0,
-  },
-  port_officers_promenade_bd: {
-    images: [
-      "Port Officer's Promenade.png",
-      "Port Officer's Promenade2.png",
-      "Port Officer's Promenade3.png",
-    ],
-    variants: {
-      ms: [
-        "Port Officer's Promenade (ms).png",
-        "Port Officer's Promenade2.png",
-        "Port Officer Promenade3.png",
-      ],
-    },
-    currentIndex: 0,
-  },
-  starboard_officers_promenade_bd: {
-    images: [
-      "Starboard Officer's Promenade.png",
-      "Starboard Officer's Promenade2.png",
-      "Starboard Officer's Promenade3.png",
-    ],
-    variants: {
-      ms: [
-        "Starboard Officer's Promenade.png",
-        "Starboard Officer's Promenade2.png",
-        "Starboard Officer's Promenade3.png",
-      ],
-    },
-    currentIndex: 0,
-  },
-  port_bridge_wing_bd: {
-    images: [
-      "Port Bridge Wing.png",
-      "Port Bridge Wing2.png",
-      "Port Bridge Wing3.png",
-      "Port Bridge Wing4.png",
-      "Port Bridge Wing5.png",
-    ],
-    variants: {
-      ms: [
-        "Port Bridge Wing.png",
-        "Port Bridge Wing2.png",
-        "Port Bridge Wing3.png",
-        "Port Bridge Wing4.png",
-        "Port Bridge Wing5.png",
-      ],
-    },
-    currentIndex: 0,
-  },
-  starboard_bridge_wing_bd: {
-    images: [
-      "Starboard Bridge Wing.png",
-      "Starboard Bridge Wing2.png",
-      "Starboard Bridge Wing3.png",
-      "Starboard Bridge Wing4.png",
-      "Starboard Bridge Wing5.png",
-    ],
-    variants: {
-      ms: [
-        "Starboard Bridge Wing.png",
-        "Starboard Bridge Wing2.png",
-        "Starboard Bridge Wing3.png",
-        "Starboard Bridge Wing4.png",
-        "Starboard Bridge Wing5.png",
-      ],
-    },
-    currentIndex: 0,
-  },
-  bridge_bd: {
-    images: [
-      "Bridge.png",
-      "Bridge2.png",
-      "Bridge3.png",
-      "Bridge4.png",
-      "Bridge5.png",
-      "Bridge6.png",
-    ],
-    variants: {
-      ms: [
-        "Bridge.png",
-        "Bridge2.png",
-        "Bridge3.png",
-        "Bridge4.png",
-        "Bridge5.png",
-        "Bridge6.png",
-      ],
-    },
-    currentIndex: 0,
-  },
-  first_class_lounge_a: {
-    images: [
-      "First Class Lounge1.png",
-      "First Class Lounge2.png",
-      "First Class Lounge3.png",
-      "First Class Lounge4.png",
-      "First Class Lounge5.png",
-      "First Class Lounge6.png",
-      "First Class Lounge7.png",
-      "First Class Lounge8.png",
-      "First Class Lounge9.png",
-      "First Class Lounge10.png",
-      "First Class Lounge11.png",
-      "First Class Lounge12.png",
-      "First Class Lounge13.png",
-    ],
-    currentIndex: 0,
-  },
-  corridor_a: {
-    images: ["Corridor.png", "Corridor2.png", "Corridor3.png", "Corridor4.png"],
-    currentIndex: 0,
-  },
-  corridor: {
-    images: [
-      "a corridor1.png",
-      "a corridor2.png",
-      "a corridor3.png",
-      "a corridor4.png",
-    ],
-    currentIndex: 0,
-  },
-  grand_staircase_a: {
-    images: [
-      "gsc A1.png",
-      "gsc A2.png",
-      "gsc A3.png",
-      "gsc A4.png",
-      "gsc A5.png",
-      "gsc A6.png",
-      "gsc A7.png",
-      "gsc A8.png",
-      "gsc A9.png",
-    ],
-    currentIndex: 0,
-  },
-  aft_grand_staircase_a: {
-    images: [
-      "Aft Grand Staircase.png",
-      "Aft Grand Staircase2.png",
-      "Aft Grand Staircase3.png",
-      "Aft Grand Staircase4.png",
-    ],
-    currentIndex: 0,
-  },
-  first_class_smoking_room_a: {
-    images: [
-      "First Class Smoking.png",
-      "First Class Smoking2.png",
-      "First Class Smoking3.png",
-      "First Class Smoking4.png",
-      "First Class Smoking5.png",
-      "First Class Smoking6.png",
-      "First Class Smoking7.png",
-      "First Class Smoking8.png",
-      "First Class Smoking9.png",
-      "First Class Smoking10.png",
-      "First Class Smoking11.png",
-    ],
-    currentIndex: 0,
-  },
-};
-roomImages.verandah_palm_court_a = {
-  images: [
-    "Palm Court.png",
-    "Palm Court2.png",
-    "Palm Court3.png",
-    "Palm Court4.png",
-    "Palm Court5.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.first_class_reception_d = {
-  images: [
-    "First Class Reception1.png",
-    "First Class Reception2.png",
-    "First Class Reception3.png",
-    "First Class Reception4.png",
-    "First Class Reception5.png",
-    "First Class Reception6.png",
-    "First Class Reception7.png",
-    "First Class Reception8.png",
-    "First Class Reception9.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.first_class_dining_room_d = {
-  images: [
-    "First Class Dining1.png",
-    "First Class Dining2.png",
-    "First Class Dining3.png",
-    "First Class Dining4.png",
-    "First Class Dining5.png",
-    "First Class Dining6.png",
-    "First Class Dining7.png",
-    "First Class Dining8.png",
-    "First Class Dining9.png",
-    "First Class Dining10.png",
-    "First Class Dining11.png",
-    "First Class Dining12.png",
-    "First Class Dining13.png",
-    "First Class Dining14.png",
-    "First Class Dining15.png",
-    "First Class Dining16.png",
-    "First Class Dining17.png",
-    "First Class Dining18.png",
-    "First Class Dining19.png",
-    "First Class Dining20.png",
-    "First Class Dining21.png",
-    "First Class Dining22.png",
-    "First Class Dining23.png",
-  ],
-  currentIndex: 0,
-};
-
-// Add Southampton room images
-roomImages.berth_44_walkaway = {
-  images: ["berth 44 walkaway.jpg"],
-  currentIndex: 0,
-};
-
-roomImages.dockside_cafe = {
-  images: ["dockside cafe.jpg"],
-  currentIndex: 0,
-};
-
-roomImages.berth_44_forward = {
-  images: ["berth44 forward1.jpg"],
-  currentIndex: 0,
-};
-
-roomImages.first_class_gangway = {
-  images: ["firstclassgangway.jpg"],
-  currentIndex: 0,
-};
-
-roomImages.crew_gangway = {
-  images: ["crew gangway.jpg"],
-  currentIndex: 0,
-};
-
-roomImages.third_class_gangway = {
-  images: ["3rd class gangway.jpg"],
-  currentIndex: 0,
-};
-
-roomImages.berth_44_aft = {
-  images: ["berth 44 aft docks1.jpg"],
-  currentIndex: 0,
-};
-
-roomImages.covered_walkway = {
-  images: ["berth 44 walkaway.jpg"],
-  currentIndex: 0,
-};
-
-roomImages.boarding_tower = {
-  images: ["1st class tower1.jpg", "1st class tower2.jpg"],
-  currentIndex: 0,
-};
-
-roomImages.first_class_starboard_enclosed_promenade_a = {
-  images: [
-    "1st starb A enclosed prom1.png",
-    "1st starb A enclosed prom2.png",
-    "1st starb A enclosed prom3.png",
-    "1st starb A enclosed prom4.png",
-    "1st starb A enclosed prom5.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.first_class_port_enclosed_promenade_a = {
-  images: [
-    "1st port A enclosed prom1.png",
-    "1st port A enclosed prom2.png",
-    "1st port A enclosed prom3.png",
-    "1st port A enclosed prom4.png",
-    "1st port A enclosed prom5.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.first_class_port_promenade_a = {
-  images: [
-    "1st A port prom1.png",
-    "1st A port prom2.png",
-    "1st A port prom3.png",
-    "1st A port prom4.png",
-    "1st A port prom5.png",
-    "1st A port prom6.png",
-    "1st A port prom7.png",
-    "1st A port prom8.png",
-    "1st A port prom9.png",
-    "1st A port prom10.png",
-  ],
-  variants: {
-    ms: ["1st Class Port Promenade (ms).png"],
-  },
-  currentIndex: 0,
-};
-
-roomImages.first_class_starboard_promenade_a = {
-  images: [
-    "1st A starb prom1.png",
-    "1st A starb prom2.png",
-    "1st A starb prom3.png",
-    "1st A starb prom4.png",
-    "1st A starb prom5.png",
-    "1st A starb prom6.png",
-    "1st A starb prom7.png",
-    "1st A starb prom8.png",
-    "1st A starb prom9.png",
-    "1st A starb prom10.png",
-  ],
-  variants: {
-    ms: ["1st Class Starboard Promenade (ms).png"],
-  },
-  currentIndex: 0,
-};
-
-roomImages.first_a_corridor = {
-  images: ["1st A corridor1.png", "1st A corridor2.png", "1st A corridor3.png"],
-  currentIndex: 0,
-};
-
-roomImages.first_class_forward_overlooking_promenade_a = {
-  images: [
-    "1st A overlook prom1.png",
-    "1st A overlook prom2.png",
-    "1st A overlook prom3.png",
-    "1st A overlook prom4.png",
-    "1st A overlook prom5.png",
-    "1st A overlook prom6.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.second_class_staircase_a = {
-  images: [
-    "2nd class staircase1.png",
-    "2nd class staircase2.png",
-    "2nd class staircase3.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.first_class_b_forward_overlooking_promenade = {
-  images: [
-    "1C B overlook prom1.png",
-    "1C B overlook prom2.png",
-    "1C B overlook prom3.png",
-    "1C B overlook prom4.png",
-    "1C B overlook prom5.png",
-    "1C B overlook prom6.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.wheelhouse_bd = {
-  images: [
-    "wheelhouse1.png",
-    "wheelhouse2.png",
-    "wheelhouse3.png",
-    "wheelhouse4.png",
-    "wheelhouse5.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.starboard_engineers_promenade_bd = {
-  images: [
-    "starb engineers prom1.png",
-    "starb engineers prom2.png",
-    "starb engineers prom3.jpg",
-    "starb engineers prom4.jpg",
-    "starb engineers prom5.jpg",
-  ],
-  variants: {
-    ms: ["starb engineers prom1.png", "starb engineers prom2.png"],
-  },
-  currentIndex: 0,
-};
-
-roomImages.port_engineers_promenade_bd = {
-  images: [
-    "port engineers prom1.png",
-    "port engineers prom2.png",
-    "port engineers prom3.png",
-  ],
-  variants: {
-    ms: [
-      "port engineers prom1.png",
-      "port engineers prom2.png",
-      "port engineers prom3.png",
-    ],
-  },
-  currentIndex: 0,
-};
-
-roomImages.starboard_2nd_class_promenade_bd = {
-  images: [
-    "starb 2nd class prom1.png",
-    "starb 2nd class prom2.png",
-    "starb 2nd class prom3.png",
-    "starb 2nd class prom4.png",
-  ],
-  variants: {
-    ms: [
-      "starb 2nd class prom1.png",
-      "starb 2nd class prom2.png",
-      "starb 2nd class prom3.png",
-      "starb 2nd class prom4.png",
-    ],
-  },
-  currentIndex: 0,
-};
-
-roomImages.port_2nd_class_promenade_bd = {
-  images: [
-    "port 2nd class prom1.png",
-    "port 2nd class prom2.png",
-    "port 2nd class prom3.png",
-    "port 2nd class prom4.png",
-  ],
-  variants: {
-    ms: [
-      "port 2nd class prom1.png",
-      "port 2nd class prom2.png",
-      "port 2nd class prom4.png",
-    ],
-  },
-  currentIndex: 0,
-};
-
-// Boat Deck - First Class Port Promenade (bd) defaults and sunset variant
-roomImages.port_promenade_bd = {
-  images: [
-    "BD first port prom1.png",
-    "BD first port prom2.png",
-    "BD first port prom3.png",
-    "BD first port prom4.png",
-    "BD first port prom5.png",
-    "BD first port prom6.png",
-    "BD first port prom7.png",
-  ],
-  currentIndex: 0,
-  variants: {
-    ms: ["1st Class Port Promenade (ms).png"],
-    night: [],
-  },
-};
-
-// Boat Deck - First Class Starboard Promenade replacement set
-roomImages.starboard_promenade_bd = {
-  images: [
-    "BD first starb prom1.png",
-    "BD first starb prom2.png",
-    "BD first starb prom3.png",
-    "BD first starb prom4.png",
-    "BD first starb prom5.png",
-    "BD first starb prom6.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages["2nd_class_staircase_bd"] = {
-  images: [
-    "2nd class staircasebd1.png",
-    "2nd class staircasebd2.png",
-    "2nd class staircasebd3.png",
-    "2nd class staircasebd4.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.forecastle_b = {
-  images: [
-    "forecastle1.png",
-    "forecastle2.png",
-    "forecastle3.png",
-    "forecastle4.png",
-  ],
-  variants: {
-    ms: [
-      "forecastle1.png",
-      "forecastle2.png",
-      "forecastle3.png",
-      "forecastle4.png",
-    ],
-  },
-  currentIndex: 0,
-};
-
-roomImages.first_class_port_b_enclosed_promenade = {
-  images: [
-    "1st B port enclosed prom1.png",
-    "1st B port enclosed prom2.png",
-    "1st B port enclosed prom3.png",
-    "1st B port enclosed prom4.png",
-    "1st B port enclosed prom5.png",
-  ],
-  variants: {
-    ms: [
-      "1st B port enclosed prom1.png",
-      "1st B port enclosed prom2.png",
-      "1st B port enclosed prom3.png",
-      "1st B port enclosed prom4.png",
-      "1st B port enclosed prom5.png",
-    ],
-  },
-  currentIndex: 0,
-};
-
-roomImages.first_class_starboard_b_enclosed_promenade = {
-  images: [
-    "1st B starb enclosed prom1.png",
-    "1st B starb enclosed prom2.png",
-    "1st B starb enclosed prom3.png",
-    "1st B starb enclosed prom4.png",
-    "1st B starb enclosed prom5.png",
-  ],
-  variants: {
-    ms: [
-      "1st B starb enclosed prom1.png",
-      "1st B starb enclosed prom2.png",
-      "1st B starb enclosed prom3.png",
-      "1st B starb enclosed prom4.png",
-    ],
-  },
-  currentIndex: 0,
-};
-
-roomImages.poop_deck = {
-  images: [
-    "poop1.png",
-    "poop2.png",
-    "poop3.png",
-    "poop4.png",
-    "poop5.png",
-    "poop6.png",
-    "poop7.png",
-    "poop8.png",
-    "poop9.png",
-    "poop10.png",
-    "poop11.png",
-    "poop12.png",
-    "poop13.png",
-    "poop14.png",
-    "poop15.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.grand_staircase_b = {
-  images: [
-    "B deck gd1.png",
-    "B deck gd2.png",
-    "B deck gd3.png",
-    "B deck gd4.png",
-    "B deck gd5.png",
-    "B deck gd6.png",
-    "B deck gd7.png",
-    "B deck gd8.png",
-    "B deck gd9.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.third_class_smoke_room_b = {
-  images: [
-    "3rd class SR1.png",
-    "3rd class SR2.png",
-    "3rd class SR3.png",
-    "3rd class SR4.png",
-    "3rd class SR5.png",
-    "3rd class SR6.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.second_class_smoke_room_b = {
-  images: [
-    "2nd smoke1.png",
-    "2nd smoke2.png",
-    "2nd smoke3.png",
-    "2nd smoke4.png",
-    "2nd smoke5.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.second_class_starboard_promenade_b = {
-  images: [
-    "2nd class b starb prom1.png",
-    "2nd class b starb prom2.png",
-    "2nd class b starb prom3.png",
-    "2nd class b starb prom4.png",
-    "2nd class b starb prom5.png",
-    "2nd class b starb prom6.png",
-    "2nd class b starb prom7.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.second_class_port_promenade_b = {
-  images: [
-    "2nd class b prom1.png",
-    "2nd class b prom2.png",
-    "2nd class b prom3.png",
-    "2nd class b prom4.png",
-    "2nd class b prom5.png",
-    "2nd class b prom6.png",
-    "2nd class b prom7.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.b_deck_aft_staircase = {
-  images: [
-    "b aft staircase1.png",
-    "b aft staircase2.png",
-    "b aft staircase3.png",
-    "b aft staircase4.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.restaurant_reception_room = {
-  images: [
-    "reception room1.png",
-    "reception room2.png",
-    "reception room3.png",
-    "reception room4.png",
-    "reception room5.png",
-  ],
-  currentIndex: 0,
-};
-
-roomImages.a_la_carte_restaurant = {
-  images: [
-    "carte1.png",
-    "carte2.png",
-    "carte3.png",
-    "carte4.jpg",
-    "carte5.png",
-    "carte6.png",
-    "carte7.png",
-    "carte8.png",
-    "carte9.png",
-    "carte10.png",
-    "carte11.png",
-    "carte12.png",
-    "carte13.png",
-    "carte14.png",
-  ],
-  currentIndex: 0,
-};
-
-console.debug("✅ Defined roomImages:", roomImages);
-
-// Music Player definition
-const musicPlayer = {
-  songs: [],
-  currentSongIndex: 0,
-  audio: new Audio(),
-  isPlaying: false,
-  isShuffleOn: false,
-  isRepeatOn: false,
-  originalPlaylist: [], // Store original song order
-
-  init() {
-    console.debug("🔧 Initializing music player...");
-    const songSelect = document.getElementById("song-select");
-
-    try {
-      fetch("/api/get-songs")
-        .then((response) => {
-          if (!response.ok)
-            throw new Error(`HTTP error! status: ${response.status}`);
-          return response.json();
-        })
-        .then((songs) => {
-          if (Array.isArray(songs)) {
-            this.songs = songs;
-            console.debug(`✅ Loaded ${songs.length} songs.`);
-
-            // Populate dropdown
-            songSelect.innerHTML = '<option value="">Select a song...</option>';
-            songs.forEach((song, index) => {
-              const songName = song.split("/").pop().replace(".mp3", "");
-              const option = document.createElement("option");
-              option.value = index;
-              option.textContent = songName;
-              songSelect.appendChild(option);
-            });
-
-            if (this.songs.length > 0) {
-              this.currentSongIndex = Math.floor(
-                Math.random() * this.songs.length,
-              );
-              this.loadCurrentSong();
-              songSelect.value = this.currentSongIndex;
-            }
-          }
-        })
-        .catch((error) => {
-          console.error("❌ Error loading songs:", error);
-          document.getElementById("current-song").textContent =
-            "Error loading music";
-        });
-
-      // Add song selection handler
-      songSelect.addEventListener("change", (e) => {
-        const selectedIndex = parseInt(e.target.value);
-        if (!isNaN(selectedIndex)) {
-          this.currentSongIndex = selectedIndex;
-          this.loadCurrentSong();
-          if (this.isPlaying) {
-            this.audio.play();
-          }
-        }
-      });
-
-      this.audio.addEventListener("ended", () => {
-        console.debug("🔁 Current song ended. Playing next.");
-        this.playNext();
-        songSelect.value = this.currentSongIndex;
-      });
-
-      // Initialize controls
-      document.getElementById("play-pause").addEventListener("click", () => {
-        console.debug("🎮 Play/Pause button clicked.");
-        this.togglePlay();
-      });
-      document.getElementById("next-track").addEventListener("click", () => {
-        console.debug("➡️ Next track button clicked.");
-        this.playNext();
-      });
-      document.getElementById("prev-track").addEventListener("click", () => {
-        console.debug("⬅️ Previous track button clicked.");
-        this.playPrev();
-      });
-      document.getElementById("mute-toggle").addEventListener("click", () => {
-        console.debug("🔇 Mute toggle button clicked.");
-        this.toggleMute();
-      });
-      document
-        .getElementById("volume-slider")
-        .addEventListener("input", (e) => {
-          console.debug(`🔊 Volume set to: ${e.target.value}`);
-          this.setVolume(e.target.value);
-        });
-      document
-        .getElementById("shuffle")
-        .addEventListener("click", () => this.toggleShuffle());
-      document
-        .getElementById("repeat")
-        .addEventListener("click", () => this.toggleRepeat());
-    } catch (error) {
-      console.error("❌ Failed to initialize music player:", error);
-    }
-  },
-
-  loadCurrentSong() {
-    console.debug(
-      `🎵 Loading song index ${this.currentSongIndex}: ${
-        this.songs[this.currentSongIndex]
-      }`,
-    );
-    this.audio.src = this.songs[this.currentSongIndex];
-    this.updateNowPlaying();
-    if (this.isPlaying) {
-      this.audio
-        .play()
-        .then(() => {
-          console.debug("▶️ Playing current song.");
-        })
-        .catch((error) => {
-          console.error("❌ Error playing song:", error);
-        });
-    }
-  },
-
-  togglePlay() {
-    if (this.audio.paused) {
-      this.audio
-        .play()
-        .then(() => {
-          this.isPlaying = true;
-          console.debug("▶️ Music playing.");
-        })
-        .catch((error) => {
-          console.error("❌ Error playing music:", error);
-        });
-    } else {
-      this.audio.pause();
-      this.isPlaying = false;
-      console.debug("⏸ Music paused.");
-    }
-    this.updatePlayButton();
-  },
-
-  playNext() {
-    if (this.songs.length === 0) return;
-
-    if (this.isRepeatOn) {
-      // Just replay the current song
-      this.loadCurrentSong();
-      if (this.isPlaying) this.audio.play();
-      return;
-    }
-
-    this.currentSongIndex = (this.currentSongIndex + 1) % this.songs.length;
-    this.loadCurrentSong();
-    if (this.isPlaying) this.audio.play();
-  },
-
-  playPrev() {
-    if (this.songs.length === 0) return;
-    this.currentSongIndex =
-      (this.currentSongIndex - 1 + this.songs.length) % this.songs.length;
-    console.debug(
-      `🔄 Playing previous song. New index: ${this.currentSongIndex}`,
-    );
-    this.loadCurrentSong();
-  },
-
-  toggleMute() {
-    this.audio.muted = !this.audio.muted;
-    console.debug(`🔇 Mute state changed to: ${this.audio.muted}`);
-    document.getElementById("mute-toggle").textContent = this.audio.muted
-      ? "🔇"
-      : "🔊";
-  },
-
-  setVolume(value) {
-    this.audio.volume = value / 100;
-    console.debug(`🔊 Volume set to: ${this.audio.volume}`);
-  },
-
-  updateNowPlaying() {
-    if (this.songs.length === 0) {
-      document.getElementById("current-song").textContent =
-        "No songs available";
-      return;
-    }
-    const songName = this.songs[this.currentSongIndex]
-      .split("/")
-      .pop()
-      .replace(".mp3", "");
-    document.getElementById("current-song").textContent =
-      `Now Playing: ${songName}`;
-    console.debug(`🆕 Now Playing updated to: ${songName}`);
-  },
-
-  updatePlayButton() {
-    document.getElementById("play-pause").textContent = this.isPlaying
-      ? "⏸"
-      : "⏯";
-    console.debug(`🎮 Play button updated to: ${this.isPlaying ? "⏸" : "⏯"}`);
-  },
-
-  toggleShuffle() {
-    this.isShuffleOn = !this.isShuffleOn;
-    const shuffleBtn = document.getElementById("shuffle");
-
-    if (this.isShuffleOn) {
-      shuffleBtn.classList.add("active");
-      // Store original playlist and shuffle current one
-      this.originalPlaylist = [...this.songs];
-      this.songs = this.shuffleArray([...this.songs]);
-    } else {
-      shuffleBtn.classList.remove("active");
-      // Restore original playlist order
-      if (this.originalPlaylist.length) {
-        this.songs = [...this.originalPlaylist];
-      }
-    }
-  },
-
-  toggleRepeat() {
-    this.isRepeatOn = !this.isRepeatOn;
-    const repeatBtn = document.getElementById("repeat");
-
-    if (this.isRepeatOn) {
-      repeatBtn.classList.add("active");
-    } else {
-      repeatBtn.classList.remove("active");
-    }
-  },
-
-  shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
-  },
-
-  // Smoothly fade the regular music volume to a target over a duration (ms)
-  fadeTo(targetVolume, duration = 2000) {
-    return new Promise((resolve) => {
-      if (this._fadeInterval) clearInterval(this._fadeInterval);
-      const startVolume = this.audio.volume;
-      const steps = 30; // ~30 steps for smooth fade
-      const stepTime = duration / steps;
-      const volumeStep = (targetVolume - startVolume) / steps;
-      let currentStep = 0;
-
-      this._fadeInterval = setInterval(() => {
-        currentStep++;
-        if (currentStep >= steps) {
-          this.audio.volume = targetVolume;
-          clearInterval(this._fadeInterval);
-          this._fadeInterval = null;
-          resolve();
-        } else {
-          this.audio.volume = Math.max(
-            0,
-            Math.min(1, startVolume + volumeStep * currentStep),
-          );
-        }
-      }, stepTime);
-    });
-  },
-
-  // Play event music: fade out regular music, play the event track, then fade back in
-  async playEventMusic(
-    src,
-    {
-      fallbackSrc = null,
-      volume = 0.5,
-      fadeOutMs = 2000,
-      fadeInMs = 3000,
-    } = {},
-  ) {
-    // Remember volume to restore later
-    const savedVolume = this.audio.volume;
-    const wasPlaying = this.isPlaying && !this.audio.paused;
-
-    // Fade out regular music
-    if (wasPlaying) {
-      await this.fadeTo(0, fadeOutMs);
-      this.audio.pause();
-    }
-
-    // Play the event track
-    const eventAudio = new Audio(src);
-    eventAudio.volume = volume;
-
-    const tryPlay = (audioSrc) => {
-      return new Promise((resolve) => {
-        eventAudio.src = audioSrc;
-        eventAudio.addEventListener("ended", resolve, { once: true });
-        eventAudio
-          .play()
-          .then(() => console.debug(`🎵 Playing event music: ${audioSrc}`))
-          .catch((e) => {
-            console.warn(`⚠️ Error playing event music: ${e}`);
-            resolve(); // Don't block if playback fails
-          });
-      });
-    };
-
-    try {
-      await tryPlay(src);
-    } catch {
-      if (fallbackSrc) {
-        console.warn("⚠️ Primary event track failed, trying fallback.");
-        await tryPlay(fallbackSrc);
-      }
-    }
-
-    // Fade regular music back in
-    if (wasPlaying) {
-      this.audio.volume = 0;
-      this.audio.play().catch(() => {});
-      await this.fadeTo(savedVolume, fadeInMs);
-    }
-    console.debug("🎵 Event music finished, regular music restored.");
-  },
-};
-
-console.debug("✅ Defined musicPlayer object.");
-
-const statusBars = {
-  hunger: { value: 100, rate: 0.005 }, // More realistic timing
-  thirst: { value: 100, rate: 0.007 }, // More realistic timing
-  energy: { value: 100, rate: 0.003 }, // More realistic timing
-  hygiene: { value: 100, rate: 0.002 }, // More realistic timing
-  bladder: { value: 100, rate: 0.006 }, // More realistic timing
-  intoxication: { value: 0, rate: 0.01 }, // More realistic timing
-};
-
-// Player money (persisted alongside stats)
-let playerMoney = 0;
-function updateMoneyDisplay() {
-  const el = document.getElementById("character-money");
-  if (el) el.textContent = `\u00a3${playerMoney.toFixed(2)}`;
-}
-
-const STORED_STATS_KEY = "rbvrpg:lastStats";
-let statsSyncTimer = null;
-const STAT_SYNC_DELAY = 30000; // 30 seconds debounce for server sync
-
-function clampStat(value) {
-  return Math.max(0, Math.min(100, Number(value) || 0));
-}
-
-function applyStatsToState(stats) {
-  Object.entries(stats).forEach(([key, value]) => {
-    if (statusBars[key]) {
-      statusBars[key].value =
-        key === "intoxication" ? clampStat(value) : clampStat(value);
-    }
-  });
-
-  if (typeof stats.money === "number") {
-    playerMoney = stats.money;
-    updateMoneyDisplay();
-  }
-
-  Object.keys(statusBars).forEach((key) => {
-    const bar = document.querySelector(`.bar.${key}`);
-    if (!bar) return;
-    const value = statusBars[key].value;
-    bar.style.width = `${value}%`;
-    const hue =
-      key === "intoxication" ? 120 - (value / 100) * 120 : (value / 100) * 120;
-    bar.style.setProperty(`--${key}-hue`, hue);
-    bar.style.animation =
-      value < 20 && key !== "intoxication" ? "pulse 2s infinite" : "none";
-  });
-}
-
-function persistStatsLocally() {
-  const snapshot = {
-    hunger: statusBars.hunger.value,
-    thirst: statusBars.thirst.value,
-    energy: statusBars.energy.value,
-    hygiene: statusBars.hygiene.value,
-    bladder: statusBars.bladder.value,
-    intoxication: statusBars.intoxication.value,
-    money: playerMoney,
-    savedAt: Date.now(),
-  };
-  try {
-    localStorage.setItem(STORED_STATS_KEY, JSON.stringify(snapshot));
-  } catch (err) {
-    console.warn("⚠️ Failed to persist stats locally:", err);
-  }
-}
-
-function restoreStatsFromStorage() {
-  try {
-    const stored = localStorage.getItem(STORED_STATS_KEY);
-    if (!stored) return;
-    const parsed = JSON.parse(stored);
-    if (!parsed) return;
-    applyStatsToState(parsed);
-    console.debug("📦 Restored stats from local storage snapshot", parsed);
-  } catch (err) {
-    console.warn("⚠️ Failed to restore stats snapshot:", err);
-  }
-}
-
-function scheduleStatsSync() {
-  if (statsSyncTimer) return;
-  statsSyncTimer = setTimeout(() => {
-    statsSyncTimer = null;
-    saveStatsToServer();
-  }, STAT_SYNC_DELAY);
-}
-
-restoreStatsFromStorage();
-function updateStatusBars() {
-  let statsChanged = false;
-  Object.entries(statusBars).forEach(([key, status]) => {
-    const previous = status.value;
-    // Only decrease intoxication if it's above 0
-    if (key === "intoxication") {
-      if (status.value > 0) {
-        status.value = Math.max(0, status.value - status.rate);
-      }
-    } else {
-      status.value = Math.max(0, Math.min(100, status.value - status.rate));
-    }
-
-    const bar = document.querySelector(`.bar.${key}`);
-    if (bar) {
-      bar.style.width = `${status.value}%`;
-
-      // Calculate hue based on value
-      let hue;
-      if (key === "intoxication") {
-        hue = 120 - (status.value / 100) * 120; // Green (0%) to Red (100%)
-      } else {
-        hue = (status.value / 100) * 120; // Red (0%) to Green (100%)
-      }
-      bar.style.setProperty(`--${key}-hue`, hue);
-
-      if (status.value < 20 && key !== "intoxication") {
-        bar.style.animation = "pulse 2s infinite";
-      } else {
-        bar.style.animation = "none";
-      }
-    }
-
-    if (!statsChanged && Math.abs(previous - status.value) > 0.01) {
-      statsChanged = true;
-    }
-  });
-
-  if (statsChanged) {
-    persistStatsLocally();
-    scheduleStatsSync();
-  }
-}
-
-// Update status bars every second
-const statusBarsInterval = setInterval(updateStatusBars, 1000);
-
-// Function to save current stats to server
-function saveStatsToServer() {
-  const statsData = {
-    hunger: statusBars.hunger.value,
-    thirst: statusBars.thirst.value,
-    energy: statusBars.energy.value,
-    hygiene: statusBars.hygiene.value,
-    bladder: statusBars.bladder.value,
-    intoxication: statusBars.intoxication.value,
-  };
-
-  console.debug("💾 Saving stats to server:", statsData);
-  socket.emit("save-stats", statsData);
-  persistStatsLocally();
-}
-
-window.addEventListener("beforeunload", () => {
-  try {
-    saveStatsToServer();
-  } catch (err) {
-    console.warn("⚠️ Failed to persist stats on unload:", err);
-  }
-  // Clean up intervals to prevent leaks
-  clearInterval(statusBarsInterval);
-  if (narrativeSystem._narrativeInterval)
-    clearInterval(narrativeSystem._narrativeInterval);
-  if (narrativeSystem._weatherInterval)
-    clearInterval(narrativeSystem._weatherInterval);
-});
 
 // Single DOMContentLoaded event listener
 document.addEventListener("DOMContentLoaded", function () {
-  console.debug("📄 DOMContentLoaded event triggered.");
 
   // Initialize music player
   musicPlayer.init();
@@ -2806,14 +48,10 @@ document.addEventListener("DOMContentLoaded", function () {
   const chatContainer = document.getElementById("chat-container");
   const deckplansPopup = document.getElementById("deckplans-popup");
 
-  console.debug("✅ Initialized chat elements.");
 
   // Get character data from sessionStorage
   const characterData = JSON.parse(sessionStorage.getItem("character"));
   if (characterData) {
-    console.debug(
-      `🔑 Retrieved character data: ${characterData.forename} ${characterData.surname}`,
-    );
     const avatarElement = document.getElementById("character-avatar");
     const nameElement = document.getElementById("character-name");
     const classElement = document.getElementById("character-class");
@@ -2840,7 +78,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     classElement.textContent = `${className} Passenger`;
-    cabinElement.textContent = `${cabinNumber}`; // e.g., "A-17"
+    cabinElement.textContent = `${cabinNumber}`; // e.g. "A3"
 
     // Make cabin clickable
     cabinElement.addEventListener("click", (e) => {
@@ -2852,20 +90,26 @@ document.addEventListener("DOMContentLoaded", function () {
         .find((r) => r.id === cabinId);
       if (cabinRoom) {
         enterRoom(cabinRoom);
-        console.debug(`🚪 Navigated to ${cabinRoom.name}`);
       } else {
-        console.warn(`❌ Cabin ${cabinNumber} not found in deckRooms.`);
       }
     });
+
+    function findPlayerCabin() {
+      if (!characterData || !characterData.cabin_number) return null;
+      const cabinId = `cabin_${characterData.cabin_number.toLowerCase()}`;
+      return (
+        Object.values(deckRooms)
+          .flat()
+          .find((r) => r.id === cabinId) || null
+      );
+    }
   } else {
-    console.warn("⚠️ No character data found.");
   }
 
   // Add event listeners for chat functionality
   sendButton.addEventListener("click", sendMessage);
   chatInput.addEventListener("keypress", function (e) {
     if (e.key === "Enter") {
-      console.debug("↩️ Enter key pressed in chat input.");
       sendMessage();
     }
   });
@@ -2874,7 +118,6 @@ document.addEventListener("DOMContentLoaded", function () {
   const globalChatToggle = document.getElementById("global-chat-toggle");
   globalChatToggle.addEventListener("click", toggleGlobalChat);
 
-  console.debug("✅ Added event listeners for chat functionality.");
 
   const skyImages = document.querySelectorAll(".sky");
   const imageIntervals = [
@@ -2898,108 +141,30 @@ document.addEventListener("DOMContentLoaded", function () {
   let desiredCloudTexture = "day";
   let lastRequestedCloudTexture = null;
 
-  function calculateVoyageState(elapsedSeconds) {
-    let location = "Southampton";
-    let speedValue = 0;
-    let targetSpeed = 0;
-
-    // Seconds after actual departure (0 while still alongside)
-    const elapsedSinceDeparture = Math.max(
-      0,
-      elapsedSeconds - TIMELINE_SECONDS.DEPARTURE_DELAY,
-    );
-
-    if (elapsedSeconds < TIMELINE_SECONDS.DEPARTURE_DELAY) {
-      // Still alongside the quay
-      location = "Southampton";
-      speedValue = 0;
-      targetSpeed = 0;
-    } else if (elapsedSinceDeparture < TIMELINE_SECONDS.SOUTHAMPTON_WATER_END) {
-      // Accelerate from 0 → 6 knots through Southampton Water
-      location = "Southampton Water";
-      targetSpeed = 6;
-      const timeToReach6Knots = 6 / SHIP_ACCELERATION;
-      if (elapsedSinceDeparture < timeToReach6Knots) {
-        speedValue = Math.min(6, elapsedSinceDeparture * SHIP_ACCELERATION);
-      } else {
-        speedValue = 6;
-      }
-    } else if (elapsedSinceDeparture < TIMELINE_SECONDS.NEEDLES_COMPLETE) {
-      // The Solent run, 6 → 12 knots
-      location = "The Solent";
-      targetSpeed = 12;
-      const elapsedInSolent =
-        elapsedSinceDeparture - TIMELINE_SECONDS.SOUTHAMPTON_WATER_END;
-      const timeToReach12Knots = (12 - 6) / SHIP_ACCELERATION;
-      if (elapsedInSolent < timeToReach12Knots) {
-        speedValue = Math.min(12, 6 + elapsedInSolent * SHIP_ACCELERATION);
-      } else {
-        speedValue = 12;
-      }
-    } else if (elapsedSinceDeparture < TIMELINE_SECONDS.CHANNEL_COMPLETE) {
-      // Open channel, 12 → 19 knots
-      location = "English Channel";
-      targetSpeed = 19;
-      const elapsedInChannel =
-        elapsedSinceDeparture - TIMELINE_SECONDS.NEEDLES_COMPLETE;
-      const timeToReach19Knots = (19 - 12) / SHIP_ACCELERATION;
-      if (elapsedInChannel < timeToReach19Knots) {
-        speedValue = Math.min(19, 12 + elapsedInChannel * SHIP_ACCELERATION);
-      } else {
-        speedValue = 19;
-      }
-    } else if (elapsedSinceDeparture < TIMELINE_SECONDS.BERTHING_COMPLETE) {
-      // Continuous slowdown from 19 → 0 knots across the Cherbourg sequence
-      const elapsedSinceChannel = Math.max(
-        0,
-        elapsedSinceDeparture - TIMELINE_SECONDS.CHANNEL_COMPLETE,
-      );
-      speedValue = Math.max(0, 19 - elapsedSinceChannel * CHERBOURG_DECEL_RATE);
-      targetSpeed = Math.max(0, speedValue - CHERBOURG_DECEL_RATE);
-
-      if (speedValue > 6) {
-        location = "Approaching Cherbourg";
-      } else if (speedValue > 0) {
-        location = "Cherbourg Harbor";
-      } else {
-        location = "Cherbourg";
-      }
-    } else {
-      location = "Cherbourg";
-      speedValue = 0;
-      targetSpeed = 0;
-    }
-
-    return {
-      location,
-      speedValue,
-      targetSpeed,
-      speed: `${speedValue.toFixed(1)} knots`,
-      elapsedSeconds,
-    };
-  }
+  const calculateVoyageState = computeVoyageState;
 
   // Returns elapsed voyage seconds using server-provided time to avoid clock skew.
   // Interpolates locally between 3-second server broadcasts.
   function getElapsedSeconds() {
-    if (lastServerElapsedAt > 0) {
+    if (v.lastServerElapsedAt > 0) {
       return (
-        lastServerElapsed +
-        Math.floor((Date.now() - lastServerElapsedAt) / 1000)
+        v.lastServerElapsed +
+        Math.floor((Date.now() - v.lastServerElapsedAt) / 1000)
       );
     }
     // Fallback before first server broadcast
-    if (voyageStartTime) {
-      return Math.floor((Date.now() - voyageStartTime) / 1000);
+    if (v.voyageStartTime) {
+      return Math.floor((Date.now() - v.voyageStartTime) / 1000);
     }
     return 0;
   }
+  window.getElapsedSeconds = getElapsedSeconds;
 
   function getBSTTime() {
     // DEV override: return the frozen hour when North Atlantic mode is active
-    if (DEV_NORTH_ATLANTIC) {
-      const h = Math.floor(DEV_HOUR);
-      const m = Math.round((DEV_HOUR - h) * 60);
+    if (v.DEV_NORTH_ATLANTIC) {
+      const h = Math.floor(v.DEV_HOUR);
+      const m = Math.round((v.DEV_HOUR - h) * 60);
       const t = new Date();
       t.setHours(h, m, 0, 0);
       return t;
@@ -3007,7 +172,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Use server-synced elapsed time for synchronization
     const elapsedSeconds = getElapsedSeconds();
-    if (elapsedSeconds === 0 && !voyageStartTime) {
+    if (elapsedSeconds === 0 && !v.voyageStartTime) {
       // Fallback if server time not yet received
       const now = new Date();
       const fixed = new Date(now);
@@ -3047,9 +212,6 @@ document.addEventListener("DOMContentLoaded", function () {
     if (typeof window.setCloudTexture === "function") {
       window.setCloudTexture(targetTexture);
     } else {
-      console.debug(
-        `⏳ Queued cloud texture ${targetTexture}.png until clouds initialize.`,
-      );
     }
 
     // Sync smoke particles with the same day/ms/night texture
@@ -3065,21 +227,56 @@ document.addEventListener("DOMContentLoaded", function () {
     const seconds = bstTime.getSeconds();
     // console.debug(`🌤️ Updating sky image based on BST hour: ${hours}`);
 
-    skyImages.forEach((img) => (img.style.opacity = 0)); // Hide all images
+    // All sky layers stay fully opaque and share one inline gradient
+    // (updateSkyGradient). Crossfading elements — even with identical
+    // backgrounds — dips the combined alpha and reads as an hourly pulse.
+    skyImages.forEach((img) => (img.style.opacity = 1));
 
-    // 1. Determine active interval and show correct sky element
+    // 1. Determine active interval (still drives cloud/smoke textures)
     const interval = imageIntervals.find(
       (interval) => hours >= interval.start && hours <= interval.end,
     );
 
     if (interval) {
-      // Restrict to sky elements to avoid picking clouds or other day-tagged elements
-      const image = document.querySelector(`.sky.${interval.className}`);
-      if (image) {
-        image.style.opacity = 1; // Show the appropriate image
-        // console.debug(`🌅 Displaying sky image: ${interval.className}`);
+      const altForTex =
+        window.RBV && window.RBV.celestial
+          ? window.RBV.celestial.sunAltDeg
+          : undefined;
+      if (typeof altForTex === "number") {
+        // Single day texture for clouds and funnel smoke, lit continuously
+        // by a canvas-level filter driven by the sun — no texture swaps to
+        // snap mid-timelapse. Warm sepia kicks in near the horizon.
+        syncCloudTextureWithSky({ className: "day" });
+        const cl01 = (x) => Math.min(1, Math.max(0, x));
+        const lit = cl01((altForTex + 10) / 22);
+        // Re-applying a CSS filter to these large cloud/smoke/water elements
+        // repaints them on the compositor. The value only sweeps during
+        // twilight — which is exactly when the scene stuttered — so quantise
+        // to ~1% steps (imperceptible) and only re-apply when it changes.
+        const b = (0.35 + 0.65 * lit).toFixed(2);
+        const warm = (cl01(1 - Math.abs(altForTex) / 12) * 0.35).toFixed(2);
+        const filt = `brightness(${b}) sepia(${warm})`;
+        if (filt !== window.__cloudSmokeFilt) {
+          window.__cloudSmokeFilt = filt;
+          const cloudCanvas = document.querySelector(".cloud-container canvas");
+          const smokeCanvas = document.querySelector(".smoke-container canvas");
+          if (cloudCanvas) cloudCanvas.style.filter = filt;
+          if (smokeCanvas) smokeCanvas.style.filter = filt;
+        }
+        // The wake foam (.waves z4, .swater z5) rides above the celestial
+        // water ink, so it stays day-bright at night unless relit here.
+        // .water (z1) gets both this and the ink — the darkest layer.
+        const wFilt = `brightness(${(0.24 + 0.76 * lit).toFixed(2)})`;
+        if (wFilt !== window.__waterFilt) {
+          window.__waterFilt = wFilt;
+          for (const sel of [".water", ".waves", ".swater", "#water-wing"]) {
+            const el = document.querySelector(sel);
+            if (el) el.style.filter = wFilt;
+          }
+        }
+      } else {
+        syncCloudTextureWithSky(interval);
       }
-      syncCloudTextureWithSky(interval);
     }
 
     // 2. Apply gradient (Now that the element is visible)
@@ -3087,223 +284,165 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       updateSkyGradient(bstTime);
     } catch (err) {
-      console.warn("⚠️ updateSkyGradient failed:", err);
     }
 
-    // Also update Britannic image (day / md / night)
+    // Also update Britannic image (day / md / night): a continuous
+    // crossfade driven by the real sun altitude. Sprites are stacked
+    // day (bottom) → dusk → night (top); only the incoming upper layer's
+    // opacity ramps, over a fully opaque base, so the ship never goes
+    // translucent mid-blend and timelapse stays perfectly smooth.
     try {
       const britDay = document.querySelector(".britannic-day");
       const britMd = document.querySelector(".britannic-md");
       const britNight = document.querySelector(".britannic-night");
+      const sunAltShip =
+        window.RBV && window.RBV.celestial
+          ? window.RBV.celestial.sunAltDeg
+          : undefined;
+      const cl = (x) => Math.min(1, Math.max(0, x));
+      const ease = (x) => x * x * (3 - 2 * x);
 
-      // Determine target sprite based on interval (Stable State)
-      let targetSprite = null;
-      if (interval && interval.className === "day") {
-        targetSprite = britDay;
-      } else if (interval && interval.className.startsWith("ms")) {
-        targetSprite = britMd;
-      } else {
-        targetSprite = britNight;
-      }
+      const spritesReady =
+        britDay &&
+        britDay.complete &&
+        britDay.naturalWidth &&
+        britNight &&
+        britNight.complete &&
+        britNight.naturalWidth;
 
-      // Check for transition windows (30 seconds before hour change)
-      // We align these with the imageIntervals boundaries
-      let isTransitioning = false;
-      let transitionProgress = 0;
-      let outgoing = null;
-      let incoming = null;
-
-      // 1. Night -> MS (00:59:30) - Aligns with interval change at 01:00
-      if (hours === 0 && minutes === 59 && seconds >= 30) {
-        isTransitioning = true;
-        outgoing = britNight;
-        incoming = britMd;
-      }
-      // 2. MS -> Day (06:59:30) - Aligns with interval change at 07:00
-      else if (hours === 6 && minutes === 59 && seconds >= 30) {
-        isTransitioning = true;
-        outgoing = britMd;
-        incoming = britDay;
-      }
-      // 3. Day -> MS (16:59:30) - Aligns with interval change at 17:00
-      else if (hours === 16 && minutes === 59 && seconds >= 30) {
-        isTransitioning = true;
-        outgoing = britDay;
-        incoming = britMd;
-      }
-      // 4. MS -> Night (22:59:30) - Aligns with interval change at 23:00
-      else if (hours === 22 && minutes === 59 && seconds >= 30) {
-        isTransitioning = true;
-        outgoing = britMd;
-        incoming = britNight;
-      }
-
-      if (isTransitioning) {
-        transitionProgress = (seconds - 30) / 30; // 0 to 1
-
-        // Disable CSS transitions for manual control
-        [britDay, britMd, britNight].forEach((el) => {
-          if (el) el.style.transition = "none";
-        });
-
-        // Setup layers: Outgoing on top, Incoming behind
-        if (outgoing) {
-          outgoing.style.zIndex = 4;
-          outgoing.style.opacity = 1 - transitionProgress; // Fade out
+      if (typeof sunAltShip === "number" && spritesReady) {
+        // Single-sprite relighting, no image dissolve: the day sprite is
+        // continuously dimmed/warmed with the sun on a compositing canvas,
+        // and the night sprite is screen-blended on top so only its lit
+        // windows glow on as the lights come up through twilight.
+        if (!window.__britCanvas) {
+          const c = document.createElement("canvas");
+          c.width = britDay.naturalWidth;
+          c.height = britDay.naturalHeight;
+          c.className = "britannic britannic-canvas";
+          britNight.parentElement.insertBefore(c, britNight.nextSibling);
+          window.__britCanvas = c;
         }
-        if (incoming) {
-          incoming.style.zIndex = 3;
-          incoming.style.opacity = 1; // Visible behind
-        }
-
-        // Hide others
-        [britDay, britMd, britNight].forEach((el) => {
-          if (el && el !== outgoing && el !== incoming) {
-            el.style.opacity = 0;
-            el.style.zIndex = 0;
+        const c = window.__britCanvas;
+        const b = 0.17 + 0.83 * ease(cl((sunAltShip + 2) / 20));
+        const warm = cl(1 - Math.abs(sunAltShip) / 10) * 0.25;
+        const lights = 1 - ease(cl((sunAltShip + 6) / 10));
+        // Quantise to ~1% steps: this redraw (two full-ship drawImages + a
+        // canvas filter) is costly, and at toFixed(3) it re-ran almost every
+        // frame through twilight. 1% brightness steps are invisible.
+        const key =
+          b.toFixed(2) + "|" + warm.toFixed(2) + "|" + lights.toFixed(2);
+        if (window.__britKey !== key) {
+          window.__britKey = key;
+          const cx = c.getContext("2d");
+          cx.clearRect(0, 0, c.width, c.height);
+          cx.filter = `brightness(${b.toFixed(3)}) sepia(${warm.toFixed(3)})`;
+          cx.drawImage(britDay, 0, 0, c.width, c.height);
+          cx.filter = "none";
+          if (lights > 0.01) {
+            cx.globalCompositeOperation = "screen";
+            cx.globalAlpha = lights;
+            cx.drawImage(britNight, 0, 0, c.width, c.height);
+            cx.globalAlpha = 1;
+            cx.globalCompositeOperation = "source-over";
           }
-        });
-      } else {
-        // Stable state
+        }
+        // The img variants stop rendering but keep opacity values that the
+        // waterline reflections read (day hull always, windows by night)
         [britDay, britMd, britNight].forEach((el) => {
           if (el) {
-            // Re-enable transition for smooth state correction if needed
-            el.style.transition = "opacity 1s ease-in-out";
-            if (el === targetSprite) {
-              el.style.opacity = 1;
-              el.style.zIndex = 3;
-            } else {
-              el.style.opacity = 0;
-              el.style.zIndex = 0;
-            }
+            el.style.transition = "none";
+            el.style.visibility = "hidden";
+            el.style.zIndex = 3;
+          }
+        });
+        britDay.style.opacity = "1";
+        if (britMd) britMd.style.opacity = "0";
+        britNight.style.opacity = String(lights);
+      } else {
+        // Fallback before the celestial layer or sprites are ready:
+        // plain hourly variant pick
+        const cls = interval ? interval.className : "day";
+        const pick =
+          cls === "day" ? britDay : cls === "night" ? britNight : britMd;
+        [britDay, britMd, britNight].forEach((el) => {
+          if (el) {
+            el.style.transition = "none";
+            el.style.visibility = "";
+            el.style.zIndex = 3;
+            el.style.opacity = el === pick ? "1" : "0";
           }
         });
       }
     } catch (err) {
-      console.warn("⚠️ Failed to update Britannic image:", err);
     }
 
-    // Swap any room-based location images that have time-of-day variants
+    // Show the location picture of the current time of day (night, sunrise/sunset or day)
     try {
-      // console.debug("🔁 Calling swapLocationImagesForSky from updateSkyImage", {
-      //   intervalClass: interval?.className,
-      //   currentRoom: currentRoom?.name,
-      // });
-      swapLocationImagesForSky(interval);
+      swapLocationImagesForSky();
     } catch (err) {
-      console.warn("⚠️ swapLocationImagesForSky failed:", err);
     }
   }
 
-  function swapLocationImagesForSky(interval) {
-    // Determine variant: day / ms (sunset) / night
-    let variant = "day";
-    if (!interval) variant = "day";
-    else if (interval.className === "night") variant = "night";
-    else if (interval.className.startsWith("ms")) variant = "ms";
+  // Which picture set the location view shows. The sun's real altitude decides, as it does for the sky's colours
+  // (the hour only until the celestial layer is up). Sunrise and sunset share one set ("twilight").
+  // window.locationTimeOfDayOverride ("day" | "twilight" | "night") forces one for testing.
+  function locationTimeOfDay() {
+    const tod = window.RBV && window.RBV.data && window.RBV.data.timeOfDayImages;
+    if (!tod) return "day";
+    if (window.locationTimeOfDayOverride) return window.locationTimeOfDayOverride;
+    const alt =
+      window.RBV && window.RBV.celestial
+        ? window.RBV.celestial.sunAltDeg
+        : undefined;
+    if (typeof alt === "number") return tod.forSunAltitude(alt);
+    const h = getBSTTime().getHours();
+    const iv = imageIntervals.find((i) => h >= i.start && h <= i.end);
+    return tod.forPalette(iv && iv.className);
+  }
 
-    if (!currentRoom || !currentRoom.name) {
-      console.debug(
-        "🔍 swapLocationImagesForSky: no currentRoom or name present",
-      );
-      return;
-    }
-    console.debug("🔍 swapLocationImagesForSky:", {
-      intervalClass: interval?.className,
-      currentRoom: currentRoom.name,
-    });
+  // A Britannic location picture's path in the given time of day's set (the day picture where that set has none)
+  function britannicImagePath(imageName, tod = locationTimeOfDay()) {
+    const t = window.RBV && window.RBV.data && window.RBV.data.timeOfDayImages;
+    return t
+      ? t.path(imageName, tod)
+      : `/images/animations/locations/britannic/${imageName}`;
+  }
+
+  // Called every second: when the time of day crosses into another set, the room's picture follows (drawLocationImage
+  // does nothing while the path is unchanged)
+  function swapLocationImagesForSky() {
+    if (!currentRoom || !currentRoom.name) return;
     const roomName = currentRoom.name;
     const roomData = roomImages[roomName];
-    if (!roomData) {
-      console.warn(
-        `🔍 swapLocationImagesForSky: roomData not found for ${roomName}`,
-      );
+    if (!roomData) return;
+    const imgName = roomData.images[roomData.currentIndex];
+    if (!imgName) return;
+    const isSouthampton =
+      deckRooms.southampton &&
+      deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
+    if (isSouthampton) {
+      drawLocationImage(`/images/animations/locations/southampton/${imgName}`);
       return;
     }
-    console.debug(
-      `🔍 swapLocationImagesForSky: roomData variants:`,
-      roomData.variants,
-    );
-
-    // Helper to draw the room's default image
-    const drawDefault = () => {
-      const imgName = roomData.images[roomData.currentIndex];
-      if (!imgName) return;
-      const isSouthampton =
-        deckRooms.southampton &&
-        deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
-      const basePath = isSouthampton
-        ? "/images/animations/locations/southampton/"
-        : "/images/animations/locations/britannic/";
-      drawLocationImage(basePath + imgName, false);
-      console.debug(`🖼️ Reverted ${roomName} to default image: ${imgName}`);
-    };
-
-    if (variant === "ms") {
-      // Sunset/morning variant - check if variant exists
-      const msVariants = roomData.variants && roomData.variants.ms;
-      if (msVariants && msVariants.length > 0) {
-        // Use the current index if it's within range, otherwise default to 0
-        const idx =
-          roomData.currentIndex < msVariants.length ? roomData.currentIndex : 0;
-        const msImage = msVariants[idx];
-
-        // Attempt both unencoded and encoded folder paths so we handle server URL behavior
-        const candidateFolders = [
-          "britannic (sunset)",
-          encodeURIComponent("britannic (sunset)"),
-          "britannic",
-        ];
-        const tryPaths = candidateFolders.map(
-          (f) => `/images/animations/locations/${f}/${msImage}`,
-        );
-        let tried = 0;
-        const tryNext = () => {
-          if (tried >= tryPaths.length) {
-            console.warn(
-              `⚠️ All sunset variant paths failed for ${roomName}, reverting to default`,
-              tryPaths,
-            );
-            drawDefault();
-            return;
-          }
-          const p = tryPaths[tried++];
-          console.debug(`🔁 Trying sunset path for ${roomName}: ${p}`);
-          drawLocationImage(p, false, {
-            onLoad: () =>
-              console.debug(`🌇 Applied sunset variant for ${roomName}: ${p}`),
-            onError: () => {
-              console.warn(`⚠️ Failed to load ${p}, trying next...`);
-              tryNext();
-            },
-          });
-        };
-        tryNext();
-        return;
-      } else {
-        // No variant - just do nothing
-        return;
-      }
-    }
-
-    if (variant === "night") {
-      // Night variant (not yet available). For now revert to default until night images are added.
-      drawDefault();
-      return;
-    }
-
-    // Day variant - revert to default
-    drawDefault();
+    let p = britannicImagePath(imgName);
+    if (failedLocationImages.has(p)) p = britannicImagePath(imgName, "day");
+    drawLocationImage(p, false, {
+      onError: () => {
+        // a missing version is not asked for again every second
+        failedLocationImages.add(p);
+        drawLocationImage(britannicImagePath(imgName, "day"), false);
+      },
+    });
   }
+  const failedLocationImages = new Set();
 
-  // Developer helper to force a variant for testing
-  window.forceSetRoomVariant = (variant = "ms") => {
-    const fakeInterval = { className: variant === "ms" ? "ms-0" : variant };
+  // Developer helper: force a time of day's pictures ("day" | "twilight" | "night"; null to follow the sun again)
+  window.forceSetRoomVariant = (variant = "twilight") => {
+    window.locationTimeOfDayOverride = variant === "ms" ? "twilight" : variant;
     try {
-      swapLocationImagesForSky(fakeInterval);
-      console.debug(`🔧 forceSetRoomVariant applied: ${variant}`);
+      swapLocationImagesForSky();
     } catch (e) {
-      console.warn("🔧 forceSetRoomVariant failed:", e);
     }
   };
 
@@ -3342,27 +481,27 @@ document.addEventListener("DOMContentLoaded", function () {
     let location = "Southampton";
     let speed = "0 knots";
 
-    if (DEV_NORTH_ATLANTIC) {
+    if (v.DEV_NORTH_ATLANTIC) {
       location = "North Atlantic";
       speed = "22.0 knots";
       window.currentSpeed = 22;
       window.targetSpeed = 22;
-    } else if (voyageStartTime) {
+    } else if (v.voyageStartTime) {
       const elapsedSeconds = getElapsedSeconds();
       const state = calculateVoyageState(elapsedSeconds);
       location = state.location;
       speed = state.speed;
       window.currentSpeed = state.speedValue;
       window.targetSpeed = state.targetSpeed;
-    } else if (latestVoyageState) {
-      // Fallback while waiting on voyageStartTime handshake
-      location = latestVoyageState.location;
-      speed = latestVoyageState.speed;
-      window.currentSpeed = latestVoyageState.speedValue;
-      window.targetSpeed = latestVoyageState.targetSpeed;
+    } else if (v.latestVoyageState) {
+      // Fallback while waiting on v.voyageStartTime handshake
+      location = v.latestVoyageState.location;
+      speed = v.latestVoyageState.speed;
+      window.currentSpeed = v.latestVoyageState.speedValue;
+      window.targetSpeed = v.latestVoyageState.targetSpeed;
     }
 
-    const date = `${bstTime.getDate()} of ${bstTime.toLocaleString("default", {
+    const date = `${bstTime.getDate()} ${bstTime.toLocaleString("en-GB", {
       month: "long",
     })}, ${bstTime.getHours().toString().padStart(2, "0")}:${bstTime
       .getMinutes()
@@ -3371,19 +510,22 @@ document.addEventListener("DOMContentLoaded", function () {
 
     renderInfoBarText(location, speed, date);
 
-    console.debug("🗓️ Updated info bar:", { location, speed, date });
   }
 
   // ---- Sky gradient interpolation helpers ----
+  // Naturalistic maritime palettes (zenith → horizon). Real skies are far
+  // less saturated than screen blues: a milky bright horizon by day, salmon
+  // and slate (not neon orange) at sunset, near-black desaturated navy at
+  // night with a faintly lighter horizon.
   const SKY_PALETTES = {
-    night: ["#0f1419", "#1a2332", "#2d3748", "#4a5568", "#718096"], // Deep nautical night
-    "ms-5": ["#0f172a", "#1e293b", "#334155", "#475569", "#64748b"], // Pre-dawn / Post-dusk (Cool blue-grays)
-    "ms-4": ["#1e293b", "#334155", "#475569", "#64748b", "#94a3b8"], // Twilight (Lighter blue-grays)
-    "ms-3": ["#0f172a", "#1e293b", "#334155", "#ea580c", "#f59e0b"], // Sunset/Sunrise Peak (Blue-grays to warm orange-gold)
-    "ms-2": ["#1e293b", "#334155", "#64748b", "#fb923c", "#f59e0b"], // Vibrant transition (Blue to orange-gold)
-    "ms-1": ["#334155", "#64748b", "#94a3b8", "#fed7aa", "#fdbcb4"], // Soft transition (Gray-blues to peach)
-    "ms-0": ["#475569", "#94a3b8", "#cbd5e1", "#fef3c7", "#fed7aa"], // Bright morning/evening (Light grays to cream)
-    day: ["#0ea5e9", "#38bdf8", "#7dd3fc", "#bae6fd", "#e0f2fe"], // Clear Day
+    night: ["#04070e", "#080d18", "#0d1422", "#141c2c", "#1e2836"],
+    "ms-5": ["#091020", "#101830", "#1a233e", "#252d48", "#383650"], // astronomical twilight
+    "ms-4": ["#141f3d", "#232f55", "#3a3f66", "#6a4a63", "#9c5a50"], // nautical twilight, dying ember
+    "ms-3": ["#22325a", "#3a4671", "#705878", "#c76d52", "#ef7f42"], // civil twilight, burnt horizon
+    "ms-2": ["#35507a", "#5a6f92", "#987f8b", "#e0906a", "#f5a05f"], // sunset proper, salmon band
+    "ms-1": ["#4a6d96", "#6d8cab", "#9dadb8", "#dbb58e", "#f2b878"], // low sun, peach horizon
+    "ms-0": ["#5b7fa6", "#7d9cb9", "#a7bcc9", "#d9c9ab", "#eecf9d"], // golden hour edge
+    day: ["#4285c2", "#68a2d4", "#93bfe2", "#bdd8ec", "#e2eef5"], // clear summer day, milky horizon
   };
 
   function hexToRgb(hex) {
@@ -3414,56 +556,82 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   function updateSkyGradient(bstTime) {
+    // Callable with no arg (the celestial loop calls it each frame right
+    // before it draws the gradient, so stops stay in lockstep with the sun).
+    bstTime = bstTime || getBSTTime();
     const hours = bstTime.getHours();
     const minutes = bstTime.getMinutes();
     const seconds = bstTime.getSeconds();
     const totalSeconds = hours * 3600 + minutes * 60 + seconds;
 
-    // Special 30-second transition logic
-    // Sunset: 16:59:30 -> 17:00:00 (Day -> MS-0)
-    // Sunrise: 04:59:30 -> 05:00:00 (Night -> MS-5)
-
+    // Continuous interpolation: every interval blends into the next across
+    // its full duration, forming a seamless 24 h palette loop (the old
+    // 30-second sunrise/sunset "snap" specials are gone)
     let currPaletteName = null;
     let nextPaletteName = null;
     let t = 0;
 
-    // Check for Sunset Transition (16:59:30 - 17:00:00)
-    if (hours === 16 && minutes === 59 && seconds >= 30) {
-      currPaletteName = "day";
-      nextPaletteName = "ms-0";
-      t = (seconds - 30) / 30;
-    }
-    // Check for Sunrise Transition (04:59:30 - 05:00:00)
-    else if (hours === 4 && minutes === 59 && seconds >= 30) {
-      currPaletteName = "night";
-      nextPaletteName = "ms-5";
-      t = (seconds - 30) / 30;
-    } else {
-      // Standard interpolation based on intervals
-      const intervalIndex = imageIntervals.findIndex(
-        (iv) => hours >= iv.start && hours <= iv.end,
-      );
+    const intervalIndex = imageIntervals.findIndex(
+      (iv) => hours >= iv.start && hours <= iv.end,
+    );
 
-      if (intervalIndex >= 0) {
-        const current = imageIntervals[intervalIndex];
-        const next =
-          imageIntervals[(intervalIndex + 1) % imageIntervals.length];
+    if (intervalIndex >= 0) {
+      const current = imageIntervals[intervalIndex];
+      const next = imageIntervals[(intervalIndex + 1) % imageIntervals.length];
 
-        currPaletteName = current.className;
-        nextPaletteName = current.className === "day" ? "day" : next.className;
+      currPaletteName = current.className;
+      nextPaletteName = next.className;
 
-        // Calculate t based on full duration of the interval
-        const startSec = current.start * 3600;
-        const endSec = (current.end + 1) * 3600;
-        const duration = Math.max(1, endSec - startSec);
-        const elapsed = Math.max(0, totalSeconds - startSec);
-        t = Math.min(1, elapsed / duration);
-      } else {
-        // Fallback
-        currPaletteName = "day";
-        nextPaletteName = "day";
-        t = 0;
+      const startSec = current.start * 3600;
+      const endSec = (current.end + 1) * 3600;
+      const duration = Math.max(1, endSec - startSec);
+      t = Math.min(1, Math.max(0, totalSeconds - startSec) / duration);
+
+      // Day holds steady through the afternoon, then eases into the golden
+      // ms-0 palette across 16:00–17:00 so sunset onset is gradual
+      if (current.className === "day") {
+        if (hours >= 16) {
+          nextPaletteName = "ms-0";
+          t = Math.min(1, Math.max(0, (totalSeconds - 16 * 3600) / 3600));
+        } else {
+          nextPaletteName = "day";
+          t = 0;
+        }
       }
+    } else {
+      // Fallback
+      currPaletteName = "day";
+      nextPaletteName = "day";
+      t = 0;
+    }
+
+    // When the celestial layer knows the real sun altitude, let it pick the
+    // palette instead of the wall clock — dawn colours then arrive with the
+    // actual sunrise (~05:20 here), not at a hardcoded hour, and evening
+    // mirrors the real sunset wherever the ship is
+    const sunAltNow =
+      window.RBV && window.RBV.celestial
+        ? window.RBV.celestial.sunAltDeg
+        : undefined;
+    if (typeof sunAltNow === "number") {
+      const bands = [
+        [-90, "night"],
+        [-13, "night"],
+        [-8.5, "ms-5"],
+        [-4.5, "ms-4"],
+        [-1, "ms-3"],
+        [2.5, "ms-2"],
+        [6, "ms-1"],
+        [11, "ms-0"],
+        [17, "day"],
+        [91, "day"],
+      ];
+      let bi = 0;
+      while (bi < bands.length - 2 && sunAltNow > bands[bi + 1][0]) bi++;
+      currPaletteName = bands[bi][1];
+      nextPaletteName = bands[bi + 1][1];
+      const span = bands[bi + 1][0] - bands[bi][0];
+      t = Math.min(1, Math.max(0, (sunAltNow - bands[bi][0]) / span));
     }
 
     // Apply override if set
@@ -3484,61 +652,95 @@ document.addEventListener("DOMContentLoaded", function () {
       stops.push(blendHex(c1, c2, t));
     }
 
-    // Apply the blended gradient to the currently visible sky element(s)
+    // Overcast: drag the sky itself toward flat gray as cloud cover climbs,
+    // so heavy weather changes the sky rather than tinting the scene
+    const wx =
+      window.RBV && window.RBV.celestial && window.RBV.celestial.weather;
+    if (wx) {
+      const overcast = Math.min(
+        1,
+        Math.max(0, (wx.cloudCover - 0.3) / 0.65),
+      );
+      if (overcast > 0.02) {
+        const isDark =
+          currPaletteName === "night" ||
+          currPaletteName === "ms-5" ||
+          currPaletteName === "ms-4";
+        const target = isDark
+          ? ["#161b22", "#1c222a", "#232a32", "#2a323a", "#323a42"]
+          : ["#8f99a2", "#9aa3ab", "#a8b0b7", "#b6bcc2", "#c2c7cc"];
+        for (let i = 0; i < stops.length; i++) {
+          stops[i] = blendHex(
+            stops[i],
+            target[i] || target[target.length - 1],
+            overcast * 0.85,
+          );
+        }
+      }
+    }
+
+    // The sky is drawn on the celestial sky CANVAS (GPU-composited, in the
+    // same loop as the sun/moon) rather than as a CSS background — repainting
+    // the stacked .sky layers every frame hitched the compositor. Here we
+    // only publish the computed stops for celestial.js to fill; positions
+    // mirror the old CSS gradient and top/bottom are the .sky element's
+    // scene-space span (top:-48px, height 40% of the 1080 scene → -48..384).
+    window.RBV = window.RBV || {};
+    window.RBV.skyGradient = {
+      stops: stops.slice(),
+      positions: [0, 0.3, 0.6, 0.85, 1],
+      top: -48,
+      bottom: 384,
+    };
+
+    // The vista wing (outside the canvas, only visible when zoomed out past
+    // the scene) still needs a CSS gradient — but painted only when it
+    // actually changes, so it's off the per-frame path.
     try {
-      // Prefer applying inline to the element selected by updateSkyImage
-      const visibleSky =
-        document.querySelector('.sky[style*="opacity: 1"]') ||
-        document.querySelector(".sky.day");
-      if (visibleSky) {
-        // Build the gradient with roughly even stops
-        const positions = [0, 30, 60, 85, 100];
-        const parts = stops.map(
-          (c, idx) =>
-            `${c} ${
-              positions[idx] ?? Math.round((idx + 1) * (100 / stops.length))
-            }%`,
-        );
-        visibleSky.style.background = `linear-gradient(to bottom, ${parts.join(
-          ", ",
-        )})`;
+      const positions = [0, 30, 60, 85, 100];
+      const parts = stops.map(
+        (c, idx) =>
+          `${c} ${
+            positions[idx] ?? Math.round((idx + 1) * (100 / stops.length))
+          }%`,
+      );
+      const bg = `linear-gradient(to bottom, ${parts.join(", ")})`;
+      if (bg !== lastSkyBg) {
+        lastSkyBg = bg;
+        const wing = document.getElementById("sky-wing");
+        if (wing) wing.style.background = bg;
       }
     } catch (err) {
-      console.warn("⚠️ Failed to apply blended gradient to sky element:", err);
     }
   }
+  let lastSkyBg = null;
 
   // Helpers for debugging and manual override
   window.setSkyPaletteOverride = (name = null) => {
     window.skyPaletteOverride = name;
     updateSkyImage();
-    console.debug(`🌈 Sky palette override set to: ${name}`);
   };
 
   function refreshWorldStateImmediately(reason = "manual") {
     try {
       updateSkyImage();
       updateInfoBar();
-      console.debug(`⚡ World visuals refreshed instantly (${reason})`);
     } catch (err) {
-      console.warn("⚠️ Failed to refresh world visuals immediately:", err);
     }
   }
 
   // Function to perform initial sync with server data
   function performInitialSync() {
-    if (initialSyncDone) return;
-    initialSyncDone = true;
-    console.debug("🔄 Performing initial sync with server data...");
+    if (v.initialSyncDone) return;
+    v.initialSyncDone = true;
 
     // Initialize narrative system with server time
-    if (narrativeSystem && pendingVoyageStartTime) {
-      narrativeSystem.startTime = pendingVoyageStartTime;
-      console.debug("✅ Narrative system synchronized with server time");
+    if (narrativeSystem && v.pendingVoyageStartTime) {
+      narrativeSystem.startTime = v.pendingVoyageStartTime;
     }
 
     // In dev mode, set our own narrative and skip timeline sync
-    if (DEV_NORTH_ATLANTIC) {
+    if (v.DEV_NORTH_ATLANTIC) {
       const el = document.getElementById("story-text");
       if (el) {
         el.textContent =
@@ -3550,11 +752,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Sync narrative with elapsed time if available
     if (
-      pendingVoyageState &&
-      pendingVoyageState.elapsedSeconds &&
+      v.pendingVoyageState &&
+      v.pendingVoyageState.elapsedSeconds &&
       narrativeSystem.startTime
     ) {
-      const elapsed = pendingVoyageState.elapsedSeconds;
+      const elapsed = v.pendingVoyageState.elapsedSeconds;
       const storyTextElement = document.getElementById("story-text");
 
       if (storyTextElement) {
@@ -3580,14 +782,12 @@ document.addEventListener("DOMContentLoaded", function () {
             narrativeSystem.currentEventIndex.toString(),
           );
 
-          console.debug(`📖 Synced narrative: ${currentEvent.text}`);
         }
       }
     }
 
     // Update sky and info bar
     refreshWorldStateImmediately("initial-sync");
-    console.debug("✅ Initial sync complete");
 
     // Handle automatic room joining
     if (typeof handleReconnectionRoomJoin === "function") {
@@ -3595,17 +795,53 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
+  // modules/voyageSync.js calls this when the server's voyage data arrives.
+  // It lives inside this file's DOMContentLoaded closure, so since the split
+  // into modules the module could not see it: every "voyage-start-time" and
+  // "voyage-state" event threw "performInitialSync is not defined" and the
+  // first sync never ran unless the data happened to arrive before this
+  // script did.
+  window.performInitialSync = performInitialSync;
+  // The same module also places a player who has no room yet; it needs these two.
+  RBV.enterRoom = enterRoom;
+  RBV.findPlayerCabin =
+    typeof findPlayerCabin === "function" ? findPlayerCabin : null;
+
+  // A dropped connection comes back as a brand-new socket that stands in no
+  // room on the server. Without rejoining, the player kept seeing the room
+  // but heard no chat in it, was missing from its passenger list and could not
+  // ring the telegraph until the next change of room.
+  let socketWasConnected = socket.connected;
+  socket.on("connect", () => {
+    if (!socketWasConnected) {
+      socketWasConnected = true;
+      return;
+    }
+    if (!currentRoom.name) return;
+    socket.emit("join-room", { room: currentRoom.name });
+    socket.emit("request-room-players", currentRoom.name);
+  });
+
   refreshWorldStateImmediately("script-init");
 
   // Perform initial sync if we have pending data
-  if (pendingVoyageStartTime || pendingVoyageState) {
+  if (v.pendingVoyageStartTime || v.pendingVoyageState) {
     performInitialSync();
   }
 
   const skyImageInterval = setInterval(updateSkyImage, 1000); // Update every second
   const infoBarInterval = setInterval(updateInfoBar, 1000); // Update every second so the clock visibly advances
 
-  console.debug("✅ Initialized sky image and info bar updates.");
+  // Expose for the timelapse loop (devScenario) so it can drive the sky
+  // gradient / relighting every frame; without this the per-frame call was a
+  // silent no-op and the gradient only moved at the 1s interval above.
+  window.updateSkyImage = updateSkyImage;
+  window.updateInfoBar = updateInfoBar;
+  // Celestial calls this each frame so the sky gradient is recomputed from
+  // the same sun altitude, in the same frame, as the sun/moon/stars — no
+  // cross-loop lag or jitter.
+  window.updateSkyGradient = updateSkyGradient;
+
 
   function initClouds() {
     const canvas = document.createElement("canvas");
@@ -3630,7 +866,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const cloudContainer = ensureCloudContainer();
     if (!cloudContainer) {
-      console.warn("⚠️ Could not find or create .cloud-container for clouds");
       return;
     }
 
@@ -3642,7 +877,6 @@ document.addEventListener("DOMContentLoaded", function () {
     cloudContainer.appendChild(canvas);
     const ctx = canvas.getContext("2d");
     if (!ctx) {
-      console.warn("⚠️ Could not acquire 2d context for cloud canvas");
       return;
     }
 
@@ -3674,11 +908,11 @@ document.addEventListener("DOMContentLoaded", function () {
     cloudImages.night.src = "/images/animations/clouds/night.png";
 
     cloudImages.day.onload = () =>
-      console.debug("✅ Loaded cloud image: day.png");
+      {};
     cloudImages.ms.onload = () =>
-      console.debug("✅ Loaded cloud image: ms.png");
+      {};
     cloudImages.night.onload = () =>
-      console.debug("✅ Loaded cloud image: night.png");
+      {};
 
     function applyCloudTexture(type = "ms") {
       if (!cloudImages[type]) return;
@@ -3687,7 +921,6 @@ document.addEventListener("DOMContentLoaded", function () {
       clouds.forEach((cloud) => {
         cloud.image = cloudImages[type];
       });
-      console.debug(`☁️ Cloud texture forced to ${type}.png`);
     }
 
     function spawnCloud(forceType = null, rng = null, spawnElapsed = null) {
@@ -3699,14 +932,43 @@ document.addEventListener("DOMContentLoaded", function () {
           : typeof getElapsedSeconds === "function"
             ? getElapsedSeconds()
             : 0;
+      // Stiffer breeze pushes clouds across faster. Deterministic: the wind
+      // comes from the shared weather engine at the cloud's spawn time, and
+      // no extra r() calls are made, so the seeded sequence stays in sync.
+      let windFactor = 1;
+      if (window.VoyageWeather) {
+        const windKn = window.VoyageWeather.computeWeatherAt(
+          elapsed,
+          v.voyageStartTime || 0,
+        ).windKn;
+        windFactor = 0.6 + Math.min(windKn, 30) / 20;
+      }
       clouds.push({
-        startX: canvas.width,
+        // Draw-space is 1920 wide after the dpr transform; using canvas.width
+        // here pushed spawns hundreds of px off-scene on scaled displays
+        startX: 1920,
         y: r() * (canvas.height * 0), // Keep clouds near top of canvas
-        speed: 0.1 + r() * 0.1, // pixels per frame at 60fps → convert to px/sec
+        speed: (0.1 + r() * 0.1) * windFactor, // px/frame at 60fps → px/sec in animate()
         spawnElapsed: elapsed, // voyage-seconds when this cloud was created
         image: cloudImages[cloudType],
       });
     }
+
+    // Admin/dev helper: instantly repopulate the sky to match a cloud-cover
+    // value instead of waiting minutes for new spawns to drift in
+    window.reseedClouds = (density = 0.5) => {
+      clouds.length = 0;
+      const count = Math.round(density * 7);
+      const elapsedNow =
+        typeof getElapsedSeconds === "function" ? getElapsedSeconds() : 0;
+      for (let i = 0; i < count; i++) {
+        // Evenly staggered fake ages so clouds spread across the sky instead
+        // of clumping into an overlapped blob at the right-edge spawn point
+        const age = ((i + 0.2 + Math.random() * 0.6) * 320) / Math.max(1, count);
+        spawnCloud(null, Math.random, elapsedNow - age);
+      }
+      lastCloudSlot = Math.floor(elapsedNow / CLOUD_SLOT_SEC);
+    };
 
     // Deterministic cloud spawn check for a given time slot
     function checkCloudSlots() {
@@ -3726,10 +988,22 @@ document.addEventListener("DOMContentLoaded", function () {
           : lastCloudSlot + 1;
 
       for (let slot = startSlot; slot <= currentSlot; slot++) {
-        const seed = ((voyageStartTime || 12345) ^ (slot * 4919)) | 0;
+        const seed = ((v.voyageStartTime || 12345) ^ (slot * 4919)) | 0;
         const rng = createSeededRng(seed);
-        // ~30% chance per 30-second window
-        if (rng() < 0.3) {
+        // Spawn chance scales with the weather engine's cloud cover, so the
+        // sky visuals track the reported observation (same seed = same result
+        // on every client). Admin overrides (dev panel) win when active.
+        let density = 0.5;
+        if (window.VoyageWeather) {
+          let ws = window.VoyageWeather.computeWeatherAt(
+            slot * CLOUD_SLOT_SEC,
+            v.voyageStartTime || 0,
+          );
+          if (window.applyDevWeather) ws = window.applyDevWeather(ws);
+          density = ws.cloudCover;
+        }
+        // Base chance per slot; density of 1.0 gives ~2 clouds per slot
+        if (rng() < density * 0.8) {
           spawnCloud(null, rng, slot * CLOUD_SLOT_SEC);
         }
       }
@@ -3738,22 +1012,31 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Sub-second elapsed for smooth rendering (not floored like getElapsedSeconds)
     function getElapsedSmooth() {
-      if (lastServerElapsedAt > 0) {
-        return lastServerElapsed + (Date.now() - lastServerElapsedAt) / 1000;
+      if (v.lastServerElapsedAt > 0) {
+        return v.lastServerElapsed + (Date.now() - v.lastServerElapsedAt) / 1000;
       }
-      if (voyageStartTime) {
-        return (Date.now() - voyageStartTime) / 1000;
+      if (v.voyageStartTime) {
+        return (Date.now() - v.voyageStartTime) / 1000;
       }
       return 0;
     }
 
     function animate() {
+      // Full backing-store clear regardless of the dpr transform — with
+      // canvas.width in logical units, dpr < 1 (browser zoom-out) cleared
+      // only part of the canvas and clouds smeared into giant blobs
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
 
       const elapsed = getElapsedSmooth();
 
-      clouds.forEach((cloud, index) => {
-        if (!cloud.image.complete) return; // Skip if image not loaded
+      // Iterate in reverse so splicing off-screen clouds doesn't skip the
+      // next element (forEach + splice(index) drops every other expiring cloud).
+      for (let index = clouds.length - 1; index >= 0; index--) {
+        const cloud = clouds[index];
+        if (!cloud.image.complete) continue; // Skip if image not loaded
         const scaledHeight = cloud.image.height;
         const scaledWidth = cloud.image.width;
 
@@ -3763,21 +1046,16 @@ document.addEventListener("DOMContentLoaded", function () {
         const x = cloud.startX - cloud.speed * 60 * age;
 
         ctx.save();
-        const activeInterval = imageIntervals.find((interval) => {
-          const now = getBSTTime();
-          const h = now.getHours();
-          return h >= interval.start && h <= interval.end;
-        });
-        const isDayInterval = activeInterval?.className === "day";
-        ctx.globalAlpha = isDayInterval ? 1 : 0.92;
-        ctx.filter = isDayInterval ? "brightness(1)" : "brightness(0.88)";
+        // Time-of-day lighting lives in a continuous CSS filter on the
+        // canvas itself (updateSkyImage) — nothing steps per-interval here
+        ctx.globalAlpha = 0.96;
         ctx.drawImage(cloud.image, x, cloud.y, scaledWidth, scaledHeight);
         ctx.restore();
 
         if (x + scaledWidth < 0) {
           clouds.splice(index, 1);
         }
-      });
+      }
 
       // Deterministic cloud spawning synced across clients
       checkCloudSlots();
@@ -3786,7 +1064,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // Initial spawn to populate the sky using seeded positions
-    const initCloudRng = createSeededRng((voyageStartTime || 12345) ^ 99991);
+    const initCloudRng = createSeededRng((v.voyageStartTime || 12345) ^ 99991);
     const initElapsed =
       typeof getElapsedSeconds === "function" ? getElapsedSeconds() : 0;
     for (let i = 0; i < 3; i++) {
@@ -3798,15 +1076,11 @@ document.addEventListener("DOMContentLoaded", function () {
     applyCloudTexture(currentCloudTexture);
 
     animate();
-    console.debug("🔄 Started clouds animation loop.");
 
     window.setCloudTexture = (type = currentCloudTexture) =>
       applyCloudTexture(type);
     window.forceCloudTextureMS = () => applyCloudTexture("ms");
     if (currentCloudTexture !== "ms") {
-      console.debug(
-        `☁️ Applied queued cloud texture ${currentCloudTexture}.png after init.`,
-      );
     }
   }
 
@@ -3861,9 +1135,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Generate deterministic spawn data for a given 2-second slot
     getSlotSpawnData(slot) {
-      // Seed = voyageStartTime XOR slot index → same for all clients
-      const seed = ((voyageStartTime || 0) ^ (slot * 7919)) | 0;
+      // Seed = v.voyageStartTime XOR slot index → same for all clients
+      const seed = ((v.voyageStartTime || 0) ^ (slot * 7919)) | 0;
       const rng = createSeededRng(seed);
+
+      // Mid-ocean scenario: hundreds of miles from land — no gulls out here
+      if (v.DEV_NORTH_ATLANTIC) return null;
 
       const elapsed = slot * this.SPAWN_INTERVAL;
       const factor = this.getLandFactor(elapsed);
@@ -3920,7 +1197,6 @@ document.addEventListener("DOMContentLoaded", function () {
     init() {
       const sceneLayer = document.querySelector(".scene-layer");
       if (!sceneLayer) {
-        console.warn("⚠️ No .scene-layer for birds");
         return;
       }
 
@@ -3931,11 +1207,10 @@ document.addEventListener("DOMContentLoaded", function () {
       this.spriteImg = new Image();
       this.spriteImg.src = this.SPRITE_SRC;
       this.spriteImg.onload = () => {
-        console.debug("🐦 Bird sprite loaded");
         this.start();
       };
       this.spriteImg.onerror = () =>
-        console.warn("⚠️ Failed to load bird sprite");
+        {};
     },
 
     start() {
@@ -3943,15 +1218,14 @@ document.addEventListener("DOMContentLoaded", function () {
       this._tick = this._tick.bind(this);
       this.animFrame = requestAnimationFrame(this._tick);
 
-      // Wait for voyageStartTime before spawning so seeds are correct
+      // Wait for v.voyageStartTime before spawning so seeds are correct
       const tryStart = () => {
-        if (!voyageStartTime) {
+        if (!v.voyageStartTime) {
           setTimeout(tryStart, 500);
           return;
         }
         this.catchUp();
         this.spawnTimer = setInterval(() => this.checkSpawns(), 1000);
-        console.debug("🐦 Bird spawning synced to voyageStartTime");
       };
       tryStart();
     },
@@ -3985,9 +1259,6 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       this.lastSpawnSlot = currentSlot;
-      console.debug(
-        `🐦 Bird catch-up complete: ${this.birds.length} birds on screen`,
-      );
     },
 
     checkSpawns() {
@@ -4022,9 +1293,12 @@ document.addEventListener("DOMContentLoaded", function () {
       const ctx = canvas.getContext("2d");
       ctx.imageSmoothingEnabled = false;
 
-      canvas.style.left = x + "px";
+      // Positioned by transform (see _tick), which the compositor can move
+      // without re-laying out the page every frame
+      const flip = goRight ? "" : " scaleX(-1)";
+      canvas.style.left = "0px";
       canvas.style.top = y + "px";
-      if (!goRight) canvas.style.transform = "scaleX(-1)";
+      canvas.style.transform = `translate3d(${x}px, 0, 0)${flip}`;
 
       this.container.appendChild(canvas);
 
@@ -4035,6 +1309,7 @@ document.addEventListener("DOMContentLoaded", function () {
         y,
         speed,
         goRight,
+        flip,
         frameIndex,
         frameTimer: 0,
         sceneW: this.container.parentElement?.offsetWidth || 1920,
@@ -4063,7 +1338,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Move
         b.x += (b.goRight ? 1 : -1) * b.speed * dt;
-        b.canvas.style.left = b.x + "px";
+        b.canvas.style.transform = `translate3d(${b.x}px, 0, 0)${b.flip}`;
 
         // Remove if offscreen
         const renderW = this.FRAME_W * this.SCALE;
@@ -4149,14 +1424,13 @@ document.addEventListener("DOMContentLoaded", function () {
     smokeImage.src = "/images/animations/smoke/day.png";
     let currentSmokeTexture = "day";
 
-    smokeImage.onload = () => console.debug("✅ Loaded smoke image: day.png");
+    smokeImage.onload = () => {};
 
     // Expose a setter so the sky system can swap the smoke sprite at dusk/night
     window.setSmokeTexture = (type = "day") => {
       if (type === currentSmokeTexture) return;
       currentSmokeTexture = type;
       smokeImage.src = `/images/animations/smoke/${type}.png`;
-      console.debug(`💨 Smoke texture changed to ${type}.png`);
     };
 
     // Define the positions of the three funnels as simple percentages since container is now positioned like ship
@@ -4179,7 +1453,6 @@ document.addEventListener("DOMContentLoaded", function () {
     function initPropellers() {
       const propellerContainer = document.querySelector(".propeller-container");
       if (!propellerContainer) {
-        console.warn("⚠️ Propeller container not found");
         return;
       }
 
@@ -4192,7 +1465,6 @@ document.addEventListener("DOMContentLoaded", function () {
       propellerContainer.appendChild(canvas);
       const ctx = canvas.getContext("2d");
       if (!ctx) {
-        console.warn("⚠️ Could not acquire 2d context for propeller canvas");
         return;
       }
 
@@ -4332,7 +1604,6 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       requestAnimationFrame(animatePropellers);
-      console.debug("🔄 Started propeller bubble loop.");
     }
 
     // Update existing particle positions when canvas resizes
@@ -4390,7 +1661,12 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function animateSmoke() {
+      // Full backing-store clear regardless of the dpr transform (see the
+      // cloud animate() note — same smear bug at browser zoom-out)
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
 
       // Debug rectangle removed; smoke should not be affected by canvas test markers
 
@@ -4402,6 +1678,18 @@ document.addEventListener("DOMContentLoaded", function () {
         if (typeof window.currentSpeed === "number") {
           const speed = window.currentSpeed || 0;
           horizontalWind = -0.05 - speed * 0.04; // Original port-drift curve from historic build
+        }
+        // True wind from the weather engine bends the columns as well:
+        // westerlies push the smoke aft with the apparent wind, easterlies
+        // stand it up or push it forward. Matters most at the dock, where
+        // ship speed is zero but a squall should still flatten the smoke.
+        if (window.sceneWind) {
+          const dirSign =
+            window.sceneWind.dirDeg > 0 && window.sceneWind.dirDeg < 180
+              ? 1
+              : -1;
+          horizontalWind +=
+            dirSign * Math.min(window.sceneWind.kn, 30) * 0.008;
         }
         // As the particle ages, blend from initial vertical to horizontal wind
         const bendProgress = Math.min(
@@ -4491,7 +1779,6 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }
 
-    console.debug("🔄 Started smoke animation loop.");
 
     // Start propeller bubbles
     initPropellers();
@@ -4511,19 +1798,16 @@ document.addEventListener("DOMContentLoaded", function () {
   const loadingInterval = setInterval(() => {
     progress += 1000;
     progressBar.style.width = `${progress}%`;
-    console.debug(`📈 Loading progress: ${progress}%`);
 
     if (progress >= 100) {
       clearInterval(loadingInterval);
       startButton.style.display = "block";
-      console.debug("✅ Loading complete. Start button displayed.");
     }
   }, 500);
 
   startButton.addEventListener("click", () => {
-    console.debug("🚀 Start button clicked.");
     refreshWorldStateImmediately("start-button");
-    whistleSound.play();
+    whistleSound.play().catch(() => {});
     loadingScreen.style.transition = "opacity 1s ease";
     loadingScreen.style.opacity = "0";
     setTimeout(() => {
@@ -4541,21 +1825,18 @@ document.addEventListener("DOMContentLoaded", function () {
         if (desiredSongIndex !== -1) {
           musicPlayer.currentSongIndex = desiredSongIndex;
           document.getElementById("song-select").value = desiredSongIndex;
-          console.debug(`🎵 Set current song to: ${desiredSongName}`);
         } else {
-          console.warn("⚠️ Desired song not found in the playlist.");
         }
 
         musicPlayer.isPlaying = true;
         musicPlayer.loadCurrentSong();
         musicPlayer.updatePlayButton();
-        console.debug("🎶 Music started.");
       }
 
       // Smart spawn logic based on voyage progress
-      // Wait a moment for voyageStartTime to be received from server
+      // Wait a moment for v.voyageStartTime to be received from server
       const waitForSpawn = setInterval(() => {
-        if (!voyageStartTime) return; // Wait for server time
+        if (!v.voyageStartTime) return; // Wait for server time
 
         clearInterval(waitForSpawn);
         const elapsedSeconds = getElapsedSeconds();
@@ -4575,21 +1856,30 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (lastRoom) {
-              console.debug(
-                `🔄 Restoring player to last room: ${lastRoom.name}`,
-              );
               enterRoom(lastRoom);
               return; // Don't do the spawn logic below
+            } else if (
+              lastRoomName === "Mars" ||
+              lastRoomName === "5741544e4559"
+            ) {
+              enterRoom({
+                id: "5741544e4559",
+                name: "Mars",
+                type: "secret",
+                location: {
+                  chatRoom: "5741544e4559",
+                  image: "Mars.jpg",
+                },
+              });
+              return;
             } else {
-              console.debug(
-                `⚠️ Last room "${lastRoomName}" not found, proceeding with spawn logic`,
-              );
               localStorage.removeItem("lastRoom"); // Clean up invalid data
             }
           }
 
           // Try to find player's cabin first, otherwise default to promenade
-          const cabinRoom = findPlayerCabin();
+          const cabinRoom =
+            typeof findPlayerCabin === "function" ? findPlayerCabin() : null;
           const defaultShipRoom =
             (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
               (r) => r.id === "port_promenade_bd",
@@ -4599,13 +1889,10 @@ document.addEventListener("DOMContentLoaded", function () {
           if (spawnRoom) {
             enterRoom(spawnRoom);
           } else {
-            console.error("❌ Could not find ship spawn location");
+            console.error("Could not find ship spawn location");
           }
         } else {
           // Ship hasn't departed yet - spawn at Southampton docks
-          console.debug(
-            `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - spawning at Southampton`,
-          );
           localStorage.removeItem("lastRoom");
 
           const initialRoom = deckRooms.southampton.find(
@@ -4615,7 +1902,7 @@ document.addEventListener("DOMContentLoaded", function () {
             enterRoom(initialRoom);
           } else {
             console.error(
-              "❌ Initial room not found, defaulting to Berth 44 Forward Docks",
+              "Initial room not found, defaulting to Berth 44 Forward Docks",
             );
             const defaultRoom = deckRooms.southampton.find(
               (r) => r.name === "Berth 44 Forward Docks",
@@ -4623,18 +1910,29 @@ document.addEventListener("DOMContentLoaded", function () {
             if (defaultRoom) enterRoom(defaultRoom);
           }
         }
-        console.debug("🔑 Attempted to enter initial room.");
       }, 100); // Check every 100ms until server time arrives
     }, 1000);
   });
 
-  // Updated enterRoom function with dynamic location image handling
+  // Helper to find which deck a room belongs to
+  function getRoomDeck(roomId) {
+    if (!roomId) return null;
+    for (const [deck, rooms] of Object.entries(deckRooms)) {
+      if (!Array.isArray(rooms)) continue;
+      if (
+        rooms.some((r) => r.id === roomId || r.location?.chatRoom === roomId)
+      ) {
+        return deck;
+      }
+    }
+    return null;
+  }
+
   function enterRoom(room) {
-    console.debug("🔄 enterRoom called with:", room.name);
 
     const characterData = JSON.parse(sessionStorage.getItem("character"));
     if (!characterData) {
-      console.error("❌ No character data found.");
+      console.error("No character data found.");
       return;
     }
 
@@ -4642,27 +1940,34 @@ document.addEventListener("DOMContentLoaded", function () {
     const locationDisplay = document.querySelector(".location-display");
 
     if (!chatContainer || !locationDisplay) {
-      console.error("❌ Required DOM elements not found");
+      console.error("Required DOM elements not found");
       return;
     }
 
-    // Add fade-out transition
-    chatContainer.classList.add("fade-out");
-    locationDisplay.classList.add("fade-out");
+    // Determine transition pause based on deck change
+    const currentDeck = getRoomDeck(currentRoom.name);
+    const targetDeck = getRoomDeck(room.location.chatRoom);
+    const isSameDeck = currentDeck && targetDeck && currentDeck === targetDeck;
+    const slideDurationMs = 800;
+    const extraPauseMs = isSameDeck ? 600 : 1000;
+    const transitionDelay = slideDurationMs + extraPauseMs;
+
+    // Slide out (down) while leaving current room
+    chatContainer.classList.add("slide-out");
+    locationDisplay.classList.add("slide-out");
 
     // Play close door sound if leaving a room
     if (currentRoom.name) {
       closeDoorSound.currentTime = 0;
-      closeDoorSound.play();
+      closeDoorSound.play().catch(() => {});
       socket.emit("leave-room", {
         room: currentRoom.name,
-        character: characterData,
       });
     }
 
     setTimeout(() => {
       if (!room) {
-        console.error("❌ Room object is undefined");
+        console.error("Room object is undefined");
         return;
       }
 
@@ -4671,7 +1976,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Set new room
       currentRoom.name = room.location.chatRoom;
-      console.debug(`🔑 Set new room: ${currentRoom.name}`);
+      currentRoom.id = room.id;
 
       // Show room name label for rooms with replaced images
       const roomDisplayNames = {
@@ -4726,34 +2031,15 @@ document.addEventListener("DOMContentLoaded", function () {
         first_class_lounge_a: "First Class Lounge",
         first_class_reception_d: "First Class Reception Room",
         first_class_dining_room_d: "First Class Dining Room",
-        cabin_a1: "A-1",
-        cabin_a2: "A-2",
-        cabin_a30: "A-30",
-        cabin_a32: "A-32",
-        cabin_a34: "A-34",
-        cabin_a36: "A-36",
-        cabin_b49: "B-49",
-        cabin_b51: "B-51",
-        cabin_b53: "B-53",
-        cabin_b55: "B-55",
-        cabin_b57: "B-57",
-        cabin_b59: "B-59",
-        cabin_b61: "B-61",
-        cabin_b63: "B-63",
-        cabin_b65: "B-65",
-        cabin_b67: "B-67",
-        cabin_b69: "B-69",
-        cabin_b71: "B-71",
-        cabin_b73: "B-73",
-        cabin_b75: "B-75",
-        cabin_b77: "B-77",
-        cabin_b79: "B-79",
-        cabin_b81: "B-81",
-        cabin_b83: "B-83",
+        "5741544e4559": "Mars",
       };
+      // Every cabin is labelled with its number: cabin_a10 -> "A-10", cabin_b49 -> "B-49".
+      const cabinNumber = /^cabin_([a-z])(\d+)$/.exec(currentRoom.name);
       const roomNameLabel = document.getElementById("room-name-label");
       if (roomNameLabel) {
-        const displayName = roomDisplayNames[currentRoom.name];
+        const displayName =
+          roomDisplayNames[currentRoom.name] ||
+          (cabinNumber && `${cabinNumber[1].toUpperCase()}-${cabinNumber[2]}`);
         if (displayName) {
           roomNameLabel.textContent = displayName;
           roomNameLabel.style.display = "block";
@@ -4762,21 +2048,11 @@ document.addEventListener("DOMContentLoaded", function () {
           roomNameLabel.style.display = "none";
         }
       }
-      console.debug(
-        `🏨 Entered room with currentRoom.name set to: ${currentRoom.name}`,
-      );
-      console.debug(
-        `🖼️ Available room images:`,
-        roomImages[currentRoom.name]
-          ? roomImages[currentRoom.name].images.length
-          : "none",
-      );
 
       // Always start a newly entered room with a fresh local chat buffer.
       chatHistory.rooms[currentRoom.name] = [];
       socket.emit("join-room", {
         room: currentRoom.name,
-        character: characterData,
       });
 
       // Update location image using roomImages if available
@@ -4790,49 +2066,18 @@ document.addEventListener("DOMContentLoaded", function () {
         );
       };
 
-      const bstNow = getBSTTime();
-      const bstHours = bstNow.getHours();
-      const activeInterval = imageIntervals.find(
-        (iv) => bstHours >= iv.start && bstHours <= iv.end,
-      );
-
-      if (roomImages[chatRoom]) {
+      if (chatRoom === "5741544e4559") {
+        imageSrc = "/images/Mars.jpg";
+      } else if (roomImages[chatRoom]) {
         const roomData = roomImages[chatRoom];
-
-        let targetImages = roomData.images;
-        let isMsVariant = false;
-
-        if (
-          activeInterval &&
-          activeInterval.className.startsWith("ms") &&
-          roomData.variants &&
-          roomData.variants.ms &&
-          roomData.variants.ms.length > 0
-        ) {
-          targetImages = roomData.variants.ms;
-          isMsVariant = true;
-        }
-
-        // Sanitize index
-        if (roomData.currentIndex >= targetImages.length) {
+        if (roomData.currentIndex >= roomData.images.length) {
           roomData.currentIndex = 0;
         }
-        const imageToShow = targetImages[roomData.currentIndex];
-
-        // If a sunset variant exists and we are in an ms-* interval show it
-        if (isMsVariant) {
-          imageSrc = `/images/animations/locations/${encodeURIComponent(
-            "britannic (sunset)",
-          )}/${imageToShow}`;
-        } else {
-          // Regular behaviour
-          // Check if this is a Southampton location
-          if (isSouthamptonRoom(room)) {
-            imageSrc = `/images/animations/locations/southampton/${imageToShow}`;
-          } else {
-            imageSrc = `/images/animations/locations/britannic/${imageToShow}`;
-          }
-        }
+        const imageToShow = roomData.images[roomData.currentIndex];
+        // The Britannic's pictures in the time of day's set (night, sunrise/sunset), the day picture otherwise
+        imageSrc = isSouthamptonRoom(room)
+          ? `/images/animations/locations/southampton/${imageToShow}`
+          : britannicImagePath(imageToShow);
       } else {
         // Check if this is a Southampton location
         if (isSouthamptonRoom(room)) {
@@ -4843,17 +2088,163 @@ document.addEventListener("DOMContentLoaded", function () {
           imageSrc = `/images/animations/locations/britannic/${room.location.image}`;
         }
       }
+      function finishRoomEnter() {
+        // Update displays and play open door sound
+        chatContainer.style.display = "block";
+        locationDisplay.style.display = "block";
+        openDoorSound.currentTime = 0;
+        openDoorSound.play().catch(() => {});
+
+        chatContainer.classList.remove("slide-out");
+        locationDisplay.classList.remove("slide-out");
+        chatContainer.classList.add("slide-in");
+        locationDisplay.classList.add("slide-in");
+
+        const systemMessage = {
+          type: "system",
+          message: `You have entered ${room.name}`,
+          room: currentRoom.name,
+          timestamp: Date.now(),
+        };
+        addChatMessage(systemMessage);
+
+        // Remove slide-in class after the fixed slide animation completes
+        setTimeout(() => {
+          chatContainer.classList.remove("slide-in");
+          locationDisplay.classList.remove("slide-in");
+        }, 800);
+
+        // The card table is in the first class smoking room and lounge
+        const gamesToggleBtn = document.getElementById("games-toggle-btn");
+        if (gamesToggleBtn) {
+          const hasGames =
+            room.id === "first_class_lounge_a" ||
+            room.id === "first_class_smoking_room_a";
+          gamesToggleBtn.style.display = hasGames ? "block" : "none";
+          // a games list left open in the last room goes with it
+          closeGamesMenu();
+          if (!hasGames) closeVideoPokerGame();
+        }
+
+        localStorage.setItem("lastRoom", room.name);
+
+        const interiorTypes = [
+          "grand-staircase",
+          "gymnasium",
+          "playroom",
+          "bridge",
+          "lounge",
+          "smoking-room",
+          "dining-room",
+          "reception-room",
+          "cabin",
+          "corridor",
+          "reading-writing-room",
+        ];
+
+        const eatDrinkBtn = document.getElementById("eat-drink-btn");
+        if (eatDrinkBtn) {
+          // Close a menu left open in the previous room
+          const eatDrinkPopup = document.querySelector(".eat-drink-popup");
+          if (eatDrinkPopup) eatDrinkPopup.remove();
+
+          // What is served where:
+          //   a dining room      the whole menu;
+          //   a smoking room, lounge, reception room, the Palm Court
+          //                      drinks and light fare under "Eat & Drink",
+          //                      tobacco under its own button;
+          //   an open deck       tobacco only.
+          // A room is looked up by its id, never by its type alone: the à la
+          // carte restaurant's type is "first-class", which is not in the
+          // interior list, so it was treated as an open deck and offered
+          // tobacco only.
+          const diningRooms = [
+            "first_class_dining_room_d",
+            "a_la_carte_restaurant",
+            "dockside_cafe",
+          ];
+          const loungeRooms = [
+            "first_class_smoking_room_a",
+            "second_class_smoke_room_b",
+            "third_class_smoke_room_b",
+            "first_class_lounge_a",
+            "verandah_palm_court_a",
+            "first_class_reception_d",
+            "restaurant_reception_room",
+          ];
+          const isDiningRoom = diningRooms.includes(room.id);
+          const isLoungeRoom = loungeRooms.includes(room.id);
+          const isOutdoorRoom =
+            !isDiningRoom &&
+            !isLoungeRoom &&
+            room.type &&
+            !interiorTypes.includes(room.type);
+          const menuMode = isDiningRoom
+            ? "full"
+            : isLoungeRoom
+              ? "drinks"
+              : isOutdoorRoom
+                ? "tobacco"
+                : "";
+
+          eatDrinkBtn.dataset.menuMode = menuMode;
+          eatDrinkBtn.dataset.tobaccoOnly =
+            menuMode === "tobacco" ? "true" : "false";
+          eatDrinkBtn.style.display = menuMode ? "block" : "none";
+          // Open decks only offer tobacco, so the button says so
+          eatDrinkBtn.textContent =
+            menuMode === "tobacco" ? "Tobacco" : "Eat & Drink";
+
+          const tobaccoBtn = document.getElementById("tobacco-btn");
+          if (tobaccoBtn) {
+            tobaccoBtn.style.display = menuMode === "drinks" ? "block" : "none";
+            tobaccoBtn.textContent = "Tobacco";
+          }
+        }
+
+        // Engine order telegraph: bridge/wheelhouse prop only
+        if (window.RBV && window.RBV.telegraph) {
+          if (room.id === "bridge_bd" || room.id === "wheelhouse_bd") {
+            window.RBV.telegraph.show();
+          } else {
+            window.RBV.telegraph.hide();
+          }
+        }
+
+        if (interiorTypes.includes(room.type)) {
+          if (interiorSound.paused) {
+            interiorSound
+              .play()
+              .catch((error) =>
+                console.error("Error playing interior sound:", error),
+              );
+          }
+          exteriorSound.pause();
+        } else {
+          interiorSound.pause();
+          if (exteriorSound.paused) {
+            exteriorSound
+              .play()
+              .catch((error) =>
+                console.error("Error playing exterior sound:", error),
+              );
+          }
+        }
+      }
+
       if (imageSrc) {
-        drawLocationImage(imageSrc);
+        drawLocationImage(imageSrc, false, {
+          onLoad: finishRoomEnter,
+          onError: finishRoomEnter,
+        });
       } else {
-        console.warn("⚠️ No image source available for room", room.name);
+        finishRoomEnter();
       }
 
       // Preload room variants and images (if any)
       try {
         locationImageSystem.preloadRoomImages(currentRoom.name);
       } catch (e) {
-        console.warn("⚠️ Error while preloading room images:", e);
       }
 
       // Remove any existing cabin action buttons
@@ -4876,9 +2267,8 @@ document.addEventListener("DOMContentLoaded", function () {
         const showerBtn = document.createElement("button");
         showerBtn.className = "cabin-action-btn";
         showerBtn.title = "Take a Shower";
-        showerBtn.innerHTML = "🚿";
+        showerBtn.innerHTML = '<span class="material-icons">shower</span>';
         showerBtn.onclick = function () {
-          // Add your shower logic here
           addChatMessage({
             type: "system",
             message: "You take a refreshing shower.",
@@ -4895,9 +2285,8 @@ document.addEventListener("DOMContentLoaded", function () {
         const toiletBtn = document.createElement("button");
         toiletBtn.className = "cabin-action-btn";
         toiletBtn.title = "Use the Toilet";
-        toiletBtn.innerHTML = "🚽";
+        toiletBtn.innerHTML = '<span class="material-icons">wc</span>';
         toiletBtn.onclick = function () {
-          // Add your toilet logic here
           addChatMessage({
             type: "system",
             message: "You use the toilet.",
@@ -4914,9 +2303,8 @@ document.addEventListener("DOMContentLoaded", function () {
         const sleepBtn = document.createElement("button");
         sleepBtn.className = "cabin-action-btn";
         sleepBtn.title = "Go to Sleep";
-        sleepBtn.innerHTML = "🛏️";
+        sleepBtn.innerHTML = '<span class="material-icons">bed</span>';
         sleepBtn.onclick = function () {
-          // Add your sleep logic here
           addChatMessage({
             type: "system",
             message: "You lie down and get some rest.",
@@ -4941,13 +2329,13 @@ document.addEventListener("DOMContentLoaded", function () {
       );
       if (prevEnterBritannicBtn) prevEnterBritannicBtn.remove();
 
-      // Add "Enter Britannic" button for First Class Gangway and Boarding Tower
+      // Add the "Go Aboard" button for First Class Gangway and Boarding Tower
       if (room.id === "first_class_gangway" || room.id === "boarding_tower") {
         const locationDisplay = document.querySelector(".location-display");
         const enterBritannicBtn = document.createElement("button");
         enterBritannicBtn.id = "enter-britannic-btn";
         enterBritannicBtn.className = "enter-britannic-btn";
-        enterBritannicBtn.textContent = "Enter Britannic";
+        enterBritannicBtn.textContent = "Go Aboard";
         enterBritannicBtn.style.position = "absolute";
         enterBritannicBtn.style.bottom = "10px";
         enterBritannicBtn.style.left = "50%";
@@ -4962,8 +2350,8 @@ document.addEventListener("DOMContentLoaded", function () {
           if (receptionRoom) {
             const message =
               room.id === "boarding_tower"
-                ? "You board the RMS Britannic via the Boarding Tower..."
-                : "You board the RMS Britannic via the First Class Gangway...";
+                ? "You board the RMS Britannic by the Boarding Tower."
+                : "You board the RMS Britannic by the First Class Gangway.";
 
             addChatMessage({
               type: "system",
@@ -4977,123 +2365,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         locationDisplay.appendChild(enterBritannicBtn);
       }
-
-      // Update displays and play open door sound
-      chatContainer.style.display = "block";
-      locationDisplay.style.display = "block";
-      openDoorSound.currentTime = 0;
-      openDoorSound.play();
-
-      chatContainer.classList.remove("fade-out");
-      locationDisplay.classList.remove("fade-out");
-      chatContainer.classList.add("fade-in");
-      locationDisplay.classList.add("fade-in");
-
-      const systemMessage = {
-        type: "system",
-        message: `You have entered ${room.name}`,
-        room: currentRoom.name,
-        timestamp: Date.now(),
-      };
-      addChatMessage(systemMessage);
-
-      // Update minigame visibility if applicable
-      const minigameBtn = document.getElementById("gym-minigame-btn");
-      if (minigameBtn) {
-        minigameBtn.style.display = room.type === "gymnasium" ? "flex" : "none";
-      } else {
-        console.warn("⚠️ Gym minigame button not found");
-      }
-
-      // Removed pokerMinigameBtn reference since it's not in the HTML
-      const videoPokerBtn = document.getElementById("video-poker-btn");
-      if (videoPokerBtn) {
-        if (
-          room.id === "first_class_lounge_a" ||
-          room.id === "first_class_smoking_room_a"
-        ) {
-          videoPokerBtn.style.display = "flex";
-        } else {
-          videoPokerBtn.style.display = "none";
-        }
-      } else {
-        console.warn("⚠️ Video poker button not found");
-      }
-
-      // Show games toggle button in specific rooms
-      const gamesToggleBtn = document.getElementById("games-toggle-btn");
-      if (gamesToggleBtn) {
-        if (
-          room.id === "first_class_lounge_a" ||
-          room.id === "first_class_smoking_room_a"
-        ) {
-          gamesToggleBtn.style.display = "block";
-        } else {
-          gamesToggleBtn.style.display = "none";
-          gamesToggleBtn.textContent = "Games";
-          const gamesPopup = document.querySelector(".games-popup");
-          if (gamesPopup) {
-            gamesPopup.remove();
-          }
-        }
-      }
-
-      // Show eat/drink button in dining room
-      const eatDrinkBtn = document.getElementById("eat-drink-btn");
-      if (eatDrinkBtn) {
-        if (
-          room.id === "first_class_dining_room_d" ||
-          room.id === "a_la_carte_restaurant"
-        ) {
-          eatDrinkBtn.style.display = "block";
-        } else {
-          eatDrinkBtn.style.display = "none";
-        }
-      }
-
-      localStorage.setItem("lastRoom", room.name);
-      console.debug(`💾 Saved last room to localStorage: ${room.name}`);
-
-      const interiorTypes = [
-        "grand-staircase",
-        "gymnasium",
-        "playroom",
-        "bridge",
-        "lounge",
-        "smoking-room",
-        "dining-room",
-        "reception-room",
-        "cabin",
-        "corridor",
-        "reading-writing-room",
-      ];
-
-      if (interiorTypes.includes(room.type)) {
-        if (interiorSound.paused) {
-          interiorSound
-            .play()
-            .catch((error) =>
-              console.error("Error playing interior sound:", error),
-            );
-        }
-        exteriorSound.pause();
-      } else {
-        interiorSound.pause();
-        if (exteriorSound.paused) {
-          exteriorSound
-            .play()
-            .catch((error) =>
-              console.error("Error playing exterior sound:", error),
-            );
-        }
-      }
-    }, 500);
-
-    // Remove fade-in class after animation completes
-    setTimeout(() => {
-      chatContainer.classList.remove("fade-in");
-      locationDisplay.classList.remove("fade-in");
-    }, 1000);
+    }, transitionDelay);
   }
 
   // When sending a message
@@ -5110,14 +2382,12 @@ document.addEventListener("DOMContentLoaded", function () {
         timestamp: Date.now(),
       };
 
-      console.debug("✉️ Sending message:", messageData);
       socket.emit("chat-message", messageData);
       chatInput.value = "";
     }
   }
 
   function updateChatDisplay() {
-    console.debug("🔄 Updating chat display for room:", currentRoom.name);
     const chatMessages = document.getElementById("chat-messages");
     chatMessages.innerHTML = "";
 
@@ -5134,7 +2404,6 @@ document.addEventListener("DOMContentLoaded", function () {
       messagesToShow = chatHistory.rooms[currentRoom.name] || [];
     }
 
-    console.debug(`📦 Found ${messagesToShow.length} messages to display`);
 
     messagesToShow.forEach((data) => {
       const messageDiv = document.createElement("div");
@@ -5143,7 +2412,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
       if (data.type === "system") {
         messageDiv.textContent = data.message;
-        messageDiv.style.color = "#ffcc00";
       } else {
         const fullName = `${data.character.forename} ${data.character.surname}`;
         if (isGlobalChat) {
@@ -5173,26 +2441,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Only scroll to bottom if explicitly requested (not automatic on mode switch)
     // This prevents jarring scroll behavior when switching between local/global chat
-    console.debug(
-      `✅ Updated chat display with ${messagesToShow.length} messages`,
-    );
   }
 
   // Add a toggle for global chat
   function toggleGlobalChat() {
     isGlobalChat = !isGlobalChat;
-    console.debug(`🔄 Toggled global chat. Now isGlobalChat: ${isGlobalChat}`);
 
-    // Clear chat history when switching modes to prevent flooding
-    const chatMessages = document.getElementById("chat-messages");
-    if (chatMessages) {
-      chatMessages.innerHTML = "";
-      console.debug("🧹 Cleared chat messages when switching chat modes");
-    }
-
-    // Don't repopulate with history to keep it fresh and non-flooded
-    const globalChatToggle = document.getElementById("global-chat-toggle");
-    globalChatToggle.textContent = "🌐";
     const systemMessage = {
       type: "system",
       message: `Switched to ${
@@ -5202,6 +2456,9 @@ document.addEventListener("DOMContentLoaded", function () {
       timestamp: Date.now(),
     };
     addChatMessage(systemMessage);
+
+    // Re-render preserved chat history for the new mode
+    updateChatDisplay();
 
     // Scroll to bottom after mode switch to show latest messages
     const chatMessagesElement = document.getElementById("chat-messages");
@@ -5233,26 +2490,20 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       if (data.character && data.character.forename && data.character.surname) {
         addChatMessage(data);
-        console.debug(
-          `✉️ Message from ${data.character.forename}: ${data.message}`,
-        );
       } else {
-        console.warn("⚠️ Received chat message without character data:", data);
       }
     } catch (error) {
-      console.error(`❌ Error handling incoming message: ${error.message}`);
+      console.error(`Error handling incoming message: ${error.message}`);
     }
   });
 
   // Handle join room errors (admin-only mode)
   socket.on("join-error", (error) => {
-    console.warn("🚫 Join room error:", error);
     alert(error.message || "Unable to join the game at this time.");
   });
 
   // Handle admin-only mode disconnection
   socket.on("admin-only-mode", (data) => {
-    console.warn("🚫 Admin-only mode:", data);
     alert(data.message || "Game access is restricted to administrators only.");
     // Redirect to registration page
     window.location.href = "/";
@@ -5261,9 +2512,6 @@ document.addEventListener("DOMContentLoaded", function () {
   // Handle room message history when joining a room
   socket.on("room-message-history", (data) => {
     const { room, messages } = data;
-    console.debug(
-      `📚 Received ${messages.length} messages from room history for: ${room}`,
-    );
 
     // Intentionally ignore replayed room history so entering a room starts fresh.
     if (!chatHistory.rooms[room]) {
@@ -5272,30 +2520,25 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   socket.on("user-joined", (data) => {
-    console.debug("📢 User joined:", data);
     addChatMessage({
       type: "system",
-      message: `${data.character.forename} has entered the room`,
+      message: `${data.character.forename} ${data.character.surname} has entered the room`,
       room: currentRoom.name, // room.id
       timestamp: Date.now(),
     });
-    console.debug("📝 Added user-joined system message.");
   });
 
   socket.on("user-left", (data) => {
-    console.debug("📢 User left:", data);
     addChatMessage({
       type: "system",
-      message: `${data.character.forename} has left the room`,
+      message: `${data.character.forename} ${data.character.surname} has left the room`,
       room: currentRoom.name, // room.id
       timestamp: Date.now(),
     });
-    console.debug("📝 Added user-left system message.");
   });
 
   // Function to add a chat message
   function addChatMessage(data) {
-    console.debug("📝 Adding chat message:", data);
 
     // Store message in room history
     if (!chatHistory.rooms[data.room]) {
@@ -5317,7 +2560,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
       if (data.type === "system") {
         messageDiv.textContent = data.message;
-        messageDiv.style.color = "#ffcc00";
       } else {
         const nameParts = [];
         if (data.displayName) {
@@ -5372,6 +2614,12 @@ document.addEventListener("DOMContentLoaded", function () {
       // Add to chat display
       const chatMessages = document.getElementById("chat-messages");
       chatMessages.appendChild(messageDiv);
+      // Prune oldest nodes so the live DOM stays bounded like the history
+      // array (200/room). Without this the chat element grows unbounded
+      // between room switches (updateChatDisplay is the only other reset).
+      while (chatMessages.childElementCount > 200) {
+        chatMessages.removeChild(chatMessages.firstElementChild);
+      }
       chatMessages.scrollTop = chatMessages.scrollHeight;
     }
   }
@@ -5386,6 +2634,7 @@ document.addEventListener("DOMContentLoaded", function () {
         deckplansPopup.style.display = "none";
         openMapSound.pause();
       }
+      document.getElementById("rules-popup").style.display = "none";
       document.getElementById("settings-popup").style.display = "block";
     });
 
@@ -5408,7 +2657,7 @@ document.addEventListener("DOMContentLoaded", function () {
     !cancelReport ||
     !reportForm
   ) {
-    console.error("❌ Report system elements not found:", {
+    console.error("Report system elements not found:", {
       reportBtn: !!reportBtn,
       reportModal: !!reportModal,
       closeReportModal: !!closeReportModal,
@@ -5416,11 +2665,9 @@ document.addEventListener("DOMContentLoaded", function () {
       reportForm: !!reportForm,
     });
   } else {
-    console.debug("✅ Report system elements found");
 
     reportBtn.addEventListener("click", () => {
       reportModal.style.display = "block";
-      console.debug("🚨 Report modal opened");
     });
 
     closeReportModal.addEventListener("click", () => {
@@ -5469,25 +2716,22 @@ document.addEventListener("DOMContentLoaded", function () {
         const result = await response.json();
 
         if (result.success) {
-          alert(
-            "✅ Report submitted successfully! Thank you for helping keep the game safe.",
-          );
+          alert("Thank you. Your report has been sent to the moderators.");
           reportModal.style.display = "none";
           reportForm.reset();
-          console.info("✅ Report submitted successfully");
         } else {
           const failureMessage =
             result.details ||
             result.error ||
-            "Failed to submit report. Please try again.";
-          alert(`❌ ${failureMessage}`);
-          console.error("❌ Report submission failed:", result.error);
+            "The report could not be sent. Please try again.";
+          alert(failureMessage);
+          console.error("Report submission failed:", result.error);
         }
       } catch (error) {
         alert(
-          "❌ Error submitting report. Please check your connection and try again.",
+          "The report could not be sent. Please check your connection and try again.",
         );
-        console.error("❌ Report submission error:", error);
+        console.error("Report submission error:", error);
       }
     });
   }
@@ -5502,9 +2746,10 @@ document.addEventListener("DOMContentLoaded", function () {
     if (settingsPopup && settingsPopup.style.display === "block") {
       settingsPopup.style.display = "none";
     }
+    document.getElementById("rules-popup").style.display = "none";
     deckplansPopup.style.display = "block";
     openMapSound.currentTime = 0; // Reset to start
-    openMapSound.play();
+    openMapSound.play().catch(() => {});
 
     // Show appropriate deckplan based on player location
     if (isPlayerInSouthampton()) {
@@ -5513,7 +2758,6 @@ document.addEventListener("DOMContentLoaded", function () {
       showBritannicDeckplans();
     }
 
-    console.debug("🗺️ Deckplans popup opened and sound played.");
   });
 
   closeDeckplansBtn.addEventListener("click", () => {
@@ -5536,21 +2780,19 @@ document.addEventListener("DOMContentLoaded", function () {
   // reopened or the DOM is rebuilt
   const roomCountsCache = new Map();
 
+  // Room tooltip text, worded like the passenger drawer:
+  // "First Class Lounge · 2 passengers"
+  function roomCountLabel(roomName, count) {
+    const total = Math.max(0, Number(count) || 0);
+    return `${roomName} · ${total} passenger${total === 1 ? "" : "s"}`;
+  }
+
+  // No native title on the marker: #room-tooltip already shows the name and
+  // count, and a title put the browser's own tooltip on top of it
   function setMarkerCountAttr(el, roomId, roomName) {
     const cached = roomCountsCache.get(roomId) ?? 0;
     el.setAttribute("data-user-count", String(cached));
-    el.setAttribute("title", `${roomName} - Users: ${cached}`);
-    if (el.namespaceURI === "http://www.w3.org/2000/svg") {
-      let titleEl = el.querySelector("title");
-      if (!titleEl) {
-        titleEl = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "title",
-        );
-        el.appendChild(titleEl);
-      }
-      titleEl.textContent = `${roomName} - Users: ${cached}`;
-    }
+    el.setAttribute("aria-label", roomName);
   }
 
   // Helper function to check if player is in Southampton
@@ -5568,6 +2810,8 @@ document.addEventListener("DOMContentLoaded", function () {
     // Reset popup size to default
     deckplansPopup.style.width = "";
     deckplansPopup.style.maxWidth = "";
+    // The town map and the Berth 44 plans are not the ship's plans
+    deckplansPopup.querySelector("h2").textContent = "Southampton";
 
     // Hide all Britannic deck buttons
     deckButtons.forEach((button) => {
@@ -5615,7 +2859,6 @@ document.addEventListener("DOMContentLoaded", function () {
     // Show the default category (Town of Southampton)
     showSouthamptonCategory("town");
 
-    console.debug("🗺️ Showing Southampton deckplan");
   }
 
   // Function to show specific Southampton category
@@ -5670,9 +2913,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Southampton room area clicked: berth_44_walkaway`,
-            );
             enterRoom(room);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -5681,7 +2921,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const tooltip = document.getElementById("room-tooltip");
           link.addEventListener("mouseenter", (e) => {
             const userCount = link.getAttribute("data-user-count") || "0";
-            tooltip.textContent = `${room.name} - Users: ${userCount}`;
+            tooltip.textContent = roomCountLabel(room.name, userCount);
             tooltip.style.display = "block";
             tooltip.style.left = `${e.clientX + 5}px`;
             tooltip.style.top = `${e.clientY + 5}px`;
@@ -5773,9 +3013,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 Ground room area clicked: dockside_cafe`,
-            );
             enterRoom(docksideCafe);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -5784,7 +3021,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const tooltip = document.getElementById("room-tooltip");
           link.addEventListener("mouseenter", (e) => {
             const userCount = link.getAttribute("data-user-count") || "0";
-            tooltip.textContent = `${docksideCafe.name} - Users: ${userCount}`;
+            tooltip.textContent = roomCountLabel(docksideCafe.name, userCount);
             tooltip.style.display = "block";
             tooltip.style.left = `${e.clientX + 5}px`;
             tooltip.style.top = `${e.clientY + 5}px`;
@@ -5823,9 +3060,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 Ground room area clicked: berth_44_forward`,
-            );
             enterRoom(berth44Forward);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -5834,7 +3068,10 @@ document.addEventListener("DOMContentLoaded", function () {
           const tooltip = document.getElementById("room-tooltip");
           link.addEventListener("mouseenter", (e) => {
             const userCount = link.getAttribute("data-user-count") || "0";
-            tooltip.textContent = `${berth44Forward.name} - Users: ${userCount}`;
+            tooltip.textContent = roomCountLabel(
+              berth44Forward.name,
+              userCount,
+            );
             tooltip.style.display = "block";
             tooltip.style.left = `${e.clientX + 5}px`;
             tooltip.style.top = `${e.clientY + 5}px`;
@@ -5873,9 +3110,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 Ground room area clicked: first_class_gangway`,
-            );
             enterRoom(firstClassGangway);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -5884,7 +3118,10 @@ document.addEventListener("DOMContentLoaded", function () {
           const tooltip = document.getElementById("room-tooltip");
           link.addEventListener("mouseenter", (e) => {
             const userCount = link.getAttribute("data-user-count") || "0";
-            tooltip.textContent = `${firstClassGangway.name} - Users: ${userCount}`;
+            tooltip.textContent = roomCountLabel(
+              firstClassGangway.name,
+              userCount,
+            );
             tooltip.style.display = "block";
             tooltip.style.left = `${e.clientX + 5}px`;
             tooltip.style.top = `${e.clientY + 5}px`;
@@ -5923,7 +3160,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(`🔍 Berth 44 Ground room area clicked: crew_gangway`);
             enterRoom(crewGangway);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -5932,7 +3168,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const tooltip = document.getElementById("room-tooltip");
           link.addEventListener("mouseenter", (e) => {
             const userCount = link.getAttribute("data-user-count") || "0";
-            tooltip.textContent = `${crewGangway.name} - Users: ${userCount}`;
+            tooltip.textContent = roomCountLabel(crewGangway.name, userCount);
             tooltip.style.display = "block";
             tooltip.style.left = `${e.clientX + 5}px`;
             tooltip.style.top = `${e.clientY + 5}px`;
@@ -5971,9 +3207,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 Ground room area clicked: third_class_gangway`,
-            );
             enterRoom(thirdClassGangway);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -5982,7 +3215,10 @@ document.addEventListener("DOMContentLoaded", function () {
           const tooltip = document.getElementById("room-tooltip");
           link.addEventListener("mouseenter", (e) => {
             const userCount = link.getAttribute("data-user-count") || "0";
-            tooltip.textContent = `${thirdClassGangway.name} - Users: ${userCount}`;
+            tooltip.textContent = roomCountLabel(
+              thirdClassGangway.name,
+              userCount,
+            );
             tooltip.style.display = "block";
             tooltip.style.left = `${e.clientX + 5}px`;
             tooltip.style.top = `${e.clientY + 5}px`;
@@ -6021,7 +3257,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(`🔍 Berth 44 Ground room area clicked: berth_44_aft`);
             enterRoom(berth44Aft);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -6030,7 +3265,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const tooltip = document.getElementById("room-tooltip");
           link.addEventListener("mouseenter", (e) => {
             const userCount = link.getAttribute("data-user-count") || "0";
-            tooltip.textContent = `${berth44Aft.name} - Users: ${userCount}`;
+            tooltip.textContent = roomCountLabel(berth44Aft.name, userCount);
             tooltip.style.display = "block";
             tooltip.style.left = `${e.clientX + 5}px`;
             tooltip.style.top = `${e.clientY + 5}px`;
@@ -6093,9 +3328,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 2nd Floor room area clicked: covered_walkway`,
-            );
             enterRoom(coveredWalkway);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -6104,7 +3336,10 @@ document.addEventListener("DOMContentLoaded", function () {
           const tooltip = document.getElementById("room-tooltip");
           link.addEventListener("mouseenter", (e) => {
             const userCount = link.getAttribute("data-user-count") || "0";
-            tooltip.textContent = `${coveredWalkway.name} - Users: ${userCount}`;
+            tooltip.textContent = roomCountLabel(
+              coveredWalkway.name,
+              userCount,
+            );
             tooltip.style.display = "block";
             tooltip.style.left = `${e.clientX + 5}px`;
             tooltip.style.top = `${e.clientY + 5}px`;
@@ -6138,9 +3373,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 2nd Floor room area clicked: boarding_tower`,
-            );
             enterRoom(boardingTower);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -6149,7 +3381,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const tooltip = document.getElementById("room-tooltip");
           link.addEventListener("mouseenter", (e) => {
             const userCount = link.getAttribute("data-user-count") || "0";
-            tooltip.textContent = `${boardingTower.name} - Users: ${userCount}`;
+            tooltip.textContent = roomCountLabel(boardingTower.name, userCount);
             tooltip.style.display = "block";
             tooltip.style.left = `${e.clientX + 5}px`;
             tooltip.style.top = `${e.clientY + 5}px`;
@@ -6165,7 +3397,6 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
 
-    console.debug(`🗺️ Showing Southampton category: ${category}`);
 
     const southamptonMarkers = deckplansPopup
       ? deckplansPopup.querySelectorAll(".room-marker[data-room-id]")
@@ -6176,14 +3407,91 @@ document.addEventListener("DOMContentLoaded", function () {
       ),
     );
   } // Function to show Britannic deckplans
+  // Passenger-class fill colours for the deck overlay (mirror of the CSS
+  // .room-marker.<class>-class rules and RBV.data.roomClassColors; the
+  // room editor reads the same palette).
+  function renderShipDeckOverlay(deck) {
+    const viewBoxes = window.deckViewBoxes || {};
+    const viewBox = viewBoxes[deck];
+    const rooms = deckRooms[deck];
+    if (!viewBox || !Array.isArray(rooms)) return; // no data → image only
+
+    const shapes = rooms
+      .filter((r) => r.coordinates)
+      .map((r) => {
+        const cls = r.class || "first";
+        const typeTok = r.type ? " " + r.type : "";
+        return (
+          '<a xlink:href="#" class="room-marker ' +
+          cls +
+          "-class" +
+          typeTok +
+          '" data-room-id="' +
+          r.id +
+          '"><g><polygon class="image-mapper-shape" points="' +
+          r.coordinates +
+          '"></polygon></g></a>'
+        );
+      })
+      .join("\n");
+
+    const svgOverlay = document.createElement("div");
+    svgOverlay.className = "deck-svg-overlay";
+    svgOverlay.innerHTML =
+      '<svg style="width:100%; position:absolute; top:0; left:0;" ' +
+      'xmlns="http://www.w3.org/2000/svg" ' +
+      'xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="' +
+      viewBox +
+      '">\n' +
+      shapes +
+      "\n</svg>";
+    document.querySelector(".deckplan-display").appendChild(svgOverlay);
+
+    const tooltip = document.getElementById("room-tooltip");
+    const svgRoomIds = new Set();
+    svgOverlay.querySelectorAll(".room-marker").forEach((link) => {
+      const roomId = link.getAttribute("data-room-id");
+      const room = rooms.find((r) => r.id === roomId);
+      if (!room) return;
+      link.setAttribute("data-room-name", room.name);
+      link.setAttribute(
+        "data-user-count",
+        String(roomCountsCache.get(roomId) ?? 0),
+      );
+      svgRoomIds.add(roomId);
+      setMarkerCountAttr(link, roomId, room.name);
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        enterRoom(room);
+      });
+      link.addEventListener("mouseenter", (e) => {
+        const userCount = link.getAttribute("data-user-count") || "0";
+        tooltip.textContent = roomCountLabel(room.name, userCount);
+        tooltip.style.display = "block";
+        tooltip.style.left = `${e.clientX + 5}px`;
+        tooltip.style.top = `${e.clientY + 5}px`;
+      });
+      link.addEventListener("mousemove", (e) => {
+        tooltip.style.left = `${e.clientX + 5}px`;
+        tooltip.style.top = `${e.clientY + 5}px`;
+      });
+      link.addEventListener("mouseleave", () => {
+        tooltip.style.display = "none";
+      });
+    });
+    emitRoomCountBatch(Array.from(svgRoomIds));
+  }
+
   function showBritannicDeckplans() {
-    // Reset popup size to default
-    deckplansPopup.style.width = "";
-    deckplansPopup.style.maxWidth = "";
+    // The ship plans are long, detailed 3200 px drawings: widen the popup for
+    // them and let the plan fill it (Southampton resets the popup size).
+    deckplansPopup.style.width = "95vw";
+    deckplansPopup.style.maxWidth = "1800px";
+    deckplansPopup.querySelector("h2").textContent = "Ship Deckplans";
 
     const deckplanDisplay = document.querySelector(".deckplan-display");
     if (deckplanDisplay) {
-      deckplanDisplay.style.maxWidth = "1100px";
+      deckplanDisplay.style.maxWidth = "none";
       deckplanDisplay.style.width = "100%";
     }
 
@@ -6214,786 +3522,28 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
     document.querySelector(`[data-deck="${currentDeck}"]`).click();
-
-    // After SVG overlays are created, set title attribute for all room markers
-    setTimeout(() => {
-      document.querySelectorAll(".room-marker").forEach((link) => {
-        const roomName = link.getAttribute("data-room-name");
-        const userCount = link.getAttribute("data-user-count") || "0";
-        if (roomName) {
-          link.setAttribute("title", `${roomName} - Users: ${userCount}`);
-        }
-      });
-    }, 0);
-    console.debug("🗺️ Showing Britannic deckplans");
   }
 
   deckButtons.forEach((button) => {
     button.addEventListener("click", () => {
       const deck = button.getAttribute("data-deck");
-      console.debug(`🖱️ Deck button clicked: ${deck}`);
+      deckButtons.forEach((b) => b.classList.toggle("active", b === button));
       currentDeckImage.src = `/images/decks/${deck}.jpg`;
       roomMarkers.innerHTML = "";
       const existingSvg = document.querySelector(".deck-svg-overlay");
       if (existingSvg) existingSvg.remove();
 
-      if (deck === "a_deck") {
-        const svgOverlay = document.createElement("div");
-        svgOverlay.className = "deck-svg-overlay";
-        svgOverlay.innerHTML = `
-        <svg style="width:100%; position:absolute; top:0; left:0;" xmlns="http://www.w3.org/2000/svg" 
-             xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1929 441">
-          <!-- First Class Lounge -->
-          <a xlink:href="#" class="room-marker first_class_lounge" data-room-id="first_class_lounge_a">
-            <g>
-              <polygon class="image-mapper-shape" points="825 140 863 140 881 126 912 125 925 139 933 140 948 140 961 125 997 125 1010 140 1046 140 1048 346 1010 347 997 362 965 362 948 347 928 346 923 349 914 362 885 362 868 348 862 347 827 347 825 140"></polygon>
-            </g>
-          </a>
-          <!-- Corridor -->
-          <a xlink:href="#" class="room-marker corridor" data-room-id="corridor_a">
-            <g>
-              <rect class="image-mapper-shape" x="1052" y="283" width="273" height="22"></rect>
-            </g>
-          </a>
-          <!-- Corridor -->
-          <a xlink:href="#" class="room-marker corridor" data-room-id="corridor">
-            <g>
-              <polygon class="image-mapper-shape" points="1517,280,1807,281,1808,202,1516,205,1516,192,1870,193,1870,203,1817,204,1817,281,1869,281,1869,294,1518,295"></polygon>
-            </g>
-          </a>
-          <!-- Reading & Writing Room -->
-          <a xlink:href="#" class="room-marker reading_writing_room" data-room-id="reading_writing_room_a">
-            <g>
-              <polygon class="image-mapper-shape" points="1060,139 1071,139 1081,134 1089,131 1097,128 1107,128 1113,130 1129,138 1151,138 1152,205 1147,204 1148,280 1060,281 1061,139 1060,139 1062,139"></polygon>
-            </g>
-          </a>
-          <!-- Grand Staircase (A-Deck) -->
-          <a xlink:href="#" class="room-marker grand_staircase" data-room-id="grand_staircase_a">
-            <g>
-              <polygon class="image-mapper-shape" points="1329,139 1452,139 1453,174 1497,175 1497,191 1516,192 1516,293 1497,293 1497,310 1452,310 1452,344 1328,344 1329,139"></polygon>
-            </g>
-          </a>
-          <!-- Aft Corridor -->
-          <a xlink:href="#" class="room-marker corridor" data-room-id="aft_corridor_a">
-            <g>
-              <polygon class="image-mapper-shape" points="568,187 822,186 823,206 568,207 568,187"></polygon>
-            </g>
-          </a>
-          <!-- Aft Grand Staircase -->
-          <a xlink:href="#" class="room-marker grand_staircase" data-room-id="aft_grand_staircase_a">
-            <g>
-              <polygon class="image-mapper-shape" points="455,142 499,142 500,168 561,169 562,207 563,323 500,323 500,347 456,347 455,142"></polygon>
-            </g>
-          </a>
-          <a xlink:href="#" class="room-marker smoking-room" data-room-id="first_class_smoking_room_a">
-            <g>
-              <polygon class="image-mapper-shape" points="289,142 449,141 449,206 324,206 325,349 290,348 290,363 217,364 216,348 182,347 180,144 214,143 215,129 288,128 288,141 290,141 289,142"></polygon>
-            </g>
-          </a>
-          <a xlink:href="#" class="room-marker palm-court" data-room-id="verandah_palm_court_a">
-            <g>
-              <polygon class="image-mapper-shape" points="19,130 34,130 39,128 48,115 98,115 101,116 111,128 127,128 128,206 19,206 19,130"></polygon>
-            </g>
-          </a>
-          <a xlink:href="#" class="room-marker promenade" data-room-id="first_class_starboard_enclosed_promenade_a">
-            <g>
-              <polygon class="image-mapper-shape" points="1053,305,1324,306,1323,347,1449,347,1449,360,1453,362,1793,360,1794,413,1060,421"></polygon>
-            </g>
-          </a>
-          <a xlink:href="#" class="room-marker promenade" data-room-id="first_class_port_enclosed_promenade_a">
-            <g>
-              <polygon class="image-mapper-shape" points="1058,135,1068,135,1089,124,1101,123,1109,124,1129,133,1450,133,1450,121,1647,122,1800,122,1799,71,1637,68,1545,67,1263,66,1056,68"></polygon>
-            </g>
-          </a>
-          <a xlink:href="#" class="room-marker promenade" data-room-id="first_class_port_promenade_a">
-            <g>
-              <polygon class="image-mapper-shape" points="17,246,5,245,6,71,169,71,445,68,1055,68,1055,133,1012,134,998,120,957,120,947,135,930,136,917,122,881,121,860,136,774,133,772,182,567,183,565,117,496,117,497,135,293,137,293,122,210,122,210,138,182,138,180,123,115,124,103,111,46,111,35,126,14,126,17,248"></polygon>
-            </g>
-          </a>
-          <a xlink:href="#" class="room-marker promenade" data-room-id="first_class_starboard_promenade_a">
-            <g>
-              <polygon class="image-mapper-shape" points="6,249,13,249,16,368,32,370,47,381,103,382,116,369,182,370,183,355,210,355,211,369,295,370,295,354,496,354,498,369,570,370,569,326,772,323,773,351,863,351,882,367,916,367,929,354,946,353,961,367,998,368,1003,364,1011,352,1053,351,1053,306,1055,421,521,423,9,422,7,422"></polygon>
-            </g>
-          </a>
-          <a xlink:href="#" class="room-marker corridor" data-room-id="first_a_corridor">
-            <g>
-              <polygon class="image-mapper-shape" points="1323,191,1187,191,1187,171,1181,171,1182,204,1324,204"></polygon>
-            </g>
-          </a>
-<a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a3">
-    <g>
-      <polygon class="image-mapper-shape" points="1826,294 1870,294 1870,355 1826,355 1827,294"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A2 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a4">
-    <g>
-      <polygon class="image-mapper-shape" points="1827,127 1870,127 1870,189 1827,190 1826,127"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A3 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a7">
-    <g>
-      <polygon class="image-mapper-shape" points="1762,295 1823,295 1823,324 1763,324 1762,324 1762,295"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A4 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a9">
-    <g>
-      <polygon class="image-mapper-shape" points="1763,327 1822,327 1823,356 1763,356 1763,327"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A5 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a6">
-    <g>
-      <polygon class="image-mapper-shape" points="1775,206 1804,206 1805,241 1775,241 1776,206"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A6 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a5">
-    <g>
-      <polygon class="image-mapper-shape" points="1776,243 1804,244 1805,277 1775,278 1775,243"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A7 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a10">
-    <g>
-      <polygon class="image-mapper-shape" points="1762,127 1824,127 1824,156 1762,156 1762,127"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A8 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a8">
-    <g>
-      <polygon class="image-mapper-shape" points="1762,159 1822,159 1823,188 1762,189"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A9 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a2">
-    <g>
-      <polygon class="image-mapper-shape" points="1820,206 1870,206 1871,241 1821,241 1821,206"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A10 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a1">
-    <g>
-      <polygon class="image-mapper-shape" points="1820,244 1870,244 1870,278 1820,278 1820,244"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A11 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a11">
-    <g>
-      <polygon class="image-mapper-shape" points="1688,295 1749,296 1750,324 1688,323"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A12 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a12">
-    <g>
-      <polygon class="image-mapper-shape" points="1690,158 1749,158 1749,188 1690,189"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A14 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a14">
-    <g>
-      <polygon class="image-mapper-shape" points="1689,155 1749,156 1749,127 1689,127"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A15 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a15">
-    <g>
-      <polygon class="image-mapper-shape" points="1689,328 1749,328 1750,357 1688,356"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A16 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a16">
-    <g>
-      <polygon class="image-mapper-shape" points="1626,158 1684,159 1684,189 1626,188"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A17 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a17">
-    <g>
-      <polygon class="image-mapper-shape" points="1627,296 1684,296 1684,324 1626,324"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A18 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a18">
-    <g>
-      <polygon class="image-mapper-shape" points="1626,127 1684,128 1684,156 1626,156"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A19 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a19">
-    <g>
-      <polygon class="image-mapper-shape" points="1627,328 1684,327 1684,356 1627,356"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A20 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a20">
-    <g>
-      <polygon class="image-mapper-shape" points="1557,159 1613,159 1613,189 1557,188"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A21 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a21">
-    <g>
-      <polygon class="image-mapper-shape" points="1557,297 1612,297 1612,324 1558,324"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A22 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a22">
-    <g>
-      <polygon class="image-mapper-shape" points="1611,155 1557,155 1556,127 1612,127"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A23 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a23">
-    <g>
-      <polygon class="image-mapper-shape" points="1556,329 1612,328 1612,356 1556,356"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A30 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a30">
-    <g>
-      <polygon class="image-mapper-shape" points="1289,189,1290,139,1322,139,1324,188"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A32 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a32">
-    <g>
-      <polygon class="image-mapper-shape" points="1257,139,1285,139,1286,139,1287,188,1258,188"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A34 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a34">
-    <g>
-      <polygon class="image-mapper-shape" points="1183,139,1210,139,1212,189,1190,189,1188,169,1183,168"></polygon>
-    </g>
-  </a>
-  <!-- Cabin A36 -->
-  <a xlink:href="#" class="room-marker cabin" data-room-id="cabin_a36">
-    <g>
-      <polygon class="image-mapper-shape" points="1158,138,1178,139,1179,179,1157,178"></polygon>
-    </g>
-  </a>
-  <!-- 1st Class Forward Overlooking Promenade -->
-  <a xlink:href="#" class="room-marker promenade" data-room-id="first_class_forward_overlooking_promenade_a">
-    <g>
-      <polygon class="image-mapper-shape" points="1800,72,1911,73,1913,408,1800,410,1800,363,1871,362,1876,359,1877,126,1876,123,1871,122,1801,122"></polygon>
-    </g>
-  </a>
-  <!-- 2nd Class Staircase -->
-  <a xlink:href="#" class="room-marker covered-walkway" data-room-id="second_class_staircase_a">
-    <g>
-      <polygon class="image-mapper-shape" points="86,210,176,209,176,284,87,285"></polygon>
-    </g>
-  </a>
-</svg>
-`;
-        document.querySelector(".deckplan-display").appendChild(svgOverlay);
-
-        document.querySelectorAll(".room-marker").forEach((link) => {
-          const roomId = link.getAttribute("data-room-id");
-          const room = deckRooms.a_deck.find((r) => r.id === roomId);
-          if (room) {
-            link.setAttribute("data-room-name", room.name);
-            {
-              const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id"),
-              );
-              link.setAttribute("data-user-count", String(cached ?? 0));
-            }
-
-            setMarkerCountAttr(link, roomId, room.name);
-
-            link.addEventListener("click", (e) => {
-              e.preventDefault();
-              console.debug(`🔍 SVG room area clicked: ${roomId}`);
-              enterRoom(room);
-            });
-
-            // Add tooltip functionality
-            const tooltip = document.getElementById("room-tooltip");
-            link.addEventListener("mouseenter", (e) => {
-              const userCount = link.getAttribute("data-user-count") || "0";
-              tooltip.textContent = `${room.name} - Users: ${userCount}`;
-              tooltip.style.display = "block";
-              tooltip.style.left = `${e.clientX + 5}px`;
-              tooltip.style.top = `${e.clientY + 5}px`;
-            });
-            link.addEventListener("mousemove", (e) => {
-              tooltip.style.left = `${e.clientX + 5}px`;
-              tooltip.style.top = `${e.clientY + 5}px`;
-            });
-            link.addEventListener("mouseleave", () => {
-              tooltip.style.display = "none";
-            });
-          }
-        });
-        console.debug("🗺️ Added SVG overlay for A Deck with room markers");
-      }
-
-      if (deck === "d_deck") {
-        const svgOverlay = document.createElement("div");
-        svgOverlay.className = "deck-svg-overlay";
-        svgOverlay.innerHTML = `
-        <svg style="width:100%; position:absolute; top:0; left:0;" xmlns="http://www.w3.org/2000/svg" 
-             xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1000 124">
-          <!-- First Class Reception Room -->
-          <a xlink:href="#" class="room-marker reception-room" data-room-id="first_class_reception_d">
-            <g>
-              <polygon class="image-mapper-shape" points="582,4 675,5 676,105 583,106 582,4"></polygon>
-            </g>
-          </a>
-          
-          <!-- First Class Dining Room -->
-          <a xlink:href="#" class="room-marker dining-room" data-room-id="first_class_dining_room_d">
-            <g>
-              <polygon class="image-mapper-shape" points="453,5 581,4 581,44 555,44 555,68 582,68 582,107 454,107 454,69 485,69 485,44 452,44 453,5"></polygon>
-            </g>
-          </a>
-        </svg>
-        `;
-        document.querySelector(".deckplan-display").appendChild(svgOverlay);
-
-        document.querySelectorAll(".room-marker").forEach((link) => {
-          const roomId = link.getAttribute("data-room-id");
-          const room = deckRooms.d_deck.find((r) => r.id === roomId);
-          if (room) {
-            link.setAttribute("data-room-name", room.name);
-            {
-              const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id"),
-              );
-              link.setAttribute("data-user-count", String(cached ?? 0));
-            }
-
-            setMarkerCountAttr(link, roomId, room.name);
-
-            link.addEventListener("click", (e) => {
-              e.preventDefault();
-              console.debug(`🔍 SVG room area clicked: ${roomId}`);
-              enterRoom(room);
-            });
-
-            // Add tooltip functionality
-            const tooltip = document.getElementById("room-tooltip");
-            link.addEventListener("mouseenter", (e) => {
-              const userCount = link.getAttribute("data-user-count") || "0";
-              tooltip.textContent = `${room.name} - Users: ${userCount}`;
-              tooltip.style.display = "block";
-              tooltip.style.left = `${e.clientX + 5}px`;
-              tooltip.style.top = `${e.clientY + 5}px`;
-            });
-            link.addEventListener("mousemove", (e) => {
-              tooltip.style.left = `${e.clientX + 5}px`;
-              tooltip.style.top = `${e.clientY + 5}px`;
-            });
-            link.addEventListener("mouseleave", () => {
-              tooltip.style.display = "none";
-            });
-          }
-        });
-        console.debug("🗺️ Added SVG overlay for D Deck with room markers");
-      }
-
-      if (deck === "boat_deck") {
-        const svgOverlay = document.createElement("div");
-        svgOverlay.className = "deck-svg-overlay";
-        svgOverlay.innerHTML = `
-        <svg style="width:100%; position:absolute; top:0; left:0;" xmlns="http://www.w3.org/2000/svg" 
-             xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 635 156">
-          <!-- Grand Staircase -->
-          <a xlink:href="#" class="room-marker grand_staircase" data-room-id="grand_staircase_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="435,46 476,46 476,64 495,64 495,98 476,98 476,114 435,114"></polygon>
-            </g>
-          </a>
-          <!-- Children's Playroom -->
-          <a xlink:href="#" class="room-marker" data-room-id="childrens_playroom_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="377,46 434,46 434,68 377,68"></polygon>
-            </g>
-          </a>
-          <!-- Gymnasium -->
-          <a xlink:href="#" class="room-marker gymnasium" data-room-id="gymnasium_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="377,94 434,94 434,115 377,115"></polygon>
-            </g>
-          </a>
-          <!-- Port Promenade -->
-          <a xlink:href="#" class="room-marker promenade" data-room-id="port_promenade_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="230,68,230,24,353,23,508,23,508,51,476,51,476,45,375,45,372,44,367,41,357,41,351,45,330,45,327,40,312,40,309,44,309,45,303,45,298,41,283,41,280,45,268,45,266,45,266,56,251,56,251,68"></polygon>
-            </g>
-          </a>
-          <!-- Starboard Promenade -->
-          <a xlink:href="#" class="room-marker promenade" data-room-id="starboard_promenade_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="229,98,235,98,235,103,242,103,243,103,243,113,267,113,267,116,267,117,282,117,285,121,287,122,299,122,304,117,310,117,313,122,325,122,330,117,342,117,344,116,344,101,375,101,375,117,477,117,478,117,478,110,509,110,509,139,230,140"></polygon>
-            </g>
-          </a>
-          <!-- Starboard Officers Promenade -->
-          <a xlink:href="#" class="room-marker promenade crew-promenade" data-room-id="starboard_officers_promenade_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="515,110,609,110,609,138,515,139"></polygon>
-            </g>
-          </a>
-          <!-- Port Officers Promenade -->
-          <a xlink:href="#" class="room-marker promenade crew-promenade" data-room-id="port_officers_promenade_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="514,23,608,23,608,51,514,51"></polygon>
-            </g>
-          </a>
-          <!-- Port Bridge Wing -->
-          <a xlink:href="#" class="room-marker bridge_wing crew-promenade" data-room-id="port_bridge_wing_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="596,53,610,53,610,21,616,21,617,21,617,33,620,41,626,50,629,56,629,62,608,62,608,67,596,67"></polygon>
-            </g>
-          </a>
-          <!-- Starboard Bridge Wing -->
-          <a xlink:href="#" class="room-marker bridge_wing crew-promenade" data-room-id="starboard_bridge_wing_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="596,92,609,92,610,92,610,98,629,98,629,102,627,108,623,114,619,120,617,126,617,139,611,139,611,107,596,107"></polygon>
-            </g>
-          </a>
-          <!-- Bridge -->
-          <a xlink:href="#" class="room-marker bridge crew-promenade" data-room-id="bridge_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="609,64,628,64,628,97,610,97"></polygon>
-            </g>
-          </a>
-          <!-- Wheelhouse -->
-          <a xlink:href="#" class="room-marker wheelhouse crew-promenade" data-room-id="wheelhouse_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="592,69,608,69,608,91,592,91"></polygon>
-            </g>
-          </a>
-          <!-- Starboard Engineer's Promenade -->
-          <a xlink:href="#" class="room-marker promenade crew-promenade" data-room-id="starboard_engineers_promenade_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="186,110,186,140,229,140,229,98,221,98,219,98,219,111,185,111"></polygon>
-            </g>
-          </a>
-          <!-- Port Engineer's Promenade -->
-          <a xlink:href="#" class="room-marker promenade crew-promenade" data-room-id="port_engineers_promenade_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="186,24,228,24,228,80,219,80,219,53,186,53"></polygon>
-            </g>
-          </a>
-          <!-- Starboard 2nd Class Promenade -->
-          <a xlink:href="#" class="room-marker promenade second-class" data-room-id="starboard_2nd_class_promenade_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="184,94,184,140,13,140,14,82,21,82,21,94,54,94,54,82,184,82"></polygon>
-            </g>
-          </a>
-          <!-- Port 2nd Class Promenade -->
-          <a xlink:href="#" class="room-marker promenade second-class" data-room-id="port_2nd_class_promenade_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="183,79,183,24,14,24,14,80,21,80,21,69,54,69,54,80,183,80"></polygon>
-            </g>
-          </a>
-          <!-- 2nd Class Staircase -->
-          <a xlink:href="#" class="room-marker staircase second-class" data-room-id="2nd_class_staircase_bd">
-            <g>
-              <polygon class="image-mapper-shape" points="22,70,52,70,52,92,22,92"></polygon>
-            </g>
-          </a>
-        </svg>
-        `;
-        document.querySelector(".deckplan-display").appendChild(svgOverlay);
-
-        document.querySelectorAll(".room-marker").forEach((link) => {
-          const roomId = link.getAttribute("data-room-id");
-          const room = deckRooms.boat_deck.find((r) => r.id === roomId);
-          if (room) {
-            link.setAttribute("data-room-name", room.name);
-            {
-              const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id"),
-              );
-              link.setAttribute("data-user-count", String(cached ?? 0));
-            }
-
-            setMarkerCountAttr(link, room.location.chatRoom, room.name);
-
-            link.addEventListener("click", (e) => {
-              e.preventDefault();
-              console.debug(`🔍 SVG room area clicked: ${roomId}`);
-              enterRoom(room);
-            });
-
-            // Add tooltip functionality
-            const tooltip = document.getElementById("room-tooltip");
-            link.addEventListener("mouseenter", (e) => {
-              const userCount = link.getAttribute("data-user-count") || "0";
-              tooltip.textContent = `${room.name} - Users: ${userCount}`;
-              tooltip.style.display = "block";
-              tooltip.style.left = `${e.clientX + 5}px`;
-              tooltip.style.top = `${e.clientY + 5}px`;
-            });
-            link.addEventListener("mousemove", (e) => {
-              tooltip.style.left = `${e.clientX + 5}px`;
-              tooltip.style.top = `${e.clientY + 5}px`;
-            });
-            link.addEventListener("mouseleave", () => {
-              tooltip.style.display = "none";
-            });
-          }
-        });
-        console.debug("🗺️ Added SVG overlay for Boat Deck with room markers");
-      }
-
-      if (deck === "b_deck") {
-        const svgOverlay = document.createElement("div");
-        svgOverlay.className = "deck-svg-overlay";
-        svgOverlay.innerHTML = `
-        <svg style="width:100%; position:absolute; top:0; left:0;" xmlns="http://www.w3.org/2000/svg" 
-             xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1342 142">
-          <!-- Forecastle -->
-          <a xlink:href="#" class="room-marker crew-promenade" data-room-id="forecastle_b">
-            <g>
-              <polygon class="image-mapper-shape" points="1074,24,1097,26,1121,29,1148,35,1172,42,1193,50,1222,65,1237,75,1232,79,1219,88,1201,98,1181,106,1164,112,1145,117,1129,120,1117,122,1103,124,1092,126,1084,126,1084,128,1083,126,1083,127,1075,127"></polygon>
-            </g>
-          </a>
-          <!-- 1st Class B-Deck Forward Overlooking Promenade -->
-          <a xlink:href="#" class="room-marker promenade" data-room-id="first_class_b_forward_overlooking_promenade">
-            <g>
-              <polygon class="image-mapper-shape" points="966,18,968,23,968,34,993,34,994,34,995,120,968,120,968,131,965,136,1007,135,1006,18"></polygon>
-            </g>
-          </a>
-          <!-- 1st Class Port B-Deck Enclosed Promenade -->
-          <a xlink:href="#" class="room-marker promenade" data-room-id="first_class_port_b_enclosed_promenade">
-            <g>
-              <polygon class="image-mapper-shape" points="794,17 888,17 965,18 966,24 967,34 836,34 836,40 794,40"></polygon>
-            </g>
-          </a>
-          <!-- 1st Class Starboard B-Deck Enclosed Promenade -->
-          <a xlink:href="#" class="room-marker promenade" data-room-id="first_class_starboard_b_enclosed_promenade">
-            <g>
-              <polygon class="image-mapper-shape" points="797,114 837,114 838,121 967,120 967,129 963,136 871,137 798,138"></polygon>
-            </g>
-          </a>
-          <!-- Poop Deck -->
-          <a xlink:href="#" class="room-marker poop-deck" data-room-id="poop_deck">
-            <g>
-              <polygon class="image-mapper-shape" points="204,101 205,100 205,135 184,133 143,127 117,120 102,113 93,100 90,92 90,74 94,62 104,52 118,45 146,39 170,35 204,30 204,62 192,62 192,60 146,61 145,78 153,78 153,87 146,87 146,104 192,104 192,101"></polygon>
-            </g>
-          </a>
-          <!-- Grand Staircase -->
-          <a xlink:href="#" class="room-marker grand-staircase" data-room-id="grand_staircase_b">
-            <g>
-              <polygon class="image-mapper-shape" points="794,42,836,42,836,53,852,53,852,58,869,58,869,96,853,96,853,101,837,101,837,113,795,113"></polygon>
-            </g>
-          </a>
-          <!-- 3rd Class Smoke Room -->
-          <a xlink:href="#" class="room-marker third-class-smoking-room" data-room-id="third_class_smoke_room_b">
-            <g>
-              <polygon class="image-mapper-shape" points="155,62,191,62,191,83,197,83,197,93,191,93,191,103,155,103"></polygon>
-            </g>
-          </a>
-          <!-- 2nd Class Smoke Room -->
-          <a xlink:href="#" class="room-marker second-class smoking-room" data-room-id="second_class_smoke_room_b">
-            <g>
-              <polygon class="image-mapper-shape" points="334,41,371,41,371,122,334,121,334,100,331,100,331,63,334,63"></polygon>
-            </g>
-          </a>
-          <!-- 2nd Class Starboard Promenade -->
-          <a xlink:href="#" class="room-marker second-class" data-room-id="second_class_starboard_promenade_b">
-            <g>
-              <polygon class="image-mapper-shape" points="395,118,395,140,331,139,242,137,243,82,266,82,266,94,282,94,282,95,329,95,329,99,329,100,317,100,316,123,372,123,372,118"></polygon>
-            </g>
-          </a>
-          <!-- 2nd Class Port Promenade -->
-          <a xlink:href="#" class="room-marker second-class" data-room-id="second_class_port_promenade_b">
-            <g>
-              <polygon class="image-mapper-shape" points="395,22,395,44,372,44,372,40,316,40,316,63,329,63,329,68,266,69,266,81,243,81,243,27,299,24,339,23"></polygon>
-            </g>
-          </a>
-          <!-- B-Deck Aft Staircase -->
-          <a xlink:href="#" class="room-marker first-class" data-room-id="b_deck_aft_staircase">
-            <g>
-              <polygon class="image-mapper-shape" points="498,60,532,60,532,100,512,100,512,105,498,105,498,102,495,102,495,98,498,98"></polygon>
-            </g>
-          </a>
-          <!-- Restaurant Reception Room -->
-          <a xlink:href="#" class="room-marker first-class" data-room-id="restaurant_reception_room">
-            <g>
-              <polygon class="image-mapper-shape" points="456,95,493,95,493,140,456,140"></polygon>
-            </g>
-          </a>
-          <!-- À La Carte Restaurant -->
-          <a xlink:href="#" class="room-marker first-class" data-room-id="a_la_carte_restaurant">
-            <g>
-              <polygon class="image-mapper-shape" points="397,22,454,21,454,140,397,140,397,95,405,95,405,66,397,66"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-81 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b81">
-            <g>
-              <polygon class="image-mapper-shape" points="538,112,552,112,552,140,538,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-83 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b83">
-            <g>
-              <polygon class="image-mapper-shape" points="537,99,548,99,548,111,538,111,537,111"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-79 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b79">
-            <g>
-              <polygon class="image-mapper-shape" points="552,99,565,99,565,140,552,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-77 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b77">
-            <g>
-              <polygon class="image-mapper-shape" points="566,99,576,99,576,111,566,111"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-75 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b75">
-            <g>
-              <polygon class="image-mapper-shape" points="566,112,578,112,579,112,579,140,566,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-73 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b73">
-            <g>
-              <polygon class="image-mapper-shape" points="579,98,592,98,592,140,579,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-71 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b71">
-            <g>
-              <polygon class="image-mapper-shape" points="593,99,604,99,604,111,593,111"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-69 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b69">
-            <g>
-              <polygon class="image-mapper-shape" points="592,112,606,112,606,140,592,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-67 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b67">
-            <g>
-              <polygon class="image-mapper-shape" points="607,98,619,98,619,140,606,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-63 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b63">
-            <g>
-              <polygon class="image-mapper-shape" points="620,99,630,99,630,111,620,111"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-65 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b65">
-            <g>
-              <polygon class="image-mapper-shape" points="620,112,633,112,633,140,620,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-61 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b61">
-            <g>
-              <polygon class="image-mapper-shape" points="634,99,646,99,646,140,634,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-57 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b57">
-            <g>
-              <polygon class="image-mapper-shape" points="646,99,658,99,658,110,646,110"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-59 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b59">
-            <g>
-              <polygon class="image-mapper-shape" points="646,111,660,111,661,140,646,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-55 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b55">
-            <g>
-              <polygon class="image-mapper-shape" points="661,98,674,98,674,140,662,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-53 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b53">
-            <g>
-              <polygon class="image-mapper-shape" points="675,99,685,99,685,110,675,110"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-51 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b51">
-            <g>
-              <polygon class="image-mapper-shape" points="675,111,688,111,688,140,675,140"></polygon>
-            </g>
-          </a>
-          <!-- Cabin B-49 -->
-          <a xlink:href="#" class="room-marker cabin first-class" data-room-id="cabin_b49">
-            <g>
-              <polygon class="image-mapper-shape" points="689,98,704,98,704,139,689,139"></polygon>
-            </g>
-          </a>
-        </svg>
-        `;
-        document.querySelector(".deckplan-display").appendChild(svgOverlay);
-
-        const svgRoomIds = new Set();
-
-        document.querySelectorAll(".room-marker").forEach((link) => {
-          const roomId = link.getAttribute("data-room-id");
-          const room = deckRooms.b_deck.find((r) => r.id === roomId);
-          if (room) {
-            link.setAttribute("data-room-name", room.name);
-            {
-              const cached = roomCountsCache.get(
-                link.getAttribute("data-room-id"),
-              );
-              link.setAttribute("data-user-count", String(cached ?? 0));
-            }
-            svgRoomIds.add(roomId);
-
-            setMarkerCountAttr(link, roomId, room.name);
-
-            link.addEventListener("click", (e) => {
-              e.preventDefault();
-              console.debug(`🔍 SVG room area clicked: ${roomId}`);
-              enterRoom(room);
-            });
-
-            // Add tooltip functionality
-            const tooltip = document.getElementById("room-tooltip");
-            link.addEventListener("mouseenter", (e) => {
-              const userCount = link.getAttribute("data-user-count") || "0";
-              tooltip.textContent = `${room.name} - Users: ${userCount}`;
-              tooltip.style.display = "block";
-              tooltip.style.left = `${e.clientX + 5}px`;
-              tooltip.style.top = `${e.clientY + 5}px`;
-            });
-            link.addEventListener("mousemove", (e) => {
-              tooltip.style.left = `${e.clientX + 5}px`;
-              tooltip.style.top = `${e.clientY + 5}px`;
-            });
-            link.addEventListener("mouseleave", () => {
-              tooltip.style.display = "none";
-            });
-          }
-        });
-        emitRoomCountBatch(Array.from(svgRoomIds));
-        console.debug("🗺️ Added SVG overlay for B Deck with room markers");
-      }
+      // Ship-deck room overlays are built from deckRooms data
+      // (coordinates + passenger class) by renderShipDeckOverlay below,
+      // not from hardcoded inline SVG. Decks without a viewBox entry
+      // (c/e/f/lo/tank) simply show the plan image with no room markers.
+      renderShipDeckOverlay(deck);
 
       if (deckRooms[deck]) {
-        console.debug(`✅ Found ${deckRooms[deck].length} rooms for ${deck}`);
         const roomsToRequest = new Set();
         deckRooms[deck].forEach((room) => {
           if (room.isSVG) {
-            console.debug(`ℹ️ Room ${room.name} is SVG, skipping marker`);
           } else if (room.x !== undefined && room.y !== undefined) {
-            console.debug(
-              `📍 Creating marker for ${room.name} at ${room.x}%, ${room.y}%`,
-            );
             const marker = document.createElement("div");
             marker.className = `room-marker ${room.type} ${room.id}`;
             marker.style.left = `${room.x}%`;
@@ -7009,7 +3559,6 @@ document.addEventListener("DOMContentLoaded", function () {
             setMarkerCountAttr(marker, room.location.chatRoom, room.name);
 
             marker.addEventListener("click", () => {
-              console.debug(`🔍 Room marker clicked: ${room.name}`);
               enterRoom(room);
             });
 
@@ -7017,7 +3566,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const tooltip = document.getElementById("room-tooltip");
             marker.addEventListener("mouseenter", (e) => {
               const userCount = marker.getAttribute("data-user-count") || "0";
-              tooltip.textContent = `${room.name} - Users: ${userCount}`;
+              tooltip.textContent = roomCountLabel(room.name, userCount);
               tooltip.style.display = "block";
               tooltip.style.left = `${e.clientX + 5}px`;
               tooltip.style.top = `${e.clientY + 5}px`;
@@ -7031,30 +3580,28 @@ document.addEventListener("DOMContentLoaded", function () {
             });
 
             roomMarkers.appendChild(marker);
-            console.debug(`📍 Added room marker for: ${room.name}`);
             roomsToRequest.add(room.location.chatRoom);
           } else {
-            console.warn(
-              `🚫 Skipped adding marker for ${room.name} (no coordinates)`,
-            );
           }
         });
         emitRoomCountBatch(Array.from(roomsToRequest));
       } else {
-        console.warn(`❌ No rooms found for deck: ${deck}`);
       }
     });
   });
 
   // Note: Deck plan initialization is now handled dynamically in deckplans button click
-  console.debug("🗺️ Initialized deck plans functionality.");
 
-  // Tooltip hover functionality
-  // No custom tooltip logic needed; use native title attribute
-
-  function positionTooltip(e) {
-    // No-op: custom tooltip removed; using native title attribute
-  }
+  // The room markers put #room-tooltip just right of the cursor, which runs
+  // off the window for rooms near the bow: flip it to the cursor's left there
+  const roomTooltip = document.getElementById("room-tooltip");
+  document.addEventListener("mousemove", (e) => {
+    if (!roomTooltip || roomTooltip.style.display !== "block") return;
+    const width = roomTooltip.offsetWidth;
+    if (e.clientX + 5 + width > window.innerWidth) {
+      roomTooltip.style.left = `${e.clientX - 5 - width}px`;
+    }
+  });
 
   function emitRoomCountBatch(roomIds) {
     if (!socket || !roomIds || !roomIds.length) return;
@@ -7099,8 +3646,16 @@ document.addEventListener("DOMContentLoaded", function () {
   function drawLocationImage(imagePath, isResize = false, callbacks = {}) {
     const ctx = ensureLocationCanvas();
     if (!ctx || !imagePath) return;
-    console.debug("🔍 drawLocationImage called:", { imagePath, isResize });
     if (!isResize && imagePath === currentLocationImageSrc) {
+      // Already showing: still tell the caller, or entering a room that shares the
+      // picture (or re-entering the same room) never slides the panels back in.
+      if (typeof callbacks.onLoad === "function") {
+        callbacks.onLoad({
+          imagePath,
+          width: locationCanvas.width,
+          height: locationCanvas.height,
+        });
+      }
       return;
     }
 
@@ -7123,7 +3678,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     };
     renderImage.onerror = (err) => {
-      console.error("❌ Failed to draw location image", imagePath, err);
+      console.error("Failed to draw location image", imagePath, err);
       renderImage.onload = null;
       renderImage.onerror = null;
       if (typeof onError === "function") {
@@ -7139,7 +3694,6 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       roomCountsCache.set(roomId, Number(count));
     } catch (e) {
-      console.warn("Could not cache room count", roomId, e);
     }
 
     if (
@@ -7156,23 +3710,11 @@ document.addEventListener("DOMContentLoaded", function () {
       marker.setAttribute("data-user-count", count);
       const roomName = marker.getAttribute("data-room-name");
 
-      // Update title attribute for regular room markers
-      marker.title = `${roomName} - Users: ${count}`;
-
-      // Update SVG title elements for SVG room markers
-      if (marker.namespaceURI === "http://www.w3.org/2000/svg") {
-        let titleEl = marker.querySelector("title");
-        if (titleEl) {
-          titleEl.textContent = `${roomName} - Users: ${count}`;
-        }
-      }
-
       // Update tooltip if it's currently being displayed for this room
       const tooltip = document.getElementById("room-tooltip");
       if (tooltip && tooltip.style.display === "block") {
-        const currentTooltipText = tooltip.textContent;
-        if (currentTooltipText.includes(roomName)) {
-          tooltip.textContent = `${roomName} - Users: ${count}`;
+        if (tooltip.textContent.startsWith(`${roomName} · `)) {
+          tooltip.textContent = roomCountLabel(roomName, count);
         }
       }
     });
@@ -7208,7 +3750,6 @@ document.addEventListener("DOMContentLoaded", function () {
   if (chatColorPicker) {
     chatColorPicker.addEventListener("input", (e) => {
       const selectedColor = e.target.value;
-      console.debug(`🎨 Chat color preview: ${selectedColor}`);
       applyOwnChatColor(selectedColor);
 
       if (chatColorEmitTimeout) {
@@ -7217,7 +3758,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
       chatColorEmitTimeout = setTimeout(() => {
         chatColorEmitTimeout = null;
-        console.debug(`📤 Sending chat color update: ${selectedColor}`);
         emitChatColorChange(selectedColor);
       }, 250);
     });
@@ -7234,7 +3774,6 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   socket.on("assign-chat-color", (color) => {
-    console.debug(`🎨 Assigned chat color from server: ${color}`);
     applyOwnChatColor(color);
     if (chatColorPicker) {
       chatColorPicker.value = color;
@@ -7243,7 +3782,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   socket.on("update-chat-color", ({ socketId, userId, color }) => {
     const idToLookup = socketId || userId;
-    console.debug(`🎨 User ${idToLookup} changed chat color to: ${color}`);
     updateMessagesForUser(idToLookup, color);
 
     if (socket && socket.id && idToLookup === socket.id) {
@@ -7256,8 +3794,7 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   socket.on("game-user-count", (count) => {
-    console.debug("🎮 Received game-user-count:", count);
-    document.getElementById("people").textContent = `People Onboard: ${count}`;
+    document.getElementById("people").textContent = `Passengers: ${count}`;
   });
 
   // Add this inside your DOMContentLoaded event listener
@@ -7266,42 +3803,38 @@ document.addEventListener("DOMContentLoaded", function () {
   const closeRulesBtn = document.querySelector(".close-rules");
 
   rulesBtn.addEventListener("click", () => {
+    // Rules opens where Settings does and over the deck plans: close those
+    // first, as they already close each other
+    document.getElementById("settings-popup").style.display = "none";
+    if (deckplansPopup.style.display === "block") {
+      deckplansPopup.style.display = "none";
+      openMapSound.pause();
+    }
     rulesPopup.style.display = "block";
-    console.debug("📋 Rules popup opened");
   });
 
   closeRulesBtn.addEventListener("click", () => {
     rulesPopup.style.display = "none";
-    console.debug("📋 Rules popup closed");
   });
 
   // Close rules popup when clicking outside
   window.addEventListener("click", (event) => {
     if (event.target === rulesPopup) {
       rulesPopup.style.display = "none";
-      console.debug("📋 Rules popup closed by clicking outside");
     }
   });
 
-  // Updated refresh button logic to cycle through room images
+  // The refresh button steps through the room's pictures
   const refreshBtn = document.getElementById("refresh-location-btn");
 
   if (refreshBtn) {
     refreshBtn.addEventListener("click", () => {
       // Log the action for debugging
-      console.debug(
-        `🔄 Refresh button clicked, currentRoom.name: ${currentRoom.name}`,
-      );
 
       // Check if there's a current room and images available
       if (!currentRoom.name || !roomImages[currentRoom.name]) {
-        console.warn("⚠️ Cannot refresh: No images available for this room");
         return;
       }
-
-      // Provide visual feedback on the button (optional, does not affect image)
-      refreshBtn.classList.add("button-active");
-      setTimeout(() => refreshBtn.classList.remove("button-active"), 300);
 
       // Use the centralized cycleImage function
       locationImageSystem.cycleImage(currentRoom.name);
@@ -7313,13 +3846,10 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       if (!roomName) roomName = currentRoom?.name;
       if (!roomName)
-        return console.warn("testCycleRoomImages: No room specified");
+        return;
       const roomData = roomImages[roomName];
-      if (!roomData) return console.warn(`No roomImages entry for ${roomName}`);
+      if (!roomData) return;
       const images = roomData.images || [];
-      console.debug(
-        `🔎 testCycleRoomImages: testing ${images.length} images for ${roomName}`,
-      );
 
       for (let i = 0; i < images.length; i++) {
         const candidate = images[i];
@@ -7329,108 +3859,80 @@ document.addEventListener("DOMContentLoaded", function () {
         const p = isSouthampton
           ? `/images/animations/locations/southampton/${candidate}`
           : `/images/animations/locations/britannic/${candidate}`;
-        console.debug(`🔁 Trying ${i + 1}/${images.length}: ${p}`);
         await new Promise((resolve) => {
           drawLocationImage(p, false, {
             onLoad: () => {
-              console.debug(`✅ Success: ${p}`);
               setTimeout(resolve, delay);
             },
             onError: (err) => {
-              console.warn(`❌ Fail: ${p}`, err);
               setTimeout(resolve, delay);
             },
           });
         });
       }
-      console.debug(
-        "✅ testCycleRoomImages: Completed testing images for",
-        roomName,
-      );
     } catch (err) {
-      console.error("❌ testCycleRoomImages error:", err);
+      console.error("testCycleRoomImages error:", err);
     }
   };
 
   window.showRoomImagesList = (roomName) => {
     if (!roomName) roomName = currentRoom?.name;
-    if (!roomName) return console.warn("showRoomImagesList: no room specified");
+    if (!roomName) return;
     if (!roomImages[roomName])
-      return console.warn(`No roomImages entry for ${roomName}`);
-    console.debug(
-      `📋 Images for ${roomName}:`,
-      roomImages[roomName].images || [],
-    );
+      return;
     if (roomImages[roomName].variants)
-      console.debug(`📋 Variants:`, roomImages[roomName].variants);
+      {}
+  };
+
+  const SECRET_ROOM_ALIAS = "5741544e4559";
+  window[SECRET_ROOM_ALIAS] = () => {
+    if (typeof enterRoom !== "function") return;
+    enterRoom({
+      id: SECRET_ROOM_ALIAS,
+      name: "Mars",
+      type: "secret",
+      location: {
+        chatRoom: SECRET_ROOM_ALIAS,
+        image: "Mars.jpg",
+      },
+    });
   };
 
   const locationImageSystem = {
-    preloadedImages: {},
+    // Rooms whose images have been fetched once. The files then sit in the browser's
+    // own HTTP cache, which it trims as it needs to, so no Image objects are kept here.
+    preloadedRooms: new Set(),
+    // Images still downloading; each is dropped as soon as it loads or fails.
+    pendingPreloads: new Set(),
+
+    preload(src) {
+      const img = new Image();
+      this.pendingPreloads.add(img);
+      img.onload = img.onerror = () => {
+        img.onload = img.onerror = null;
+        this.pendingPreloads.delete(img);
+      };
+      img.src = src;
+    },
 
     preloadRoomImages(roomName) {
       if (!roomImages[roomName]) return;
 
       const imageSet = roomImages[roomName].images;
-      console.debug(`🖼️ Preloading ${imageSet.length} images for ${roomName}`);
-
-      // Skip if already preloaded for this room
-      if (this.preloadedImages[roomName]) return;
-
-      // Evict oldest rooms if cache exceeds 10 rooms to bound memory
-      const cachedRooms = Object.keys(this.preloadedImages);
-      if (cachedRooms.length >= 10) {
-        const oldest = cachedRooms[0];
-        delete this.preloadedImages[oldest];
-      }
-
-      this.preloadedImages[roomName] = [];
-
+      // Southampton's pictures, or the Britannic's in the time of day's set; once a room and set
+      const isSouthamptonImage =
+        deckRooms.southampton &&
+        deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
+      const tod = isSouthamptonImage ? "day" : locationTimeOfDay();
+      const key = `${roomName}|${tod}`;
+      if (this.preloadedRooms.has(key)) return;
+      this.preloadedRooms.add(key);
       imageSet.forEach((imageName) => {
-        const img = new Image();
-        // Check if this is a Southampton location
-        const isSouthamptonImage =
-          deckRooms.southampton &&
-          deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
-
-        if (isSouthamptonImage) {
-          img.src = `/images/animations/locations/southampton/${imageName}`;
-        } else {
-          img.src = `/images/animations/locations/britannic/${imageName}`;
-        }
-        this.preloadedImages[roomName].push(img);
-      });
-
-      // Preload time-of-day variants if present (e.g., ms or night)
-      const variants = roomImages[roomName].variants || {};
-      console.debug(
-        `🖼️ Preloading variant folders for ${roomName}:`,
-        Object.keys(variants),
-      );
-      Object.keys(variants).forEach((key) => {
-        // Map variant key to folder name if necessary
-        const variantFolder =
-          key === "ms"
-            ? "britannic (sunset)"
-            : key === "night"
-              ? "britannic (night)"
-              : "britannic";
-        variants[key].forEach((vImage) => {
-          const img = new Image();
-          const vpath = `/images/animations/locations/${encodeURIComponent(
-            variantFolder,
-          )}/${vImage}`;
-          const vpathPlain = `/images/animations/locations/${variantFolder}/${vImage}`;
-          console.debug(
-            `🖼️ Preloading variant path: ${vpath} (plain: ${vpathPlain})`,
-          );
-          img.src = vpath; // prefer encoded
-          // Also push a plain variant in case server expects non-encoded path
-          const imgPlain = new Image();
-          imgPlain.src = vpathPlain;
-          this.preloadedImages[roomName].push(imgPlain);
-          this.preloadedImages[roomName].push(img);
-        });
+        this.preload(
+          isSouthamptonImage
+            ? `/images/animations/locations/southampton/${imageName}`
+            : britannicImagePath(imageName, tod),
+        );
       });
     },
 
@@ -7440,102 +3942,51 @@ document.addEventListener("DOMContentLoaded", function () {
       const canvasCtx = ensureLocationCanvas();
       if (!canvasCtx) return false;
 
-      // Determine active variant and target images
-      const currentBST = getBSTTime();
-      const activeInterval = imageIntervals.find(
-        (iv) =>
-          currentBST.getHours() >= iv.start && currentBST.getHours() <= iv.end,
-      );
-
-      let targetImages = roomData.images;
-      let isMsVariant = false;
-
-      if (
-        activeInterval &&
-        activeInterval.className.startsWith("ms") &&
-        roomData.variants &&
-        roomData.variants.ms &&
-        roomData.variants.ms.length > 0
-      ) {
-        targetImages = roomData.variants.ms;
-        isMsVariant = true;
-      }
-
+      const targetImages = roomData.images;
       // Calculate next index and update immediately
       const previousIndex = roomData.currentIndex;
       roomData.currentIndex = (roomData.currentIndex + 1) % targetImages.length;
       const newImage = targetImages[roomData.currentIndex];
 
-      console.debug(
-        `🔄 Cycling room image to: ${newImage} (${roomData.currentIndex + 1}/${
-          targetImages.length
-        })`,
-      );
 
-      // Set new image source right away
-      // Check if this is a Southampton location
       const isSouthamptonImage =
         deckRooms.southampton &&
         deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
+      const dayPath = isSouthamptonImage
+        ? `/images/animations/locations/southampton/${newImage}`
+        : britannicImagePath(newImage, "day");
+      // the Britannic's pictures in the time of day's set (night, sunrise/sunset), the day picture otherwise
+      const newImagePath = isSouthamptonImage
+        ? dayPath
+        : britannicImagePath(newImage);
 
-      if (isMsVariant) {
-        const candidateFolders = [
-          "britannic (sunset)",
-          encodeURIComponent("britannic (sunset)"),
-          "britannic",
-        ];
-        let msTried = 0;
-        const msTryNext = () => {
-          if (msTried >= candidateFolders.length) {
-            console.warn(
-              `⚠️ All MS variants failed for ${roomName}, leaving default`,
-              candidateFolders,
-            );
-            // Revert index on error
-            roomData.currentIndex = previousIndex;
-            return;
-          }
-          const folder = candidateFolders[msTried++];
-          const msPath = `/images/animations/locations/${folder}/${newImage}`;
-          console.debug(`🔁 Trying MS variant path: ${msPath}`);
-          drawLocationImage(msPath, false, {
-            onLoad: () => console.debug(`✅ Loaded MS variant ${msPath}`),
-            onError: () => {
-              console.warn(`❌ Failed to load MS variant ${msPath}`);
-              msTryNext();
-            },
-          });
-        };
-        msTryNext();
-      } else {
-        const newImagePath = isSouthamptonImage
-          ? `/images/animations/locations/southampton/${newImage}`
-          : `/images/animations/locations/britannic/${newImage}`;
-
-        drawLocationImage(newImagePath, false, {
-          onLoad: () => {
-            console.debug(`✅ Loaded ${newImagePath}`);
-          },
-          onError: () => {
-            console.error(`❌ Failed to load image: ${newImagePath}`);
-            addChatMessage({
-              type: "system",
-              message: `There was a problem changing the view.`,
-              room: roomName,
-              timestamp: Date.now(),
-            });
-            roomData.currentIndex = previousIndex;
-          },
+      const failed = () => {
+        console.error(`Failed to load image: ${newImagePath}`);
+        addChatMessage({
+          type: "system",
+          message: `There was a problem changing the view.`,
+          room: roomName,
+          timestamp: Date.now(),
         });
-      }
+        roomData.currentIndex = previousIndex;
+      };
+      drawLocationImage(newImagePath, false, {
+        onLoad: () => {
+        },
+        onError: () => {
+          if (newImagePath === dayPath) return failed();
+          // a missing night or sunset version: the day picture
+          failedLocationImages.add(newImagePath);
+          drawLocationImage(dayPath, false, { onError: failed });
+        },
+      });
 
       return true;
     },
   };
 
   document.addEventListener("DOMContentLoaded", function () {
-    // Assuming nameElement is the DOM element displaying the character's name
-    const nameElement = document.getElementById("character-name"); // Adjust ID as needed
+    const nameElement = document.getElementById("character-name");
     const characterData = JSON.parse(sessionStorage.getItem("character"));
 
     if (characterData && nameElement) {
@@ -7559,7 +4010,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const bioElement = document.getElementById("profile-bio");
 
       // Populate avatar
-      avatarImg.src = characterData.avatar || "/images/default-avatar.png";
+      avatarImg.src = characterData.avatar || "/images/default-avatar.svg";
 
       // Populate name
       nameElement.textContent = `${characterData.forename} ${characterData.surname}`;
@@ -7567,17 +4018,17 @@ document.addEventListener("DOMContentLoaded", function () {
       // Populate and format date of birth
       if (characterData.birthdate) {
         const birthDate = new Date(characterData.birthdate);
-        dobElement.textContent = birthDate.toLocaleDateString("en-US", {
+        dobElement.textContent = birthDate.toLocaleDateString("en-GB", {
           year: "numeric",
           month: "long",
           day: "numeric",
         });
       } else {
-        dobElement.textContent = "Not specified";
+        dobElement.textContent = "Not given";
       }
 
       // Populate bio
-      bioElement.textContent = characterData.bio || "No bio available";
+      bioElement.textContent = characterData.bio || "No biography provided.";
 
       // Display the popup
       profilePopup.style.display = "block";
@@ -7597,272 +4048,330 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // Video Poker Game
-  const videoPokerBtn = document.getElementById("video-poker-btn");
+  // Draw poker, jacks or better. The server shuffles, deals, draws and pays;
+  // this only shows the table. The cards in /images/cards/ are Byron Knoll's
+  // Vector Playing Cards (public domain) with a back by BdRGames (CC0); see
+  // scripts/cards/make_cards.js.
   const videoPokerPopup = document.getElementById("video-poker-popup");
-  const closeVideoPokerBtn = document.querySelector(".close-video-poker");
+  const closeVideoPokerBtn = videoPokerPopup.querySelector(".close-video-poker");
   const dealDrawBtn = document.getElementById("deal-draw-btn");
-  const vpHoldBtn = document.getElementById("vp-hold-btn");
-  const handRanking = document.querySelector(".hand-ranking");
-  const vpStatus = document.querySelector(".vp-status");
-  const vpCards = document.querySelectorAll(".vp-card");
+  const vpStatus = videoPokerPopup.querySelector(".vp-status");
+  const vpCards = Array.from(videoPokerPopup.querySelectorAll(".vp-card"));
+  const vpStakes = Array.from(videoPokerPopup.querySelectorAll(".vp-stake"));
+  const vpPayRows = Array.from(
+    videoPokerPopup.querySelectorAll(".vp-payouts [data-hand]"),
+  );
 
-  // Poker game state
-  const vpBetSelect = document.getElementById("vp-bet-select");
+  // The table is laid over the room picture, above the room's name, buttons
+  // and passengers' tab (the tab used to lie over its buttons)
+  const vpRoomPicture = document.querySelector(".location-display");
+  if (vpRoomPicture) vpRoomPicture.appendChild(videoPokerPopup);
+
+  const CARD_DIR = "/images/cards/";
+  const CARD_RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+  const CARD_SUITS = ["clubs", "diamonds", "hearts", "spades"];
+  const RANK_WORD = { A: "Ace", K: "King", Q: "Queen", J: "Jack" };
+  const cardSrc = (card) =>
+    card
+      ? `${CARD_DIR}${card.suit}-${String(card.rank).toLowerCase()}.webp`
+      : `${CARD_DIR}back.webp`;
+  const cardName = (card) => `${RANK_WORD[card.rank] || card.rank} of ${card.suit}`;
+  const pounds = (n) => `£${Number.isInteger(n) ? n : Number(n).toFixed(2)}`;
+  // "Two Pair" -> "Two pair", as the pay table prints it
+  const handName = (rank) =>
+    rank ? rank.charAt(0) + rank.slice(1).toLowerCase() : "";
+
+  // the faces are fetched once, when the table is first opened
+  let cardFacesLoaded = false;
+  function loadCardFaces() {
+    if (cardFacesLoaded) return;
+    cardFacesLoaded = true;
+    CARD_SUITS.forEach((suit) =>
+      CARD_RANKS.forEach((rank) => {
+        new Image().src = cardSrc({ suit, rank });
+      }),
+    );
+  }
 
   const videoPoker = {
     hand: [],
     held: [false, false, false, false, false],
-    phase: "idle",
-    currentBet: 0,
-
-    init() {
-      this.phase = "idle";
-      this.held = [false, false, false, false, false];
-      this.currentBet = 0;
-      dealDrawBtn.textContent = "New";
-      if (vpHoldBtn) vpHoldBtn.style.opacity = "0.5";
-      if (vpBetSelect) vpBetSelect.disabled = false;
-      handRanking.textContent = "";
-      handRanking.classList.remove("win");
-      if (vpStatus) vpStatus.textContent = 'Click "New" to begin game';
-
-      // Reset all cards to card-back
-      vpCards.forEach((card) => {
-        card.classList.add("card-back");
-        card.classList.remove("held", "dealing");
-        const rank = card.querySelector(".rank");
-        const suit = card.querySelector(".suit");
-        if (rank) rank.textContent = "";
-        if (suit) suit.textContent = "";
-      });
-    },
-
-    updateCardDisplay() {
-      for (let i = 0; i < 5; i++) {
-        const card = document.querySelector(`.vp-card[data-index="${i}"]`);
-        const rank = card.querySelector(".rank");
-        const suit = card.querySelector(".suit");
-
-        if (this.hand[i]) {
-          card.classList.remove("card-back");
-          rank.textContent = this.hand[i].rank;
-          suit.textContent = this.hand[i].symbol;
-          rank.style.color = this.hand[i].color;
-          suit.style.color = this.hand[i].color;
-          if (this.phase !== "deal" || !this.held[i]) {
-            card.classList.add("dealing");
-            setTimeout(() => card.classList.remove("dealing"), 400);
-          }
-          card.classList.toggle("held", this.held[i]);
-        }
-      }
-    },
-
-    toggleHold(index) {
-      if (this.phase !== "deal") return;
-      this.held[index] = !this.held[index];
-      const card = document.querySelector(`.vp-card[data-index="${index}"]`);
-      card.classList.toggle("held", this.held[index]);
-    },
+    phase: "idle", // idle, dealing, deal (choosing holds), drawing
+    stake: 0,
   };
 
-  // Initialize video poker button event
-  if (videoPokerBtn) {
-    videoPokerBtn.addEventListener("click", () => {
-      openVideoPokerGame();
+  function vpSetPhase(phase) {
+    videoPoker.phase = phase;
+    videoPokerPopup.dataset.phase = phase;
+    dealDrawBtn.textContent =
+      phase === "deal" || phase === "drawing" ? "Draw" : "Deal";
+    dealDrawBtn.disabled = phase === "dealing" || phase === "drawing";
+    vpStakes.forEach((b) => {
+      b.disabled = phase !== "idle";
     });
   }
 
-  // Close poker popup when close button is clicked
-  if (closeVideoPokerBtn) {
-    closeVideoPokerBtn.addEventListener("click", () => {
-      videoPokerPopup.style.display = "none";
+  // fresh: which cards were just dealt (they drop onto the baize)
+  function vpShowCards(fresh) {
+    vpCards.forEach((el, i) => {
+      const card = videoPoker.hand[i];
+      const held = !!videoPoker.held[i];
+      el.querySelector("img").src = cardSrc(card);
+      el.classList.toggle("card-back", !card);
+      el.classList.toggle("held", held);
+      el.setAttribute("aria-pressed", held ? "true" : "false");
+      el.setAttribute(
+        "aria-label",
+        card ? cardName(card) + (held ? ", held" : "") : "Card face down",
+      );
+      if (fresh && fresh[i]) {
+        el.classList.remove("dealt");
+        void el.offsetWidth; // start the drop again
+        el.style.setProperty("--deal-delay", `${i * 60}ms`);
+        el.classList.add("dealt");
+      }
     });
   }
 
-  // "New" button — sends bet to server, waits for dealt hand
-  dealDrawBtn.addEventListener("click", () => {
-    const betAmount = parseFloat(vpBetSelect ? vpBetSelect.value : 0);
-    if (betAmount > 0 && playerMoney < betAmount) {
-      if (vpStatus) vpStatus.textContent = "Not enough money!";
-      return;
-    }
-    dealDrawBtn.disabled = true;
-    socket.emit("poker-deal", { bet: betAmount });
+  function vpMarkPayRow(rank) {
+    vpPayRows.forEach((row) =>
+      row.classList.toggle("win", !!rank && row.dataset.hand === rank),
+    );
+  }
+
+  function vpSetStake(bet) {
+    videoPoker.stake = bet;
+    vpStakes.forEach((b) =>
+      b.setAttribute(
+        "aria-pressed",
+        Number(b.dataset.bet) === bet ? "true" : "false",
+      ),
+    );
+  }
+
+  function vpReset() {
+    videoPoker.hand = [];
+    videoPoker.held = [false, false, false, false, false];
+    vpShowCards();
+    vpMarkPayRow(null);
+    vpSetPhase("idle");
+    vpStatus.textContent = "";
+  }
+
+  function openVideoPokerGame() {
+    loadCardFaces();
+    // a hand in play stays on the table when it is closed and opened again
+    if (videoPoker.phase === "idle") vpReset();
+    videoPokerPopup.classList.add("open");
+    videoPokerPopup.setAttribute("aria-hidden", "false");
+    dealDrawBtn.focus();
+  }
+
+  // (also called on entering a room, so it looks the table up itself)
+  function closeVideoPokerGame() {
+    const popup = document.getElementById("video-poker-popup");
+    if (!popup || !popup.classList.contains("open")) return;
+    popup.classList.remove("open");
+    popup.setAttribute("aria-hidden", "true");
+  }
+
+  closeVideoPokerBtn.addEventListener("click", closeVideoPokerGame);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeVideoPokerGame();
   });
 
-  // Server dealt cards
+  vpStakes.forEach((b) =>
+    b.addEventListener("click", () => {
+      if (videoPoker.phase !== "idle") return;
+      vpSetStake(Number(b.dataset.bet) || 0);
+    }),
+  );
+
+  vpCards.forEach((el, i) =>
+    el.addEventListener("click", () => {
+      if (videoPoker.phase !== "deal" || !videoPoker.hand[i]) return;
+      videoPoker.held[i] = !videoPoker.held[i];
+      vpShowCards();
+    }),
+  );
+
+  // One button: Deal, then Draw
+  dealDrawBtn.addEventListener("click", () => {
+    if (videoPoker.phase === "idle") {
+      const bet = videoPoker.stake;
+      if (bet > 0 && playerMoney < bet) {
+        vpStatus.textContent = `You haven't enough money for a ${pounds(bet)} stake.`;
+        return;
+      }
+      vpSetPhase("dealing");
+      socket.emit("poker-deal", { bet });
+    } else if (videoPoker.phase === "deal") {
+      vpSetPhase("drawing");
+      socket.emit("poker-hold", { held: [...videoPoker.held] });
+    }
+  });
+
   socket.on("poker-dealt", ({ hand, money }) => {
     playerMoney = money;
     updateMoneyDisplay();
     videoPoker.hand = hand;
-    videoPoker.phase = "deal";
     videoPoker.held = [false, false, false, false, false];
-    videoPoker.updateCardDisplay();
-    dealDrawBtn.textContent = "New";
-    dealDrawBtn.disabled = false;
-    if (vpHoldBtn) vpHoldBtn.style.opacity = "1";
-    if (vpBetSelect) vpBetSelect.disabled = true;
-    handRanking.textContent = "";
-    handRanking.classList.remove("win");
-    const betAmount = parseFloat(vpBetSelect ? vpBetSelect.value : 0);
-    if (vpStatus)
-      vpStatus.textContent =
-        betAmount > 0
-          ? `Bet: £${betAmount.toFixed(2)} — Select cards to hold, then click Hold`
-          : "Select cards to hold, then click Hold";
+    vpMarkPayRow(null);
+    vpShowCards([true, true, true, true, true]);
+    vpSetPhase("deal");
+    vpStatus.textContent = "";
   });
 
-  socket.on("poker-error", ({ message }) => {
-    if (vpStatus) vpStatus.textContent = message;
-    dealDrawBtn.disabled = false;
+  // a refused deal or draw ends the hand (the server has let it go)
+  socket.on("poker-error", ({ message } = {}) => {
+    vpStatus.textContent = message || "The table could not deal that hand.";
+    vpSetPhase("idle");
   });
 
-  // "Hold" button — sends held cards to server, waits for result
-  if (vpHoldBtn) {
-    vpHoldBtn.addEventListener("click", () => {
-      if (videoPoker.phase !== "deal") return;
-      vpHoldBtn.disabled = true;
-      socket.emit("poker-hold", { held: [...videoPoker.held] });
-    });
-  }
-
-  // Server evaluated the hand
-  socket.on(
-    "poker-result",
-    ({ hand, rank, multiplier, winnings, bet, money }) => {
-      playerMoney = money;
-      updateMoneyDisplay();
-      videoPoker.hand = hand;
-      videoPoker.phase = "idle";
-      videoPoker.updateCardDisplay();
-      if (vpHoldBtn) {
-        vpHoldBtn.style.opacity = "0.5";
-        vpHoldBtn.disabled = false;
-      }
-      if (vpBetSelect) vpBetSelect.disabled = false;
-
-      handRanking.textContent = rank;
-      const isWin = multiplier > 0;
-      handRanking.classList.toggle("win", isWin);
-
-      if (isWin && bet > 0) {
-        if (vpStatus)
-          vpStatus.textContent = `${rank} — You win £${winnings.toFixed(2)}!`;
-      } else if (bet > 0) {
-        if (vpStatus)
-          vpStatus.textContent = `${rank} — You lose £${bet.toFixed(2)}`;
-      } else {
-        if (vpStatus) vpStatus.textContent = isWin ? "You win!" : rank;
-      }
-    },
-  );
-
-  // Card click event for selecting holds
-  vpCards.forEach((card) => {
-    card.addEventListener("click", () => {
-      const index = parseInt(card.getAttribute("data-index"));
-      videoPoker.toggleHold(index);
-    });
+  socket.on("poker-result", ({ hand, rank, multiplier, winnings, bet, money }) => {
+    playerMoney = money;
+    updateMoneyDisplay();
+    const replaced = videoPoker.held.map((h) => !h);
+    videoPoker.hand = hand;
+    videoPoker.held = [false, false, false, false, false];
+    vpShowCards(replaced);
+    vpSetPhase("idle");
+    const won = multiplier > 0;
+    vpMarkPayRow(won ? rank : null);
+    const name = handName(rank);
+    if (won && bet > 0) vpStatus.textContent = `${name}. ${pounds(winnings)} paid.`;
+    else if (won) vpStatus.textContent = `${name}.`;
+    else if (bet > 0) vpStatus.textContent = `${name}. The ${pounds(bet)} stake is lost.`;
+    else vpStatus.textContent = `${name}. No win.`;
   });
 
-  function openVideoPokerGame() {
-    if (!videoPokerPopup) return;
-    // Move poker popup into location-display so it overlays the room image
-    const locationDisplay = document.querySelector(".location-display");
-    if (locationDisplay && !locationDisplay.contains(videoPokerPopup)) {
-      locationDisplay.appendChild(videoPokerPopup);
-    }
-    videoPokerPopup.style.display = "block";
-    videoPoker.init();
-  }
-
+  // Games: a short paper list under the button
   const gamesToggleBtn = document.getElementById("games-toggle-btn");
+
+  // (also called on entering a room)
+  function closeGamesMenu() {
+    const popup = document.querySelector(".games-popup");
+    if (popup) popup.remove();
+    const btn = document.getElementById("games-toggle-btn");
+    if (btn) btn.textContent = "Games";
+  }
+
   if (gamesToggleBtn) {
     gamesToggleBtn.addEventListener("click", () => {
-      const existingPopup = document.querySelector(".games-popup");
-      if (existingPopup) {
-        existingPopup.remove();
-        gamesToggleBtn.textContent = "Games";
-      } else {
-        showGamesOptions();
-        gamesToggleBtn.textContent = "Close Games";
+      if (document.querySelector(".games-popup")) {
+        closeGamesMenu();
+        return;
       }
+      // one thing over the picture at a time
+      const menu = document.querySelector(".eat-drink-popup");
+      if (menu) menu.remove();
+      resetMenuButtons();
+      collapsePlayersDrawer();
+      showGamesOptions();
+      gamesToggleBtn.textContent = "Close Games";
     });
   }
 
   function showGamesOptions() {
-    const existingPopup = document.querySelector(".games-popup");
-    if (existingPopup) {
-      existingPopup.remove();
-    }
-
     const locationDisplay = document.querySelector(".location-display");
     if (!locationDisplay) return;
-
     const popup = document.createElement("div");
     popup.className = "games-popup";
     popup.innerHTML = `
-      <div class="gp-icons">
-        <button class="gp-icon" type="button" data-game="video-poker" data-label="Poker">
-          <span class="material-icons">casino</span>
-        </button>
-      </div>
-      <div class="gp-tooltip" style="display:none"></div>
-    `;
-
-    // Tooltip on hover
-    popup.querySelectorAll(".gp-icon").forEach((btn) => {
-      btn.addEventListener("mouseenter", () => {
-        const tip = popup.querySelector(".gp-tooltip");
-        tip.textContent = btn.dataset.label;
-        tip.style.display = "block";
-      });
-      btn.addEventListener("mouseleave", () => {
-        popup.querySelector(".gp-tooltip").style.display = "none";
-      });
-    });
-
+      <button type="button" class="gp-item" data-game="video-poker">Poker</button>`;
     locationDisplay.appendChild(popup);
-
-    const pokerCard = popup.querySelector('[data-game="video-poker"]');
-    if (pokerCard) {
-      pokerCard.addEventListener("click", () => {
-        popup.remove();
-        if (gamesToggleBtn) {
-          gamesToggleBtn.textContent = "Games";
-        }
+    popup
+      .querySelector('[data-game="video-poker"]')
+      .addEventListener("click", () => {
+        closeGamesMenu();
         openVideoPokerGame();
-        console.debug("🎰 Video Poker launched from games popup");
       });
-    }
   }
 
-  // Eat/Drink button functionality
+  // Log Out: needs and money saved, the session ended on the server, then
+  // back to the page where one logs in
+  const logoutBtn = document.getElementById("logout-btn");
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      logoutBtn.disabled = true;
+      try {
+        if (typeof window.saveStatsToServer === "function") window.saveStatsToServer();
+      } catch (e) {}
+      try {
+        await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
+      } catch (e) {}
+      try {
+        sessionStorage.removeItem("character");
+      } catch (e) {}
+      window.location.href = "/main/main.html";
+    });
+  }
+
   // Eat/Drink button functionality (toggle menu)
   const eatDrinkBtn = document.getElementById("eat-drink-btn");
-  if (eatDrinkBtn) {
-    eatDrinkBtn.addEventListener("click", () => {
-      const existingPopup = document.querySelector(".eat-drink-popup");
-      if (existingPopup) {
-        existingPopup.remove();
-        eatDrinkBtn.textContent = "Eat & Drink";
-      } else {
-        showEatDrinkOptions();
-        eatDrinkBtn.textContent = "Close Menu";
-      }
-    });
+  const tobaccoBtn = document.getElementById("tobacco-btn");
+
+  function resetMenuButtons() {
+    if (eatDrinkBtn) {
+      eatDrinkBtn.textContent =
+        eatDrinkBtn.dataset.menuMode === "tobacco" ? "Tobacco" : "Eat & Drink";
+    }
+    if (tobaccoBtn) tobaccoBtn.textContent = "Tobacco";
   }
 
-  // Function to show eat/drink options
-  function showEatDrinkOptions() {
+  // One menu at a time: a button closes its own menu, or swaps the other's
+  function toggleMenu(btn, mode) {
+    const existingPopup = document.querySelector(".eat-drink-popup");
+    const wasOwn = existingPopup && existingPopup.dataset.owner === btn.id;
+    if (existingPopup) existingPopup.remove();
+    resetMenuButtons();
+    if (wasOwn) return;
+    closeGamesMenu();
+    collapsePlayersDrawer();
+    showEatDrinkOptions(mode, btn.id);
+    btn.textContent = "Close Menu";
+  }
+
+  if (eatDrinkBtn) {
+    eatDrinkBtn.addEventListener("click", () => {
+      toggleMenu(
+        eatDrinkBtn,
+        eatDrinkBtn.dataset.menuMode ||
+          (eatDrinkBtn.dataset.tobaccoOnly === "true" ? "tobacco" : "full"),
+      );
+    });
+  }
+  if (tobaccoBtn) {
+    tobaccoBtn.addEventListener("click", () => toggleMenu(tobaccoBtn, "tobacco"));
+  }
+
+  // Function to show eat/drink options. mode: "full" (a dining room),
+  // "drinks" (a smoking room or lounge: drinks first, light fare, no
+  // entrées) or "tobacco"
+  function showEatDrinkOptions(mode = "full", ownerId = "eat-drink-btn") {
+    if (mode === true) mode = "tobacco"; // (the old call: onlyTobacco)
+    if (mode === false) mode = "full";
+    const onlyTobacco = mode === "tobacco";
     const popup = document.createElement("div");
     popup.className = "eat-drink-popup";
+    popup.dataset.mode = mode;
+    popup.dataset.owner = ownerId;
 
-    popup.innerHTML = `
-      <div class="edm-body">
-        <div class="edm-sidebar">
+    const tobaccoOnlySidebar = `
+          <div class="edm-category" data-category="tobacco">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▼</span> Tobacco
+            </div>
+            <div class="edm-subcategories" style="display:flex">
+              <div class="edm-subcat-btn active" data-top="tobacco" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="tobacco" data-sub="cigars">Cigars</div>
+              <div class="edm-subcat-btn" data-top="tobacco" data-sub="pipes">Pipes</div>
+              <div class="edm-subcat-btn" data-top="tobacco" data-sub="cigarettes">Cigarettes</div>
+            </div>
+          </div>
+    `;
+
+    const fullSidebar = `
           <div class="edm-category" data-category="food">
             <div class="edm-category-header">
               <span class="edm-arrow">▼</span> Food
@@ -7914,6 +4423,54 @@ document.addEventListener("DOMContentLoaded", function () {
               <div class="edm-subcat-btn" data-top="tobacco" data-sub="cigarettes">Cigarettes</div>
             </div>
           </div>
+    `;
+
+    // A smoking room or lounge: the bar first, then light fare
+    const drinksSidebar = `
+          <div class="edm-category" data-category="alcoholic_beverages">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▼</span> Alcoholic Beverages
+            </div>
+            <div class="edm-subcategories" style="display:flex">
+              <div class="edm-subcat-btn active" data-top="alcoholic_beverages" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="beer">Beer</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="cocktails">Cocktails</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="wines_and_champagne">Wines & Champagne</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="spirits">Spirits</div>
+            </div>
+          </div>
+          <div class="edm-category" data-category="soft_beverages">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▶</span> Soft Beverages
+            </div>
+            <div class="edm-subcategories">
+              <div class="edm-subcat-btn active" data-top="soft_beverages" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="common">Common</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="tea">Tea</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="coffee">Coffee</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="juice">Juice</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="hot_beverages">Hot Beverages</div>
+            </div>
+          </div>
+          <div class="edm-category" data-category="food">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▶</span> Light Fare
+            </div>
+            <div class="edm-subcategories">
+              <div class="edm-subcat-btn active" data-top="food" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="light_meal">Light Meal</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="side">Side</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="fruit">Fruit</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="cakes">Cakes</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="desserts">Desserts</div>
+            </div>
+          </div>
+    `;
+
+    popup.innerHTML = `
+      <div class="edm-body">
+        <div class="edm-sidebar">
+          ${onlyTobacco ? tobaccoOnlySidebar : mode === "drinks" ? drinksSidebar : fullSidebar}
         </div>
         <div class="edm-content">
           <div class="edm-items-grid"></div>
@@ -7937,9 +4494,18 @@ document.addEventListener("DOMContentLoaded", function () {
       itemsGrid.innerHTML = "";
       if (typeof MENU_DATA === "undefined") return;
 
+      // (a smoking room or lounge serves no entrées or ices: its "All" is
+      // only what its own headings list)
+      const lightFare = ["light_meal", "side", "fruit", "cakes", "desserts"];
       const filtered = MENU_DATA.filter((item) => {
         if (item.topCategory !== topCategory) return false;
         if (subCategory !== "all" && item.subCategory !== subCategory)
+          return false;
+        if (
+          mode === "drinks" &&
+          topCategory === "food" &&
+          !lightFare.includes(item.subCategory)
+        )
           return false;
         return true;
       });
@@ -7948,7 +4514,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const card = document.createElement("div");
         card.className = "edm-item-card";
         card.innerHTML = `
-          <img src="${item.localImage}" alt="${item.name}" onerror="this.src='${item.image}'" />
+          <img src="${item.localImage}" alt="${item.name}" onerror="this.onerror=null;this.src='${item.image}'" />
           <span class="edm-item-name">${item.name}</span>
         `;
 
@@ -7957,15 +4523,15 @@ document.addEventListener("DOMContentLoaded", function () {
           const desc = item.description.replace(/\n/g, "<br>");
           let statsHtml = "";
           if (item.hungry)
-            statsHtml += `<span class="edm-stat edm-stat-hunger">🍖 ${item.hungry > 0 ? "+" : ""}${item.hungry}</span>`;
+            statsHtml += `<span class="edm-stat edm-stat-hunger"><span class="material-icons">restaurant</span> ${item.hungry > 0 ? "+" : ""}${item.hungry}</span>`;
           if (item.thirsty)
-            statsHtml += `<span class="edm-stat edm-stat-thirst">💧 ${item.thirsty > 0 ? "+" : ""}${item.thirsty}</span>`;
+            statsHtml += `<span class="edm-stat edm-stat-thirst"><span class="material-icons">water_drop</span> ${item.thirsty > 0 ? "+" : ""}${item.thirsty}</span>`;
           if (item.drunk)
-            statsHtml += `<span class="edm-stat edm-stat-drunk">🍺 ${item.drunk > 0 ? "+" : ""}${item.drunk}</span>`;
+            statsHtml += `<span class="edm-stat edm-stat-drunk"><span class="material-icons">sports_bar</span> ${item.drunk > 0 ? "+" : ""}${item.drunk}</span>`;
           if (item.warm)
-            statsHtml += `<span class="edm-stat edm-stat-warm">🔥 ${item.warm > 0 ? "+" : ""}${item.warm}</span>`;
+            statsHtml += `<span class="edm-stat edm-stat-warm"><span class="material-icons">local_fire_department</span> ${item.warm > 0 ? "+" : ""}${item.warm}</span>`;
           if (item.price)
-            statsHtml += `<span class="edm-stat edm-stat-price">💰 £${item.price}</span>`;
+            statsHtml += `<span class="edm-stat edm-stat-price"><span class="material-icons">payments</span> £${Number(item.price).toFixed(2)}</span>`;
 
           tooltip.innerHTML = `
             <div class="edm-tooltip-title">${item.name}</div>
@@ -8003,14 +4569,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Paid items — server validates and deducts money
       if (playerMoney < item.price) {
-        console.debug(`💰 Cannot afford ${item.name} (£${item.price})`);
         return;
       }
 
-      socket.emit("purchase-item", { price: item.price });
+      socket.emit("purchase-item", {
+        itemKey: menuItemKey(item),
+        topCategory: item.topCategory,
+        subCategory: item.subCategory,
+        name: item.name,
+      });
       socket.once("purchase-result", (result) => {
         if (!result.success) {
-          console.debug(`💰 Purchase denied: ${result.message}`);
           return;
         }
         if (typeof result.money === "number") {
@@ -8067,16 +4636,25 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       }
 
-      console.debug(
-        `🍽️ Consumed ${item.name} | hunger:${item.hungry} thirst:${item.thirsty} drunk:${item.drunk}`,
-      );
       saveStatsToServer();
     }
 
-    // Food category starts open, render food items by default
-    const foodCat = popup.querySelector('[data-category="food"]');
-    if (foodCat) foodCat.classList.add("open");
-    renderItems("food", "all");
+    // Default open category depends on outdoor/tobacco-only mode
+    if (onlyTobacco) {
+      const tobaccoCat = popup.querySelector('[data-category="tobacco"]');
+      if (tobaccoCat) tobaccoCat.classList.add("open");
+      renderItems("tobacco", "all");
+    } else if (mode === "drinks") {
+      const barCat = popup.querySelector(
+        '[data-category="alcoholic_beverages"]',
+      );
+      if (barCat) barCat.classList.add("open");
+      renderItems("alcoholic_beverages", "all");
+    } else {
+      const foodCat = popup.querySelector('[data-category="food"]');
+      if (foodCat) foodCat.classList.add("open");
+      renderItems("food", "all");
+    }
 
     // Accordion category toggling
     const categories = popup.querySelectorAll(".edm-category");
@@ -8124,90 +4702,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Function to handle eating specific food items
-  function eatSpecific(itemName, hungerIncrease) {
-    statusBars.hunger.value = Math.min(
-      100,
-      statusBars.hunger.value + hungerIncrease,
-    );
-
-    console.debug(`🍽️ Ate ${itemName}, hunger increased by ${hungerIncrease}`);
-
-    // Update the hunger bar immediately
-    const hungerBar = document.querySelector(".bar.hunger");
-    if (hungerBar) {
-      hungerBar.style.width = `${statusBars.hunger.value}%`;
-      const hue = (statusBars.hunger.value / 100) * 120;
-      hungerBar.style.setProperty("--hunger-hue", hue);
-    }
-
-    saveStatsToServer();
-  }
-
-  // Function to handle drinking specific beverages
-  function drinkSpecific(itemName, thirstDecrease) {
-    statusBars.thirst.value = Math.min(
-      100,
-      statusBars.thirst.value + thirstDecrease,
-    );
-
-    console.debug(
-      `🥤 Drank ${itemName}, thirst decreased by ${thirstDecrease}`,
-    );
-
-    // Update the thirst bar immediately
-    const thirstBar = document.querySelector(".bar.thirst");
-    if (thirstBar) {
-      thirstBar.style.width = `${statusBars.thirst.value}%`;
-      const hue = (statusBars.thirst.value / 100) * 120;
-      thirstBar.style.setProperty("--thirst-hue", hue);
-    }
-
-    saveStatsToServer();
-  }
-
-  // Function to handle eating
-  function eat() {
-    const hungerIncrease = 30 + Math.random() * 20; // Restore 30-50 hunger
-    statusBars.hunger.value = Math.min(
-      100,
-      statusBars.hunger.value + hungerIncrease,
-    );
-
-    console.debug(
-      `🍽️ Ate food, hunger increased by ${hungerIncrease.toFixed(1)}`,
-    );
-
-    // Update the hunger bar immediately
-    const hungerBar = document.querySelector(".bar.hunger");
-    if (hungerBar) {
-      hungerBar.style.width = `${statusBars.hunger.value}%`;
-      const hue = (statusBars.hunger.value / 100) * 120;
-      hungerBar.style.setProperty("--hunger-hue", hue);
-    }
-  }
-
-  // Function to handle drinking
-  function drink() {
-    const thirstDecrease = 35 + Math.random() * 25; // Restore 35-60 thirst
-    statusBars.thirst.value = Math.min(
-      100,
-      statusBars.thirst.value + thirstDecrease,
-    );
-
-    console.debug(
-      `🥤 Drank beverage, thirst decreased by ${thirstDecrease.toFixed(1)}`,
-    );
-
-    // Update the thirst bar immediately
-    const thirstBar = document.querySelector(".bar.thirst");
-    if (thirstBar) {
-      thirstBar.style.width = `${statusBars.thirst.value}%`;
-      const hue = (statusBars.thirst.value / 100) * 120;
-      thirstBar.style.setProperty("--thirst-hue", hue);
-    }
-  }
-
   // Room Player List functionality
   const roomPlayersBtn = document.getElementById("players-btn");
   const roomPlayersPopup = document.getElementById("players-popup");
@@ -8220,6 +4714,32 @@ document.addEventListener("DOMContentLoaded", function () {
     roomPlayersDrawer.parentElement !== locationDisplay
   ) {
     locationDisplay.appendChild(roomPlayersDrawer);
+  }
+
+  // The passengers' list and the room's menus share the picture, and the list
+  // was drawn over any menu left open: one at a time
+  function collapsePlayersDrawer() {
+    const drawer = document.getElementById("players-drawer");
+    const list = document.getElementById("players-popup");
+    const btn = document.getElementById("players-btn");
+    if (!list || !list.classList.contains("open")) return;
+    if (drawer) {
+      drawer.classList.remove("open");
+      drawer.setAttribute("aria-expanded", "false");
+    }
+    list.classList.remove("open");
+    list.setAttribute("aria-hidden", "true");
+    if (btn) {
+      btn.classList.remove("open");
+      btn.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function closeRoomMenus() {
+    const menu = document.querySelector(".eat-drink-popup");
+    if (menu) menu.remove();
+    resetMenuButtons();
+    closeGamesMenu();
   }
 
   function setRoomPlayersCount(count = 0) {
@@ -8241,7 +4761,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!birthdate) return "";
     const date = new Date(birthdate);
     if (Number.isNaN(date.getTime())) return "";
-    return date.toLocaleDateString("en-US", {
+    return date.toLocaleDateString("en-GB", {
       month: "long",
       day: "numeric",
       year: "numeric",
@@ -8273,17 +4793,21 @@ document.addEventListener("DOMContentLoaded", function () {
     const birthdateText = formatPassengerBirthdate(player.birthdate);
     const age = calculatePassengerAge(player.birthdate);
     const ageText = Number.isFinite(age) ? ` (${age})` : "";
-    const bioText =
-      player.bio || "No biography available for this passenger yet.";
+    // The player's own words, as text (line breaks kept)
+    const bioText = escapeHtml(player.bio || "No biography provided.").replace(
+      /\r?\n/g,
+      "<br>",
+    );
+    const nameText = escapeHtml(player.name);
 
     playerContent.innerHTML = DOMPurify.sanitize(`
       <div class="player-popup-header">
         <div class="player-popup-avatar">
-          <img src="${player.avatar || "/images/default-avatar.png"}" alt="${player.name}" />
+          <img src="${escapeHtml(player.avatar || "/images/default-avatar.svg")}" alt="${nameText}" />
         </div>
         <div class="player-popup-meta">
-          <div class="player-popup-name">${player.name}${ageText}</div>
-          ${birthdateText ? `<div class="player-popup-birthdate">${birthdateText}</div>` : ""}
+          <div class="player-popup-name">${nameText}${ageText}</div>
+          ${birthdateText ? `<div class="player-popup-birthdate">${escapeHtml(birthdateText)}</div>` : ""}
         </div>
       </div>
       <div class="player-popup-bio">${bioText}</div>
@@ -8296,20 +4820,28 @@ document.addEventListener("DOMContentLoaded", function () {
   function requestRoomPlayers() {
     if (!socket || !currentRoom.name) {
       console.error(
-        "❌ Cannot request room players: socket or room not available",
+        "Cannot request room players: socket or room not available",
       );
       return;
     }
 
-    console.debug(`👥 Requesting players for room: ${currentRoom.name}`);
     socket.emit("request-room-players", currentRoom.name);
+  }
+
+  // "1st_class_cabins" -> "First Class", as on the character card
+  function passengerClassLabel(cabinType) {
+    const type = String(cabinType || "");
+    if (type.startsWith("1st_")) return "First Class";
+    if (type.startsWith("2nd_")) return "Second Class";
+    if (type.startsWith("3rd_")) return "Third Class";
+    return "Passenger";
   }
 
   // Function to display room players in popup
   function displayRoomPlayers(players) {
     const playersList = document.getElementById("players-list");
     if (!playersList) {
-      console.error("❌ Room players list element not found");
+      console.error("Room players list element not found");
       return;
     }
 
@@ -8337,20 +4869,19 @@ document.addEventListener("DOMContentLoaded", function () {
         `${currentCharacter.forename} ${currentCharacter.surname}` ===
           player.name;
 
+      const safeName = escapeHtml(player.name);
       playerDiv.innerHTML = DOMPurify.sanitize(`
-        <button type="button" class="player-avatar player-avatar-button" aria-label="View bio for ${player.name}">
-          <img src="${player.avatar || "/images/default-avatar.png"}" alt="${
-            player.name
-          }" />
+        <button type="button" class="player-avatar player-avatar-button" aria-label="View bio for ${safeName}">
+          <img src="${escapeHtml(player.avatar || "/images/default-avatar.svg")}" alt="${safeName}" />
         </button>
         <div class="player-info">
-          <div class="player-name">${player.name}${
+          <div class="player-name">${safeName}${
             isCurrentPlayer ? " (You)" : ""
           }</div>
-          <div class="player-class">Passenger</div>
-          <div class="player-cabin">${
-            player.cabin_number || player.cabin || "No cabin assigned"
-          }</div>
+          <div class="player-class">${escapeHtml(passengerClassLabel(player.cabin))}</div>
+          <div class="player-cabin">${escapeHtml(
+            player.cabin_number || player.cabin || "No cabin assigned",
+          )}</div>
         </div>
       `);
 
@@ -8366,7 +4897,6 @@ document.addEventListener("DOMContentLoaded", function () {
       playersList.appendChild(playerDiv);
     });
 
-    console.debug(`👥 Displayed ${players.length} players in room`);
   }
 
   setRoomPlayersCount(0);
@@ -8397,12 +4927,10 @@ document.addEventListener("DOMContentLoaded", function () {
         );
 
         if (willOpen) {
+          closeRoomMenus();
           requestRoomPlayers();
         }
 
-        console.debug(
-          `👥 Room players panel ${willOpen ? "opened" : "closed"}`,
-        );
       },
       true,
     );
@@ -8415,7 +4943,6 @@ document.addEventListener("DOMContentLoaded", function () {
     closePlayerInfoBtn.addEventListener("click", () => {
       if (playerInfoPopup) {
         playerInfoPopup.style.display = "none";
-        console.debug("👤 Player info popup closed");
       }
     });
   }
@@ -8424,7 +4951,6 @@ document.addEventListener("DOMContentLoaded", function () {
     playerInfoPopup.addEventListener("click", (event) => {
       if (event.target === playerInfoPopup) {
         playerInfoPopup.style.display = "none";
-        console.debug("👤 Player info popup closed from backdrop");
       }
     });
   }
@@ -8442,14 +4968,12 @@ document.addEventListener("DOMContentLoaded", function () {
       roomPlayersPopup.setAttribute("aria-hidden", "true");
       roomPlayersBtn?.classList.remove("open");
       roomPlayersBtn?.setAttribute("aria-expanded", "false");
-      console.debug("👥 Room players popup closed by clicking outside");
     }
   });
 
   // Socket listener for room players response
   if (socket) {
     socket.on("room-players", (data) => {
-      console.debug("👥 Received room players data:", data);
       if (data.roomId === currentRoom.name) {
         displayRoomPlayers(data.players);
       }
@@ -8465,13 +4989,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function startDepartureSequence() {
     if (!DEPARTURE_SEQUENCE_ENABLED) {
-      console.debug("🚧 Departure sequence disabled for testing");
       return;
     }
     if (departureStarted) return;
     departureStarted = true;
 
-    console.debug("🚢 Starting departure sequence...");
 
     // Only teleport if player is in Southampton
     let shouldTeleport = false;
@@ -8483,7 +5005,6 @@ document.addEventListener("DOMContentLoaded", function () {
         (r) => r.location && r.location.chatRoom === currentRoom.name,
       );
     }
-    console.debug("🧭 Teleport check:", { shouldTeleport, currentRoom });
     if (shouldTeleport) {
       // Prefer using enterRoom with a real room object
       const target =
@@ -8511,8 +5032,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Play whistle sound
     const whistleSound = new Audio("/sounds/whistle.mp3");
     whistleSound.volume = 0.7;
-    whistleSound.play();
-    console.debug("📯 Playing ship whistle...");
+    whistleSound.play().catch(() => {});
 
     // Start "Leaving Port" music midway through whistle (assuming whistle is ~3 seconds)
     setTimeout(() => {
@@ -8547,10 +5067,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const yacht1 = document.querySelector(".yacht-1-container");
     const yacht2 = document.querySelector(".yacht-2-container");
     const yacht3 = document.querySelector(".yacht-3-container");
-    const DEPARTURE_DELAY_MS = 720000; // 12 minutes pre-departure countdown
+    const DEPARTURE_DELAY_MS = TIMELINE_MS.DEPARTURE_DELAY;
+    const SOUTHAMPTON_WATER_END_MS = TIMELINE_MS.SOUTHAMPTON_WATER_END;
+    const NEEDLES_COMPLETE_MS = TIMELINE_MS.NEEDLES_COMPLETE;
 
     if (!southamptonCity || !dock) {
-      console.warn("⚠️ Southampton elements not found for departure");
       return;
     }
 
@@ -8563,7 +5084,6 @@ document.addEventListener("DOMContentLoaded", function () {
           el.style.display = "none";
         }
       });
-      console.debug(`🌊 Southampton scenery hidden (${reason})`);
     };
 
     const maybeHideSouthamptonVisuals = (
@@ -8575,7 +5095,7 @@ document.addEventListener("DOMContentLoaded", function () {
         0,
         elapsedVoyageMs - DEPARTURE_DELAY_MS,
       );
-      if (elapsedSinceDepartureMs >= SOUTHAMPTON_WATER_END) {
+      if (elapsedSinceDepartureMs >= SOUTHAMPTON_WATER_END_MS) {
         hideSouthamptonVisuals(reason);
       }
     };
@@ -8590,7 +5110,6 @@ document.addEventListener("DOMContentLoaded", function () {
           el.style.display = "none";
         }
       });
-      console.debug(`🌫️ Coastal terrain hidden (${reason})`);
     };
 
     const maybeHideCoastalTerrain = (
@@ -8602,7 +5121,7 @@ document.addEventListener("DOMContentLoaded", function () {
         0,
         elapsedVoyageMs - DEPARTURE_DELAY_MS,
       );
-      if (elapsedSinceDepartureMs >= NEEDLES_COMPLETE) {
+      if (elapsedSinceDepartureMs >= NEEDLES_COMPLETE_MS) {
         hideCoastalTerrain(reason);
       }
     };
@@ -8612,22 +5131,20 @@ document.addEventListener("DOMContentLoaded", function () {
       landMiddle.classList.add("scrolling");
     }
 
-    // Timeline milestones (in milliseconds from departure start)
     const DEPARTURE_START = 0;
-    const SOUTHAMPTON_WATER_END = 1200000; // 20 minutes - 6 knots
-    const NEEDLES_PASS = 4650000; // 1h 17.5m - Isle of Wight passage - 12 knots
-    const NEEDLES_COMPLETE = 5130000; // ~8 minutes after Needles start (8 min passage)
-    const CHANNEL_COMPLETE = 18000000; // 5 hours - 19 knots cruising across English Channel
-    const APPROACH_COMPLETE = 18900000; // 15 more minutes - 12 knots approaching harbor
-    const BERTHING_COMPLETE = 19500000; // 10 more minutes - 6 knots → 0 (5h 25m total)
-    const LAND_END_START = 4590000; // 1 minute (60s) before Isle of Wight passage
+    const SOUTHAMPTON_WATER_END = TIMELINE_MS.SOUTHAMPTON_WATER_END;
+    const NEEDLES_PASS = TIMELINE_MS.NEEDLES_PASS;
+    const NEEDLES_COMPLETE = TIMELINE_MS.NEEDLES_COMPLETE;
+    const CHANNEL_COMPLETE = TIMELINE_MS.CHANNEL_COMPLETE;
+    const APPROACH_COMPLETE = TIMELINE_MS.APPROACH_COMPLETE;
+    const BERTHING_COMPLETE = TIMELINE_MS.BERTHING_COMPLETE;
+    const LAND_END_START = TIMELINE_MS.NEEDLES_PASS - 60 * 1000;
 
-    // Speed zones based on timeline
-    const acceleration = 0.012; // knots per second squared
+    const acceleration = SHIP_ACCELERATION;
 
     // Use server voyage time for synchronization
-    const startTime = voyageStartTime || Date.now(); // Use server time if available
-    const elapsedAtStart = voyageStartTime ? getElapsedSeconds() * 1000 : 0; // How much time has already passed
+    const startTime = v.voyageStartTime || Date.now(); // Use server time if available
+    const elapsedAtStart = v.voyageStartTime ? getElapsedSeconds() * 1000 : 0; // How much time has already passed
     maybeHideSouthamptonVisuals(elapsedAtStart, "late-join bootstrap");
     maybeHideCoastalTerrain(elapsedAtStart, "late-join bootstrap");
 
@@ -8699,9 +5216,6 @@ document.addEventListener("DOMContentLoaded", function () {
       cherbourg.style.left = `${Math.round(cherbourgPosition)}px`;
     }
 
-    // Removed onCherbourgResize logic as we now use fixed scene coordinates
-    // which automatically scale with the viewport.
-
     if (elapsedAtStart > 0) {
       const elapsedSinceVoyageStart = elapsedAtStart / 1000;
       // Calculate elapsed time since DEPARTURE (not voyage start)
@@ -8741,7 +5255,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const targetLeft = SCENE_WIDTH * 0.68;
           // If server-synchronized speed indicates we're still fast (> threshold)
           // keep Cherbourg off-screen for dramatic reveal while slowing.
-          if (currentSpeed > CHERBOURG_SHOW_KNOTS) {
+          if (currentSpeed > v.CHERBOURG_SHOW_KNOTS) {
             cherbourgPosition = Math.max(
               cherbourgPosition,
               cherbourgOffscreenRight(),
@@ -8775,13 +5289,6 @@ document.addEventListener("DOMContentLoaded", function () {
         landMiddlePosition = elapsedSinceDeparture * 6;
       }
 
-      console.debug(
-        `🎬 Starting animation from position: ${departurePosition.toFixed(
-          1,
-        )}px (${Math.floor(
-          elapsedSinceDeparture / 60,
-        )}min since departure, speed=${currentSpeed.toFixed(1)}kts)`,
-      );
     }
     // startTime already defined above - using server voyage time
     let lastTimestamp = Date.now();
@@ -8833,37 +5340,15 @@ document.addEventListener("DOMContentLoaded", function () {
             naturalH === 0
           ) {
             // Image says it's complete but reports zero natural size - that is unusual
-            console.warn(
-              "⚠️ Yacht image reports complete but natural size 0 — forcing a re-layout check",
-              innerImg.src,
-            );
           }
           if (innerImg && !innerImg.complete) {
             innerImg.addEventListener(
               "load",
               () => {
-                console.debug(
-                  "🔁 Yacht image loaded during spawn:",
-                  innerImg.src,
-                  {
-                    naturalWidth: innerImg.naturalWidth,
-                    naturalHeight: innerImg.naturalHeight,
-                    rectAfterLoad: innerImg.getBoundingClientRect(),
-                  },
-                );
               },
               { once: true },
             );
           }
-          console.debug("⛵ A yacht appears in the distance...", {
-            elem: randomYacht,
-            rect,
-            imgRect,
-            imgSrc: innerImg ? innerImg.src : null,
-            imgLoaded: innerImg ? innerImg.complete : null,
-            naturalWidth: naturalW,
-            naturalHeight: naturalH,
-          });
           // If the container bounding box is still zero width/height, but we
           // have a valid natural size from the image, ensure the container is
           // forced to that size for visibility (this helps debug image styling
@@ -8876,14 +5361,6 @@ document.addEventListener("DOMContentLoaded", function () {
           ) {
             randomYacht.style.width = `${innerImg.naturalWidth}px`;
             randomYacht.style.height = `${innerImg.naturalHeight}px`;
-            console.debug(
-              "🛠️ Forced container size to image natural size:",
-              randomYacht.getBoundingClientRect(),
-              {
-                forcedWidth: innerImg.naturalWidth,
-                forcedHeight: innerImg.naturalHeight,
-              },
-            );
           }
         }
       }
@@ -8894,9 +5371,8 @@ document.addEventListener("DOMContentLoaded", function () {
     window.spawnYachtNow = () => {
       try {
         spawnYachtRandomly();
-        console.debug("🔧 spawnYachtNow executed");
       } catch (e) {
-        console.error("🔧 spawnYachtNow failed", e);
+        console.error("spawnYachtNow failed", e);
       }
     };
 
@@ -8913,12 +5389,6 @@ document.addEventListener("DOMContentLoaded", function () {
         y.style.opacity = "1";
         const inner =
           y.querySelector("img") || y.querySelector(".southampton-yacht");
-        console.debug("🔧 spawned (all) ", y, y.getBoundingClientRect(), {
-          imgSrc: inner ? inner.src : null,
-          imgLoaded: inner ? inner.complete : null,
-          naturalWidth: inner ? inner.naturalWidth : null,
-          naturalHeight: inner ? inner.naturalHeight : null,
-        });
       });
       // Do NOT auto-update alignment — yachts should remain where CSS puts them.
     };
@@ -8934,7 +5404,6 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!water) {
         const brit = document.querySelector(".britannic");
         if (!brit) {
-          console.warn("alignYachtsToShip: water or Britannic not found");
           return;
         }
         waterRect = brit.getBoundingClientRect();
@@ -8947,7 +5416,6 @@ document.addEventListener("DOMContentLoaded", function () {
         ),
       );
       if (yachts.length === 0) {
-        console.warn("alignYachtsToShip: No yacht containers found");
         return;
       }
 
@@ -8964,11 +5432,6 @@ document.addEventListener("DOMContentLoaded", function () {
       // newOffset will move the yachts by -avgDiff (to align to brit bottom) then add desiredDelta
       const newOffset = Math.round(curOffset - avgDiff + desiredDelta);
       root.style.setProperty("--yacht-offset", `${newOffset}px`);
-      console.debug("alignYachtsToShip applied", {
-        avgDiff,
-        curOffset,
-        newOffset,
-      });
     };
 
     // Developer helpers to tune yacht vertical offset at runtime
@@ -8976,11 +5439,9 @@ document.addEventListener("DOMContentLoaded", function () {
       const root = document.documentElement;
       const n = Number(px);
       if (Number.isNaN(n)) {
-        console.warn("setYachtOffset: invalid value", px);
         return;
       }
       root.style.setProperty("--yacht-offset", `${n}px`);
-      console.debug(`✨ Yacht offset set to ${n}px`);
     };
 
     window.incYachtOffset = (delta = 10) => {
@@ -9001,42 +5462,35 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       const next = Math.round(cur + Number(delta));
       root.style.setProperty("--yacht-offset", `${next}px`);
-      console.debug(`✨ Yacht offset changed ${cur}->${next}px`);
     };
 
     // Per-yacht controls: change each yacht's vertical offset and horizontal position
     window.setIndividualYachtOffset = (index, px) => {
       // index: 1|2|3, px: number or string with units
       if (![1, 2, 3].includes(Number(index))) {
-        console.warn("setIndividualYachtOffset: invalid index", index);
         return;
       }
       const root = document.documentElement;
       const v = typeof px === "string" ? px : `${Number(px)}px`;
       root.style.setProperty(`--yacht-offset-${index}`, v);
-      console.debug(`🚤 Yacht ${index} offset set to ${v}`);
     };
 
     window.setYachtLeft = (index, value) => {
       // Set the left position of a yacht container; value can be percent or px
       const idx = Number(index);
       if (![1, 2, 3].includes(idx)) {
-        console.warn("setYachtLeft: invalid index", index);
         return;
       }
       const el = document.querySelector(`.yacht-${idx}-container`);
       if (!el) {
-        console.warn("setYachtLeft: container not found", idx);
         return;
       }
       el.style.left = value;
-      console.debug(`🚤 Yacht ${idx} left position now ${value}`);
     };
 
     window.setYachtScale = (index, scale) => {
       const idx = Number(index);
       if (![1, 2, 3].includes(idx)) {
-        console.warn("setYachtScale: invalid index", index);
         return;
       }
       // Setting the CSS variable for scale already in use by the stylesheet
@@ -9044,7 +5498,6 @@ document.addEventListener("DOMContentLoaded", function () {
         `--yacht-scale-${idx}`,
         String(scale),
       );
-      console.debug(`🚤 Yacht ${idx} scale set to`, scale);
     };
 
     window.resetYachtOffsets = () => {
@@ -9052,16 +5505,14 @@ document.addEventListener("DOMContentLoaded", function () {
       [1, 2, 3].forEach((i) =>
         root.style.removeProperty(`--yacht-offset-${i}`),
       );
-      console.debug("↩️ Yacht offsets reset to default");
     };
 
     // Debug helper to force Cherbourg night sprite for testing
     window.showCherbourgNight = (show = true) => {
       try {
         const el = document.querySelector(".cherbourg-night");
-        if (!el) return console.warn("cherbourg-night element not found");
+        if (!el) return;
         el.style.opacity = show ? 1 : 0;
-        console.debug(`🌙 Cherbourg night sprite ${show ? "shown" : "hidden"}`);
       } catch (e) {
         console.error("Failed to toggle cherbourg-night:", e);
       }
@@ -9078,9 +5529,6 @@ document.addEventListener("DOMContentLoaded", function () {
         root.style.setProperty("--cherbourg-brightness", String(brightness));
         root.style.setProperty("--cherbourg-saturation", String(saturation));
         root.style.setProperty("--cherbourg-contrast", String(contrast));
-        console.debug(
-          `🌙 Cherbourg sprite tuned: brightness=${brightness} saturation=${saturation} contrast=${contrast}`,
-        );
       } catch (e) {
         console.error("Failed to set cherbourg brightness:", e);
       }
@@ -9092,7 +5540,6 @@ document.addEventListener("DOMContentLoaded", function () {
         root.style.removeProperty("--cherbourg-brightness");
         root.style.removeProperty("--cherbourg-saturation");
         root.style.removeProperty("--cherbourg-contrast");
-        console.debug("🌙 Cherbourg sprite brightness reset to CSS defaults.");
       } catch (e) {
         console.error("Failed to reset cherbourg brightness:", e);
       }
@@ -9106,9 +5553,6 @@ document.addEventListener("DOMContentLoaded", function () {
         root.style.setProperty("--cherbourg-bottom", bottom);
         const el = document.querySelector(".cherbourg-night");
         if (el) el.style.left = "";
-        console.debug(
-          `📍 Cherbourg position set: left=${left}, bottom=${bottom}`,
-        );
       } catch (e) {
         console.error("Failed to set cherbourg position:", e);
       }
@@ -9119,7 +5563,6 @@ document.addEventListener("DOMContentLoaded", function () {
       try {
         const root = document.documentElement;
         root.style.setProperty("--cherbourg-width", size);
-        console.debug(`📏 Cherbourg width set to: ${size}`);
       } catch (e) {
         console.error("Failed to set cherbourg size:", e);
       }
@@ -9130,7 +5573,6 @@ document.addEventListener("DOMContentLoaded", function () {
       try {
         const root = document.documentElement;
         root.style.removeProperty("--cherbourg-width");
-        console.debug("📏 Cherbourg width reset to default");
       } catch (e) {
         console.error("Failed to reset cherbourg size:", e);
       }
@@ -9156,11 +5598,9 @@ document.addEventListener("DOMContentLoaded", function () {
           document.body.removeChild(tmp);
           num = parseFloat(bottomPx) || null;
         } catch (e) {
-          console.warn("getYachtBaseline: fallback parse failed", e);
           num = null;
         }
       }
-      console.debug(`--yacht-baseline: ${val} => ${num}px`);
       return num;
     };
 
@@ -9259,7 +5699,6 @@ document.addEventListener("DOMContentLoaded", function () {
         };
       });
 
-      console.debug("🛥️ Yacht positions:", res);
       return res;
     };
 
@@ -9284,6 +5723,9 @@ document.addEventListener("DOMContentLoaded", function () {
         // Random interval between 20-40 seconds
         const nextSpawn = 20000 + Math.random() * 20000;
         const timer = setTimeout(() => {
+          // Drop the fired handle so the array doesn't grow for the whole phase
+          const idx = yachtTimers.indexOf(timer);
+          if (idx !== -1) yachtTimers.splice(idx, 1);
           spawnYachtRandomly();
           scheduleNextYacht();
         }, nextSpawn);
@@ -9300,9 +5742,20 @@ document.addEventListener("DOMContentLoaded", function () {
       Math.max(0, SOUTHAMPTON_WATER_END - elapsedSinceStart),
     );
 
-    const interval = setInterval(() => {
+    // One step per display frame, so the sea, coast and yachts move in step
+    // with the screen's refresh (a 16 ms timer drifts against 60 Hz and
+    // judders). Browsers pause animation frames in background tabs, so a slow
+    // timer keeps the voyage moving there; every step uses the real time
+    // elapsed, so positions come out the same either way.
+    let frameId = null;
+    let hiddenTimer = null;
+    let stopped = false;
+    const stepDeparture = () => {
+      if (stopped) return;
       if (!departureStarted) {
-        clearInterval(interval);
+        stopped = true;
+        cancelAnimationFrame(frameId);
+        clearInterval(hiddenTimer);
         yachtTimers.forEach((timer) => clearTimeout(timer));
         return;
       }
@@ -9342,16 +5795,16 @@ document.addEventListener("DOMContentLoaded", function () {
         currentSpeed = window.currentSpeed;
         window.currentSpeed = undefined; // Clear flag so we only sync once
       } else if (
-        voyageStartTime ||
-        pendingVoyageStartTime ||
-        latestVoyageState
+        v.voyageStartTime ||
+        v.pendingVoyageStartTime ||
+        v.latestVoyageState
       ) {
         // Fall back to local calculation when the server hasn't pushed speed yet.
         // This avoids a static ocean for late-joiners or transient disconnects.
-        const anchor = voyageStartTime || pendingVoyageStartTime;
+        const anchor = v.voyageStartTime || v.pendingVoyageStartTime;
         const elapsedSeconds = anchor
           ? Math.floor((Date.now() - anchor) / 1000)
-          : latestVoyageState?.elapsedSeconds || 0;
+          : v.latestVoyageState?.elapsedSeconds || 0;
         try {
           const st = calculateVoyageState(elapsedSeconds);
           if (st && typeof st.speedValue === "number") {
@@ -9362,10 +5815,6 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         } catch (err) {
           // Do nothing; keep fallback to whichever speed was last seen
-          console.warn(
-            "⚠️ Wave fallback speed calculation failed:",
-            err.message,
-          );
         }
       }
       if (typeof window.targetSpeed === "number") {
@@ -9415,6 +5864,16 @@ document.addEventListener("DOMContentLoaded", function () {
         water.style.backgroundPosition = `${-waterPosition}px 0`;
       }
 
+      // Keep the vista wing water phase-locked to the scene water so the
+      // texture scrolls straight through the scene edge without a seam
+      const wingWater = document.getElementById("water-wing");
+      const vista = window.__vista;
+      if (wingWater && vista && vista.active) {
+        wingWater.style.backgroundPosition = `${
+          vista.sceneLeft - waterPosition * vista.scale
+        }px 0`;
+      }
+
       // Animate swater background position for infinite scroll effect (like waves)
       if (swater) {
         swater.style.backgroundPosition = `${-swaterPosition}px 0`;
@@ -9439,7 +5898,6 @@ document.addEventListener("DOMContentLoaded", function () {
         !isleOfWightCompleted
       ) {
         if (!isleOfWightPassing) {
-          console.debug("🏝️ Passing Isle of Wight (The Needles)...");
           isleOfWightPassing = true;
         }
 
@@ -9461,7 +5919,6 @@ document.addEventListener("DOMContentLoaded", function () {
           isleOfWight.style.opacity = "1";
         }
       } else if (elapsedTime >= NEEDLES_COMPLETE && !isleOfWightCompleted) {
-        console.debug("✅ Isle of Wight passage complete");
         isleOfWightCompleted = true;
         if (isleOfWight) {
           isleOfWight.style.opacity = "0"; // Fade out after passing
@@ -9475,7 +5932,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Display the sprite once we've slowed enough during the approach
         if (elapsedTime >= CHANNEL_COMPLETE) {
-          if (currentSpeed <= CHERBOURG_SHOW_KNOTS) {
+          if (currentSpeed <= v.CHERBOURG_SHOW_KNOTS) {
             // Begin slow drift inwards when ship has slowed enough.
           } else {
             // Keep off-screen until the ship slows down enough to begin the reveal
@@ -9497,7 +5954,7 @@ document.addEventListener("DOMContentLoaded", function () {
             cherbourg.style.opacity = "1";
           }
           // Otherwise, if we are in the approach phase and speed is low enough, animate
-          else if (currentSpeed <= CHERBOURG_SHOW_KNOTS) {
+          else if (currentSpeed <= v.CHERBOURG_SHOW_KNOTS) {
             // Dynamic factor: width / 4500 ensures we cover the distance (approx 0.8w)
             // within the available knot-seconds (approx 3950).
             // 0.8w / 3950 ~= w / 4937. Using w/4500 provides a safety margin to arrive early.
@@ -9534,7 +5991,6 @@ document.addEventListener("DOMContentLoaded", function () {
           yacht.element.classList.remove("visible");
           yacht.element.style.opacity = "0";
           activeYachts.splice(i, 1);
-          console.debug("⛵ Yacht has passed out of view");
         } else {
           // Update yacht container transform with translateX only so the
           // yacht image inside can keep its `translate(-50%, 0) scale(...)`.
@@ -9542,16 +5998,22 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       }
 
-      // Stop interval if elements are fully offscreen (optional)
-      // if (departurePosition > window.innerWidth) clearInterval(interval);
-    }, 16); // ~60fps, but works even when tab is inactive
+    };
+    const onFrame = () => {
+      stepDeparture();
+      if (!stopped) frameId = requestAnimationFrame(onFrame);
+    };
+    hiddenTimer = setInterval(() => {
+      if (document.hidden) stepDeparture();
+    }, 250);
+    frameId = requestAnimationFrame(onFrame);
   }
 
   // Start departure sequence synchronized with server time (7 minutes after voyage start)
   if (DEPARTURE_SEQUENCE_ENABLED) {
     // Check repeatedly if it's time to start departure
     const checkDepartureTime = setInterval(() => {
-      if (!voyageStartTime) return; // Wait for server time
+      if (!v.voyageStartTime) return; // Wait for server time
 
       const elapsedSeconds = getElapsedSeconds();
 
@@ -9562,24 +6024,15 @@ document.addEventListener("DOMContentLoaded", function () {
         // Check if departure already happened (player joined late or refreshed)
         if (elapsedSeconds > TIMELINE_SECONDS.DEPARTURE_DELAY + 5) {
           // 5 second grace period after departure
-          console.info(
-            `🚢 Departure already occurred (${Math.floor(
-              elapsedSeconds / 60,
-            )} min elapsed) - skipping sequence`,
-          );
           departureStarted = true; // Mark as started to prevent re-triggering
           // Start animation at current state without playing sounds/music/teleport
           animateDeparture();
         } else {
           // Normal departure - play full sequence
-          console.debug(
-            "🚢 Starting departure at server-synced 12 minute mark",
-          );
           startDepartureSequence();
         }
       }
     }, 1000); // Check every second
   } else {
-    console.debug("🚧 Departure sequence scheduling skipped (disabled)");
   }
 });

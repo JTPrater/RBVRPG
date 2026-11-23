@@ -1,0 +1,9 @@
+Playing cards for the draw-poker table.
+
+Faces: "Vector Playing Cards" 1.3 by Byron Knoll, released into the public domain.
+  https://code.google.com/archive/p/vector-playing-cards/
+  (the red and club aces redrawn with the set's own flat pips)
+Back: "Playing cards back vector svg" by BdRGames, CC0.
+  https://opengameart.org/content/playing-cards-back-vector-svg
+
+Made by scripts/cards/make_cards.js.
