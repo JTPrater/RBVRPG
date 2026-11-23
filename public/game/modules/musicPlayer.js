@@ -1,4 +1,19 @@
 (function (RBV) {
+  // A song's file name as a title. File names cannot hold ":" or quotes, so the
+  // files stand "_" in for them: "Op. 15_ March" is "Op. 15: March",
+  // "_Der Kaffeeklatsch_" is "Der Kaffeeklatsch" in quotes.
+  function songTitle(path) {
+    return String(path || "")
+      .split("/")
+      .pop()
+      .replace(/\.mp3$/i, "")
+      .replace(/_([^_\s][^_]*?[^_\s])_/g, "“$1”")
+      .replace(/\s*_\s+/g, ": ")
+      .replace(/_/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
   const setSfxVolume =
     RBV.audio?.setSfxVolume ||
     function () {
@@ -30,10 +45,10 @@
               songSelect.innerHTML =
                 '<option value="">Select a song...</option>';
               songs.forEach((song, index) => {
-                const songName = song.split("/").pop().replace(".mp3", "");
                 const option = document.createElement("option");
                 option.value = index;
-                option.textContent = songName;
+                option.textContent = songTitle(song);
+                option.title = option.textContent; // the whole title, where the list cuts it short
                 songSelect.appendChild(option);
               });
 
@@ -163,10 +178,7 @@
           "No songs available";
         return;
       }
-      const songName = this.songs[this.currentSongIndex]
-        .split("/")
-        .pop()
-        .replace(".mp3", "");
+      const songName = songTitle(this.songs[this.currentSongIndex]);
       document.getElementById("current-song").textContent =
         `Now Playing: ${songName}`;
     },
