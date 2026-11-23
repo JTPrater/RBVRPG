@@ -1,0 +1,4 @@
+{"rows": [[{"p": "work/desun_twilight/forecastle2.png", "box": [0,640,460,1080], "k": 1.0, "tag": "IN THE GAME NOW: sunset, forecastle2 lower left (full size)"},
+           {"p": "work/p_twilight/forecastle2.png", "box": [0,640,460,1080], "k": 1.0, "tag": "NEW sunset"},
+           {"p": "G:forecastle2.png", "box": [0,640,460,1080], "k": 1.0, "tag": "day"},
+           {"p": "work/desun/forecastle2.png", "box": [0,640,460,1080], "k": 1.0, "tag": "sun removed (source)"}]]}

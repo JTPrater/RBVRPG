@@ -65,9 +65,6 @@
       // scale, so once a minute is plenty to catch every change
       this._weatherInterval = setInterval(() => this.updateWeather(), 60000);
 
-      console.debug(
-        "✅ Narrative system initialized (waiting for server time)",
-      );
     },
 
     updateNarrative() {
@@ -93,7 +90,6 @@
             "narrativeEventIndex",
             this.currentEventIndex.toString(),
           );
-          console.debug(`📖 Narrative event: ${nextEvent.text}`);
         }, 500);
       }
     },
@@ -136,12 +132,10 @@
       setTimeout(() => {
         weatherElement.textContent = text;
         weatherElement.style.opacity = "1";
-        console.debug(`🌤️ Weather updated: ${text}`);
       }, 300);
     },
   };
 
   RBV.narrative = { system: narrativeSystem };
   window.narrativeSystem = narrativeSystem;
-  console.debug("✅ Defined narrative system.");
 })(window.RBV);

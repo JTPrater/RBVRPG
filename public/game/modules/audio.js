@@ -85,5 +85,4 @@
   window.interiorSound = interiorSound;
   window.exteriorSound = exteriorSound;
 
-  console.debug("✅ Initialized game audio.");
 })(window.RBV);

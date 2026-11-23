@@ -65,7 +65,6 @@
     try {
       localStorage.setItem(STORED_STATS_KEY, JSON.stringify(snapshot));
     } catch (err) {
-      console.warn("⚠️ Failed to persist stats locally:", err);
     }
   }
 
@@ -77,9 +76,7 @@
       if (!parsed) return;
       const { money: _ignoredMoney, ...localStats } = parsed;
       applyStatsToState(localStats);
-      console.debug("📦 Restored stats from local storage snapshot", localStats);
     } catch (err) {
-      console.warn("⚠️ Failed to restore stats snapshot:", err);
     }
   }
 
@@ -137,7 +134,6 @@
       bladder: statusBars.bladder.value,
       intoxication: statusBars.intoxication.value,
     };
-    console.debug("💾 Saving stats to server:", statsData);
     socket.emit("save-stats", statsData);
     persistStatsLocally();
   }
@@ -145,10 +141,8 @@
   const statusBarsInterval = setInterval(updateStatusBars, 1000);
 
   socket.on("stats-loaded", (statsData) => {
-    console.debug("📊 Received stats from server:", statsData);
     applyStatsToState(statsData);
     persistStatsLocally();
-    console.debug("📊 Stats loaded and visual bars updated");
   });
 
   restoreStatsFromStorage();
@@ -157,7 +151,6 @@
     try {
       saveStatsToServer();
     } catch (err) {
-      console.warn("⚠️ Failed to persist stats on unload:", err);
     }
     clearInterval(statusBarsInterval);
     if (window.RBV?.narrative?.system?._narrativeInterval) {

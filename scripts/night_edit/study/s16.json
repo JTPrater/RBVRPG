@@ -1,0 +1,8 @@
+{"rows": [[{"p": "work/p_night/forecastle4.png", "box": [760,440,1420,660], "k": 1.5, "tag": "NEW night: forecastle4, superstructure front (x1.5)"},
+           {"p": "work/p_night/2nd class b starb prom4.png", "box": [1130,420,1470,650], "k": 2.0, "tag": "2nd class b starb prom4 (x2)"}],
+          [{"p": "work/p_night/forecastle2.png", "box": [340,380,820,600], "k": 1.9, "tag": "NEW night: forecastle2 (x1.9)"},
+           {"p": "work/p_night/1st A port prom10.png", "box": [1240,660,1440,860], "k": 2.0, "tag": "1st A port prom10 (x2)"},
+           {"p": "work/p_night/BD first port prom2.png", "box": [0,740,240,960], "k": 1.8, "tag": "BD first port prom2 (x1.8)"}],
+          [{"p": "work/p_night/1st B starb enclosed prom3.png", "box": [960,420,1920,760], "k": 1.0, "tag": "NEW night, full size: 1st B starb enclosed prom3"},
+           {"p": "work/p_night/BD first starb prom2.png", "box": [0,480,420,680], "k": 1.6, "tag": "BD first starb prom2, left (x1.6)"},
+           {"p": "work/p_night/starb 2nd class prom4.png", "box": [1420,430,1620,620], "k": 1.3, "tag": "starb 2nd class prom4 port"}]]}

@@ -5,6 +5,17 @@ document.addEventListener("DOMContentLoaded", function () {
   const closeBtn = document.querySelector(".close-btn");
 
   // Function to open modal
+  // A passenger's own text goes into the page as text, not as markup
+  function escapeHtml(value) {
+    return String(value == null ? "" : value).replace(
+      /[&<>"']/g,
+      (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+          c
+        ]
+    );
+  }
+
   function openModal(passenger) {
     const birthDate = new Date(passenger.birthdate).toLocaleDateString();
 
@@ -20,12 +31,15 @@ document.addEventListener("DOMContentLoaded", function () {
       `<i class="fas fa-calendar-alt"></i> Born: ${birthDate}`
     );
     document.getElementById("modalCabin").innerHTML = DOMPurify.sanitize(
-      `<i class="fas fa-key"></i> Cabin: ${
+      `<i class="fas fa-key"></i> Cabin: ${escapeHtml(
         passenger.cabin_number || passenger.cabin
-      }`
+      )}`
     );
     document.getElementById("modalBio").innerHTML = DOMPurify.sanitize(
-      `<p>${passenger.bio || "No biography provided."}</p>`
+      `<p>${escapeHtml(passenger.bio || "No biography provided.").replace(
+        /\r?\n/g,
+        "<br>"
+      )}</p>`
     );
 
     // Show the modal and disable background scrolling
@@ -61,16 +75,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
     card.innerHTML = DOMPurify.sanitize(`
       <div class="avatar">
-        <img src="${passenger.avatar}" alt="${passenger.forename} ${
-      passenger.surname
-    }">
+        <img src="${escapeHtml(passenger.avatar)}" alt="${escapeHtml(
+      passenger.forename
+    )} ${escapeHtml(passenger.surname)}">
       </div>
       <div class="info">
-        <h2>${passenger.forename} ${passenger.surname}</h2>
-        <p class="dob"><i class="fas fa-calendar-alt"></i> Born: ${birthDate}</p>
-        <p class="cabin"><i class="fas fa-key"></i> Cabin: ${
+        <h2>${escapeHtml(passenger.forename)} ${escapeHtml(passenger.surname)}</h2>
+        <p class="dob"><i class="fas fa-calendar-alt"></i> Born: ${escapeHtml(birthDate)}</p>
+        <p class="cabin"><i class="fas fa-key"></i> Cabin: ${escapeHtml(
           passenger.cabin_number || passenger.cabin
-        }</p>
+        )}</p>
       </div>
     `);
 
@@ -94,7 +108,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Handle initial passengers load
   socket.on("initial-passengers", (passengers) => {
-    console.log("Received initial passengers:", passengers);
     passengerGrid.innerHTML = "";
     if (Array.isArray(passengers)) {
       passengers.forEach((passenger) => {
@@ -107,7 +120,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Handle new passenger additions
   socket.on("new-passenger", (passenger) => {
-    console.log("New passenger joined:", passenger);
     if (passenger) {
       passengerGrid.appendChild(createPassengerCard(passenger));
     }

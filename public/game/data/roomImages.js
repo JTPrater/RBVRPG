@@ -39,13 +39,6 @@ const roomImages = {
       "Port Officer's Promenade2.png",
       "Port Officer's Promenade3.png",
     ],
-    variants: {
-      ms: [
-        "Port Officer's Promenade (ms).png",
-        "Port Officer's Promenade2.png",
-        "Port Officer Promenade3.png",
-      ],
-    },
     currentIndex: 0,
   },
   starboard_officers_promenade_bd: {
@@ -54,13 +47,6 @@ const roomImages = {
       "Starboard Officer's Promenade2.png",
       "Starboard Officer's Promenade3.png",
     ],
-    variants: {
-      ms: [
-        "Starboard Officer's Promenade.png",
-        "Starboard Officer's Promenade2.png",
-        "Starboard Officer's Promenade3.png",
-      ],
-    },
     currentIndex: 0,
   },
   port_bridge_wing_bd: {
@@ -71,15 +57,6 @@ const roomImages = {
       "Port Bridge Wing4.png",
       "Port Bridge Wing5.png",
     ],
-    variants: {
-      ms: [
-        "Port Bridge Wing.png",
-        "Port Bridge Wing2.png",
-        "Port Bridge Wing3.png",
-        "Port Bridge Wing4.png",
-        "Port Bridge Wing5.png",
-      ],
-    },
     currentIndex: 0,
   },
   starboard_bridge_wing_bd: {
@@ -90,15 +67,6 @@ const roomImages = {
       "Starboard Bridge Wing4.png",
       "Starboard Bridge Wing5.png",
     ],
-    variants: {
-      ms: [
-        "Starboard Bridge Wing.png",
-        "Starboard Bridge Wing2.png",
-        "Starboard Bridge Wing3.png",
-        "Starboard Bridge Wing4.png",
-        "Starboard Bridge Wing5.png",
-      ],
-    },
     currentIndex: 0,
   },
   bridge_bd: {
@@ -110,16 +78,6 @@ const roomImages = {
       "Bridge5.png",
       "Bridge6.png",
     ],
-    variants: {
-      ms: [
-        "Bridge.png",
-        "Bridge2.png",
-        "Bridge3.png",
-        "Bridge4.png",
-        "Bridge5.png",
-        "Bridge6.png",
-      ],
-    },
     currentIndex: 0,
   },
   first_class_lounge_a: {
@@ -329,9 +287,6 @@ roomImages.first_class_port_promenade_a = {
     "1st A port prom9.png",
     "1st A port prom10.png",
   ],
-  variants: {
-    ms: ["1st Class Port Promenade (ms).png"],
-  },
   currentIndex: 0,
 };
 
@@ -348,9 +303,6 @@ roomImages.first_class_starboard_promenade_a = {
     "1st A starb prom9.png",
     "1st A starb prom10.png",
   ],
-  variants: {
-    ms: ["1st Class Starboard Promenade (ms).png"],
-  },
   currentIndex: 0,
 };
 
@@ -411,9 +363,6 @@ roomImages.starboard_engineers_promenade_bd = {
     "starb engineers prom4.jpg",
     "starb engineers prom5.jpg",
   ],
-  variants: {
-    ms: ["starb engineers prom1.png", "starb engineers prom2.png"],
-  },
   currentIndex: 0,
 };
 
@@ -423,13 +372,6 @@ roomImages.port_engineers_promenade_bd = {
     "port engineers prom2.png",
     "port engineers prom3.png",
   ],
-  variants: {
-    ms: [
-      "port engineers prom1.png",
-      "port engineers prom2.png",
-      "port engineers prom3.png",
-    ],
-  },
   currentIndex: 0,
 };
 
@@ -440,14 +382,6 @@ roomImages.starboard_2nd_class_promenade_bd = {
     "starb 2nd class prom3.png",
     "starb 2nd class prom4.png",
   ],
-  variants: {
-    ms: [
-      "starb 2nd class prom1.png",
-      "starb 2nd class prom2.png",
-      "starb 2nd class prom3.png",
-      "starb 2nd class prom4.png",
-    ],
-  },
   currentIndex: 0,
 };
 
@@ -458,13 +392,6 @@ roomImages.port_2nd_class_promenade_bd = {
     "port 2nd class prom3.png",
     "port 2nd class prom4.png",
   ],
-  variants: {
-    ms: [
-      "port 2nd class prom1.png",
-      "port 2nd class prom2.png",
-      "port 2nd class prom4.png",
-    ],
-  },
   currentIndex: 0,
 };
 
@@ -480,10 +407,6 @@ roomImages.port_promenade_bd = {
     "BD first port prom7.png",
   ],
   currentIndex: 0,
-  variants: {
-    ms: ["1st Class Port Promenade (ms).png"],
-    night: [],
-  },
 };
 
 // Boat Deck - First Class Starboard Promenade replacement set
@@ -516,14 +439,6 @@ roomImages.forecastle_b = {
     "forecastle3.png",
     "forecastle4.png",
   ],
-  variants: {
-    ms: [
-      "forecastle1.png",
-      "forecastle2.png",
-      "forecastle3.png",
-      "forecastle4.png",
-    ],
-  },
   currentIndex: 0,
 };
 
@@ -535,15 +450,6 @@ roomImages.first_class_port_b_enclosed_promenade = {
     "1st B port enclosed prom4.png",
     "1st B port enclosed prom5.png",
   ],
-  variants: {
-    ms: [
-      "1st B port enclosed prom1.png",
-      "1st B port enclosed prom2.png",
-      "1st B port enclosed prom3.png",
-      "1st B port enclosed prom4.png",
-      "1st B port enclosed prom5.png",
-    ],
-  },
   currentIndex: 0,
 };
 
@@ -555,14 +461,6 @@ roomImages.first_class_starboard_b_enclosed_promenade = {
     "1st B starb enclosed prom4.png",
     "1st B starb enclosed prom5.png",
   ],
-  variants: {
-    ms: [
-      "1st B starb enclosed prom1.png",
-      "1st B starb enclosed prom2.png",
-      "1st B starb enclosed prom3.png",
-      "1st B starb enclosed prom4.png",
-    ],
-  },
   currentIndex: 0,
 };
 
@@ -795,5 +693,4 @@ roomImages.cabin_a23 = {
   RBV.data = RBV.data || {};
   RBV.data.roomImages = roomImages;
   window.roomImages = roomImages;
-  console.debug("✅ Defined roomImages:", roomImages);
 })(window.RBV);

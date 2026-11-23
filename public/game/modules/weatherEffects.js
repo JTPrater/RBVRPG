@@ -248,5 +248,4 @@
 
   RBV.weatherFx = { apply };
   window.weatherEffects = RBV.weatherFx;
-  console.debug("✅ Defined weather effects module.");
 })(window.RBV);

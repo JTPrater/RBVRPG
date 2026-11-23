@@ -63,7 +63,9 @@
   /* a printed card lying over the game */
   --card-shadow: 0 0 0 1px rgba(33, 26, 19, 0.3), 0 2px 5px rgba(8, 4, 2, 0.3), 0 12px 28px rgba(8, 4, 2, 0.4);
 
-  --f-text: "Libre Caslon Text", Georgia, serif;
+  /* Old Standard TT carries the Cyrillic (Libre Caslon has none); a browser
+     fetches it only for pages that show Cyrillic */
+  --f-text: "Libre Caslon Text", "Old Standard TT", Georgia, serif;
 
   --t-ui: clamp(12px, 0.78vw, 15px);
   --t-small: clamp(12px, 0.68vw, 13px);
@@ -77,9 +79,11 @@ html {
   font-synthesis: none;
 }
 
-/* ---------- One text face everywhere (icons and the poker table excepted) ---------- */
+/* ---------- One text face everywhere (icons excepted) ---------- */
 body,
-.game-container *:not(.material-icons):not(.material-symbols-outlined):not(.vp-overlay *),
+.game-container *:not(.material-icons):not(.material-symbols-outlined),
+.vp-overlay,
+.vp-overlay *,
 #report-modal *:not(.material-icons),
 #route-map-panel *:not(.material-icons),
 #room-tooltip,
@@ -88,14 +92,6 @@ body,
 #loading-screen * {
   font-family: var(--f-text) !important;
   font-variant-caps: normal;
-  text-transform: none;
-  letter-spacing: 0;
-}
-/* the poker table keeps its felt and Arial pay table, but its status line
-   and buttons are set in the same face, as written */
-.vp-status,
-.vp-btn {
-  font-family: var(--f-text);
   text-transform: none;
   letter-spacing: 0;
 }
@@ -132,7 +128,6 @@ body,
 .game-container #refresh-location-btn:focus-visible,
 .game-container #players-btn:not(.open):focus-visible,
 .game-container #send-message:focus-visible,
-.game-container .gp-icon:focus-visible,
 .game-container #route-globe-btn:focus-visible,
 #report-modal .btn-primary:focus-visible {
   outline: 1px solid var(--brass-light);
@@ -155,7 +150,6 @@ body,
 .eat-drink-popup,
 .edm-tooltip,
 .games-popup,
-.gp-tooltip,
 .profile-popup,
 .player-info-card,
 .modal-content,
@@ -170,11 +164,10 @@ body,
 }
 
 /* Wood: the passengers' tab and the telegraph's header over the room
-   picture, the games' icons and the loading screen's Start are cut from
+   picture and the loading screen's Start are cut from
    the same mahogany as the bars, at the top board's scale */
 .players-drawer:not(.open),
 .teleg-header,
-.gp-icon,
 #start-button,
 #dev-na-show {
   background-color: var(--wood);
@@ -196,6 +189,7 @@ body,
 #cabin-action-buttons,
 .enter-britannic-btn,
 #send-message,
+#deal-draw-btn,
 .btn-primary {
   background-color: var(--brass-plate);
   background-image: var(--paper-tex);
@@ -443,7 +437,8 @@ body,
   --lift: 0 1px 2px rgba(8, 4, 2, 0.35), 0 3px 8px rgba(8, 4, 2, 0.25);
 }
 .location-display::before {
-  content: "Choose a room from the Deckplans.";
+  /* the words are in the element's attribute, so they can be translated */
+  content: attr(data-i18n-content);
   position: absolute;
   top: 50%;
   left: 50%;
@@ -554,12 +549,49 @@ body,
 }
 /* pressed, and while its menu is open */
 .eat-drink-button:active,
-.location-display:has(.eat-drink-popup) #eat-drink-btn,
+.location-display:has(.eat-drink-popup[data-owner="eat-drink-btn"]) #eat-drink-btn,
+.location-display:has(.eat-drink-popup[data-owner="tobacco-btn"]) #tobacco-btn,
 .location-display:has(.games-popup) #games-toggle-btn {
   background-color: var(--brass-plate-down);
   box-shadow: var(--brass-edge);
   color: var(--engrave);
   text-shadow: none;
+}
+
+/* The room's buttons share one row (a smoking room has three: Tobacco,
+   Eat & Drink, Games), so none sits on top of another. */
+/* The room's name and its buttons share one row along the picture's top:
+   the buttons keep their size, the name gives way (ending in "...") rather
+   than run under them in a narrow window or a longer language */
+.room-actions {
+  position: absolute;
+  top: var(--ov-gap);
+  left: var(--ov-gap);
+  right: var(--ov-gap);
+  z-index: 12;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: clamp(6px, 0.52vw, 10px);
+  pointer-events: none;
+}
+.room-actions > * {
+  pointer-events: auto;
+}
+.room-actions .room-name-label {
+  position: static;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.room-actions .eat-drink-button {
+  position: static !important;
+  flex: none;
+  white-space: nowrap;
 }
 
 /* Refresh */
@@ -936,42 +968,33 @@ body,
   color: var(--ink);
 }
 
-/* Games list (lounge): a paper slip as deep as its row of games, with
-   square wood plates to press; the name appears under them on hover */
+/* Games (first class smoking room, lounge): a paper slip under the
+   buttons listing the tables, one ruled line each */
 .games-popup {
+  position: absolute;
   top: calc(var(--tab-h) + 14px);
-  left: 16px;
   right: 16px;
-  bottom: auto;
-  min-height: 118px;
+  z-index: 14;
+  min-width: 160px;
+  padding: 2px 0;
   border: 1px solid var(--ink);
-  border-radius: 0;
-  box-shadow: none;
 }
-.gp-icon,
-.gp-icon:hover,
-.gp-icon:active {
-  width: 52px;
-  height: 52px;
+.gp-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px 9px;
   border: 0;
-  border-radius: 0;
-  color: var(--on-wood);
-  box-shadow: none;
-  transform: none;
-}
-.gp-icon:hover {
-  box-shadow: var(--darken);
-}
-.gp-icon:active {
-  box-shadow: var(--press);
-  color: var(--brass-light);
-}
-.gp-tooltip {
+  background: none;
+  text-align: left;
+  font-size: var(--t-ui);
   color: var(--ink);
-  border: 1px solid var(--ink);
-  border-radius: 0;
-  box-shadow: none;
-  font-size: 13px;
+  cursor: pointer;
+}
+.gp-item + .gp-item {
+  border-top: 1px solid var(--rule);
+}
+.gp-item:hover {
+  box-shadow: inset 0 0 0 100vmax rgba(33, 26, 19, 0.06);
 }
 
 /* Bridge telegraph: a wood strip that drops a mahogany board carrying the
@@ -1268,6 +1291,44 @@ body,
 .bar.bladder { --h: var(--bladder-hue, 120); }
 .bar.intoxication { --h: var(--intoxication-hue, 120); }
 
+/* Narrow windows (under 1270px, e.g. a 1366 x 768 laptop at 125%): there is
+   no room for the bars' panel at its full width, and it ran under the brass
+   buttons. It now ends before them, the six bars three across with each
+   name above its bar (a name gives way, "...", only below about 1050px) */
+@media (max-width: 1269px) {
+  .status-bars {
+    left: 276px;
+    width: calc(
+      100vw - var(--location-panel-width) - clamp(16px, 1.667vw, 32px) -
+        clamp(150px, 11.46vw, 220px) - 12px - 276px
+    );
+    padding: 8px 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, auto);
+    grid-auto-flow: row;
+    column-gap: 10px;
+    row-gap: 7px;
+  }
+  .status-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    min-width: 0;
+  }
+  .status-bar label {
+    flex: none;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .bar-container {
+    flex: none;
+    width: 100%;
+  }
+}
+
 /* Menus. The ship's menu is green leather tooled in gilt, the passenger's
    own tabs are engraved brass plates. Both are flat, with a fine grain (the
    paper tile multiplied in): hover lightens them, pressing darkens them */
@@ -1557,6 +1618,33 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
   font-style: italic;
   white-space: nowrap;
   min-width: 76px;
+}
+/* Language: a ruled row like the chat colour's */
+.language-selector {
+  margin-top: 12px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.language-selector label {
+  margin: 0;
+  min-width: 76px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-style: italic;
+  white-space: nowrap;
+}
+.language-selector select {
+  flex: 1;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
 }
 .chat-color-selector input[type="color"] {
   flex: 1;
@@ -1978,3 +2066,237 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
 /* The rules that read inline styles (the open-card plates, the low-need
    label, the !important positions on the room strips) stand in for classes
    or aria attributes that game.js could set instead. */
+
+/* ================= Draw poker ================= */
+/* A card table laid over the room picture, the room still in sight round
+   its edge, dimmed: a plain baize; the pay table printed on a card strip
+   across the top, as on the tables; the hand; the stake and Deal. Every size
+   is taken from the picture (container units), so the table fits it at any
+   window size. It sits above the room's name, buttons and passengers' tab. */
+.vp-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1100;
+  display: none;
+  container-type: size;
+  background: rgba(10, 6, 3, 0.5);
+  color: var(--on-wood);
+}
+.vp-overlay.open {
+  display: block;
+}
+.vp-overlay *,
+.vp-overlay *::before,
+.vp-overlay *::after {
+  box-sizing: border-box;
+}
+.vp-overlay button:focus-visible {
+  outline: 1px solid var(--brass-light);
+  outline-offset: 2px;
+}
+.vp-panel {
+  position: absolute;
+  inset: 3cqh 2.2cqw;
+  display: flex;
+  flex-direction: column;
+  padding: 2.6cqh 2.6cqw 3cqh;
+  background-color: #2c5a40;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    inset 0 0 6cqh rgba(0, 0, 0, 0.35),
+    0 0.8cqh 2.4cqh rgba(0, 0, 0, 0.45);
+  font-size: max(10px, 4.3cqh);
+  line-height: 1.25;
+}
+/* the pay table, and the cross that closes the table */
+.vp-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.6cqw;
+}
+.close-video-poker {
+  flex: 0 0 auto;
+  margin-top: -0.8cqh;
+  padding: 0 0.4cqw;
+  border: 0;
+  background: none;
+  font-size: max(16px, 7cqh);
+  line-height: 1;
+  color: var(--on-wood-2);
+  cursor: pointer;
+}
+.close-video-poker:hover {
+  color: var(--brass-light);
+}
+
+/* the pay table: a printed card strip, three columns of three */
+.vp-payouts {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, auto);
+  grid-auto-flow: column;
+  padding: 0.8cqh 0;
+  background-color: var(--paper);
+  background-image: var(--paper-night), var(--paper-tex);
+  background-size: auto, 512px 512px;
+  background-repeat: no-repeat, repeat;
+  box-shadow: 0 0.3cqh 0.9cqh rgba(0, 0, 0, 0.35);
+  color: var(--ink);
+  font-size: max(9px, 3.7cqh);
+  line-height: 1.25;
+}
+.vp-pay {
+  display: flex;
+  justify-content: space-between;
+  gap: 1cqw;
+  padding: 0.2cqh 1.6cqw;
+  white-space: nowrap;
+}
+.vp-pay:nth-child(n + 4) {
+  border-left: 1px solid var(--rule);
+}
+.vp-pay span:last-child {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.vp-pay.win {
+  color: var(--red);
+}
+
+/* the hand */
+.vp-cards {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.6cqw;
+  padding-top: 2.2cqh;
+}
+.vp-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: default;
+}
+.vp-overlay[data-phase="deal"] .vp-card:not(.card-back) {
+  cursor: pointer;
+}
+.vp-card img {
+  display: block;
+  height: min(40cqh, 24cqw);
+  width: auto;
+  aspect-ratio: 220 / 319;
+  filter: drop-shadow(0 0.25cqh 0.4cqh rgba(0, 0, 0, 0.5));
+  user-select: none;
+  transition: transform 0.12s ease;
+}
+.vp-card.held img {
+  transform: translateY(-2.2cqh);
+}
+.vp-card.dealt img {
+  animation: vp-drop 0.22s ease-out var(--deal-delay, 0ms) backwards;
+}
+@keyframes vp-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-3cqh);
+  }
+}
+.vp-held {
+  padding-top: 0.8cqh;
+  visibility: hidden;
+  font-size: max(9px, 3.4cqh);
+  font-style: italic;
+  line-height: 1;
+  color: var(--on-wood);
+}
+.vp-card.held .vp-held {
+  visibility: visible;
+}
+
+.vp-status {
+  min-height: 1.3em;
+  margin: 1.2cqh 0 1cqh;
+  font-style: italic;
+  text-align: center;
+  color: var(--on-wood);
+}
+.vp-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqw;
+  padding-top: 1.4cqh;
+  border-top: 1px solid rgba(236, 226, 205, 0.22);
+}
+/* the stakes: a line of figures, the one chosen in brass */
+.vp-stakes {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.vp-stakes-label {
+  margin-right: 0.8cqw;
+  font-style: italic;
+  color: var(--on-wood-2);
+}
+.vp-stake {
+  padding: 0.4cqh 1cqw;
+  border: 0;
+  background: none;
+  font-size: inherit;
+  color: var(--on-wood-2);
+  cursor: pointer;
+}
+.vp-stake:hover {
+  color: var(--on-wood);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.vp-stake[aria-pressed="true"] {
+  color: var(--brass-light);
+  text-decoration: underline;
+  text-decoration-color: var(--brass-light);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.vp-stake:disabled {
+  cursor: default;
+  text-decoration: none;
+  opacity: 0.5;
+}
+.vp-stake[aria-pressed="true"]:disabled {
+  opacity: 1;
+  text-decoration: underline;
+}
+/* Deal / Draw: an engraved brass plate, like Send */
+#deal-draw-btn {
+  flex: 0 0 auto;
+  min-width: 17cqw;
+  height: max(24px, 8.6cqh);
+  padding: 0 3cqw;
+  border: 0;
+  border-radius: 0;
+  color: var(--engrave);
+  font-size: inherit;
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.35);
+  box-shadow: var(--brass-edge);
+  cursor: pointer;
+}
+#deal-draw-btn:hover {
+  background-color: var(--brass-plate-hover);
+}
+#deal-draw-btn:active {
+  background-color: var(--brass-plate-down);
+  box-shadow: 0 0 0 1px var(--brass-rim), inset 0 1px 3px rgba(30, 18, 4, 0.5);
+}
+#deal-draw-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

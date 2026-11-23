@@ -16,12 +16,14 @@
     />
     <!-- DOMPurify for XSS protection -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.7/purify.min.js"></script>
+    <script src="/js/i18n.js"></script>
   </head>
   <body>
     <div class="container">
       <a href="/main/main.html" class="back-link">
         <i class="fas fa-arrow-left"></i> Return to Main
       </a>
+      <select class="lang-select list-lang" aria-label="Language"></select>
       <h1>Passenger List</h1>
       <div class="passenger-grid" id="passengerGrid">
         <!-- Passengers will be inserted here dynamically -->

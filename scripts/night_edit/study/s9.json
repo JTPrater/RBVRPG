@@ -1,0 +1,6 @@
+{"rows": [[{"p": "G:1st A port prom6.png", "box": [330,280,930,420], "k": 1.5, "tag": "day"},
+           {"p": "work/desun/1st A port prom6.png", "box": [330,280,930,420], "k": 1.5, "tag": "sun removed (source of the edit)"}],
+          [{"p": "work/t14/layers/1st A port prom6.base.png", "box": [330,280,930,420], "k": 1.5, "tag": "night: moonlight base"},
+           {"p": "work/t14/layers/1st A port prom6.alb.png", "box": [330,280,930,420], "k": 1.5, "tag": "night: paint brightness (albedo)"}],
+          [{"p": "work/t14/layers/1st A port prom6.light.png", "box": [330,280,930,420], "k": 1.5, "tag": "night: lamp + window light x3"},
+           {"p": "work/t14/1st A port prom6.png", "box": [330,280,930,420], "k": 1.5, "tag": "night result"}]]}

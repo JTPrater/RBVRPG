@@ -31,12 +31,10 @@ const musicPlayer = window.musicPlayer;
 const deckRooms = window.deckRooms;
 const roomImages = window.roomImages;
 
-console.debug("✅ Initialized game shell (socket, voyage, room data).");
 
 
 // Single DOMContentLoaded event listener
 document.addEventListener("DOMContentLoaded", function () {
-  console.debug("📄 DOMContentLoaded event triggered.");
 
   // Initialize music player
   musicPlayer.init();
@@ -50,14 +48,10 @@ document.addEventListener("DOMContentLoaded", function () {
   const chatContainer = document.getElementById("chat-container");
   const deckplansPopup = document.getElementById("deckplans-popup");
 
-  console.debug("✅ Initialized chat elements.");
 
   // Get character data from sessionStorage
   const characterData = JSON.parse(sessionStorage.getItem("character"));
   if (characterData) {
-    console.debug(
-      `🔑 Retrieved character data: ${characterData.forename} ${characterData.surname}`,
-    );
     const avatarElement = document.getElementById("character-avatar");
     const nameElement = document.getElementById("character-name");
     const classElement = document.getElementById("character-class");
@@ -96,9 +90,7 @@ document.addEventListener("DOMContentLoaded", function () {
         .find((r) => r.id === cabinId);
       if (cabinRoom) {
         enterRoom(cabinRoom);
-        console.debug(`🚪 Navigated to ${cabinRoom.name}`);
       } else {
-        console.warn(`❌ Cabin ${cabinNumber} not found in deckRooms.`);
       }
     });
 
@@ -112,14 +104,12 @@ document.addEventListener("DOMContentLoaded", function () {
       );
     }
   } else {
-    console.warn("⚠️ No character data found.");
   }
 
   // Add event listeners for chat functionality
   sendButton.addEventListener("click", sendMessage);
   chatInput.addEventListener("keypress", function (e) {
     if (e.key === "Enter") {
-      console.debug("↩️ Enter key pressed in chat input.");
       sendMessage();
     }
   });
@@ -128,7 +118,6 @@ document.addEventListener("DOMContentLoaded", function () {
   const globalChatToggle = document.getElementById("global-chat-toggle");
   globalChatToggle.addEventListener("click", toggleGlobalChat);
 
-  console.debug("✅ Added event listeners for chat functionality.");
 
   const skyImages = document.querySelectorAll(".sky");
   const imageIntervals = [
@@ -223,9 +212,6 @@ document.addEventListener("DOMContentLoaded", function () {
     if (typeof window.setCloudTexture === "function") {
       window.setCloudTexture(targetTexture);
     } else {
-      console.debug(
-        `⏳ Queued cloud texture ${targetTexture}.png until clouds initialize.`,
-      );
     }
 
     // Sync smoke particles with the same day/ms/night texture
@@ -298,7 +284,6 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       updateSkyGradient(bstTime);
     } catch (err) {
-      console.warn("⚠️ updateSkyGradient failed:", err);
     }
 
     // Also update Britannic image (day / md / night): a continuous
@@ -390,130 +375,74 @@ document.addEventListener("DOMContentLoaded", function () {
         });
       }
     } catch (err) {
-      console.warn("⚠️ Failed to update Britannic image:", err);
     }
 
-    // Swap any room-based location images that have time-of-day variants
+    // Show the location picture of the current time of day (night, sunrise/sunset or day)
     try {
-      // console.debug("🔁 Calling swapLocationImagesForSky from updateSkyImage", {
-      //   intervalClass: interval?.className,
-      //   currentRoom: currentRoom?.name,
-      // });
-      swapLocationImagesForSky(interval);
+      swapLocationImagesForSky();
     } catch (err) {
-      console.warn("⚠️ swapLocationImagesForSky failed:", err);
     }
   }
 
-  function swapLocationImagesForSky(interval) {
-    // Determine variant: day / ms (sunset) / night
-    let variant = "day";
-    if (!interval) variant = "day";
-    else if (interval.className === "night") variant = "night";
-    else if (interval.className.startsWith("ms")) variant = "ms";
+  // Which picture set the location view shows. The sun's real altitude decides, as it does for the sky's colours
+  // (the hour only until the celestial layer is up). Sunrise and sunset share one set ("twilight").
+  // window.locationTimeOfDayOverride ("day" | "twilight" | "night") forces one for testing.
+  function locationTimeOfDay() {
+    const tod = window.RBV && window.RBV.data && window.RBV.data.timeOfDayImages;
+    if (!tod) return "day";
+    if (window.locationTimeOfDayOverride) return window.locationTimeOfDayOverride;
+    const alt =
+      window.RBV && window.RBV.celestial
+        ? window.RBV.celestial.sunAltDeg
+        : undefined;
+    if (typeof alt === "number") return tod.forSunAltitude(alt);
+    const h = getBSTTime().getHours();
+    const iv = imageIntervals.find((i) => h >= i.start && h <= i.end);
+    return tod.forPalette(iv && iv.className);
+  }
 
-    if (!currentRoom || !currentRoom.name) {
-      console.debug(
-        "🔍 swapLocationImagesForSky: no currentRoom or name present",
-      );
-      return;
-    }
-    console.debug("🔍 swapLocationImagesForSky:", {
-      intervalClass: interval?.className,
-      currentRoom: currentRoom.name,
-    });
+  // A Britannic location picture's path in the given time of day's set (the day picture where that set has none)
+  function britannicImagePath(imageName, tod = locationTimeOfDay()) {
+    const t = window.RBV && window.RBV.data && window.RBV.data.timeOfDayImages;
+    return t
+      ? t.path(imageName, tod)
+      : `/images/animations/locations/britannic/${imageName}`;
+  }
+
+  // Called every second: when the time of day crosses into another set, the room's picture follows (drawLocationImage
+  // does nothing while the path is unchanged)
+  function swapLocationImagesForSky() {
+    if (!currentRoom || !currentRoom.name) return;
     const roomName = currentRoom.name;
     const roomData = roomImages[roomName];
-    if (!roomData) {
-      console.warn(
-        `🔍 swapLocationImagesForSky: roomData not found for ${roomName}`,
-      );
+    if (!roomData) return;
+    const imgName = roomData.images[roomData.currentIndex];
+    if (!imgName) return;
+    const isSouthampton =
+      deckRooms.southampton &&
+      deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
+    if (isSouthampton) {
+      drawLocationImage(`/images/animations/locations/southampton/${imgName}`);
       return;
     }
-    console.debug(
-      `🔍 swapLocationImagesForSky: roomData variants:`,
-      roomData.variants,
-    );
-
-    // Helper to draw the room's default image
-    const drawDefault = () => {
-      const imgName = roomData.images[roomData.currentIndex];
-      if (!imgName) return;
-      const isSouthampton =
-        deckRooms.southampton &&
-        deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
-      const basePath = isSouthampton
-        ? "/images/animations/locations/southampton/"
-        : "/images/animations/locations/britannic/";
-      drawLocationImage(basePath + imgName, false);
-      console.debug(`🖼️ Reverted ${roomName} to default image: ${imgName}`);
-    };
-
-    if (variant === "ms") {
-      // Sunset/morning variant - check if variant exists
-      const msVariants = roomData.variants && roomData.variants.ms;
-      if (msVariants && msVariants.length > 0) {
-        // Use the current index if it's within range, otherwise default to 0
-        const idx =
-          roomData.currentIndex < msVariants.length ? roomData.currentIndex : 0;
-        const msImage = msVariants[idx];
-
-        // Attempt both unencoded and encoded folder paths so we handle server URL behavior
-        const candidateFolders = [
-          "britannic (sunset)",
-          encodeURIComponent("britannic (sunset)"),
-          "britannic",
-        ];
-        const tryPaths = candidateFolders.map(
-          (f) => `/images/animations/locations/${f}/${msImage}`,
-        );
-        let tried = 0;
-        const tryNext = () => {
-          if (tried >= tryPaths.length) {
-            console.warn(
-              `⚠️ All sunset variant paths failed for ${roomName}, reverting to default`,
-              tryPaths,
-            );
-            drawDefault();
-            return;
-          }
-          const p = tryPaths[tried++];
-          console.debug(`🔁 Trying sunset path for ${roomName}: ${p}`);
-          drawLocationImage(p, false, {
-            onLoad: () =>
-              console.debug(`🌇 Applied sunset variant for ${roomName}: ${p}`),
-            onError: () => {
-              console.warn(`⚠️ Failed to load ${p}, trying next...`);
-              tryNext();
-            },
-          });
-        };
-        tryNext();
-        return;
-      } else {
-        // No variant - just do nothing
-        return;
-      }
-    }
-
-    if (variant === "night") {
-      // Night variant (not yet available). For now revert to default until night images are added.
-      drawDefault();
-      return;
-    }
-
-    // Day variant - revert to default
-    drawDefault();
+    let p = britannicImagePath(imgName);
+    if (failedLocationImages.has(p)) p = britannicImagePath(imgName, "day");
+    drawLocationImage(p, false, {
+      onError: () => {
+        // a missing version is not asked for again every second
+        failedLocationImages.add(p);
+        drawLocationImage(britannicImagePath(imgName, "day"), false);
+      },
+    });
   }
+  const failedLocationImages = new Set();
 
-  // Developer helper to force a variant for testing
-  window.forceSetRoomVariant = (variant = "ms") => {
-    const fakeInterval = { className: variant === "ms" ? "ms-0" : variant };
+  // Developer helper: force a time of day's pictures ("day" | "twilight" | "night"; null to follow the sun again)
+  window.forceSetRoomVariant = (variant = "twilight") => {
+    window.locationTimeOfDayOverride = variant === "ms" ? "twilight" : variant;
     try {
-      swapLocationImagesForSky(fakeInterval);
-      console.debug(`🔧 forceSetRoomVariant applied: ${variant}`);
+      swapLocationImagesForSky();
     } catch (e) {
-      console.warn("🔧 forceSetRoomVariant failed:", e);
     }
   };
 
@@ -581,7 +510,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     renderInfoBarText(location, speed, date);
 
-    console.debug("🗓️ Updated info bar:", { location, speed, date });
   }
 
   // ---- Sky gradient interpolation helpers ----
@@ -783,7 +711,6 @@ document.addEventListener("DOMContentLoaded", function () {
         if (wing) wing.style.background = bg;
       }
     } catch (err) {
-      console.warn("⚠️ Failed to apply blended gradient to wing:", err);
     }
   }
   let lastSkyBg = null;
@@ -792,16 +719,13 @@ document.addEventListener("DOMContentLoaded", function () {
   window.setSkyPaletteOverride = (name = null) => {
     window.skyPaletteOverride = name;
     updateSkyImage();
-    console.debug(`🌈 Sky palette override set to: ${name}`);
   };
 
   function refreshWorldStateImmediately(reason = "manual") {
     try {
       updateSkyImage();
       updateInfoBar();
-      console.debug(`⚡ World visuals refreshed instantly (${reason})`);
     } catch (err) {
-      console.warn("⚠️ Failed to refresh world visuals immediately:", err);
     }
   }
 
@@ -809,12 +733,10 @@ document.addEventListener("DOMContentLoaded", function () {
   function performInitialSync() {
     if (v.initialSyncDone) return;
     v.initialSyncDone = true;
-    console.debug("🔄 Performing initial sync with server data...");
 
     // Initialize narrative system with server time
     if (narrativeSystem && v.pendingVoyageStartTime) {
       narrativeSystem.startTime = v.pendingVoyageStartTime;
-      console.debug("✅ Narrative system synchronized with server time");
     }
 
     // In dev mode, set our own narrative and skip timeline sync
@@ -860,20 +782,45 @@ document.addEventListener("DOMContentLoaded", function () {
             narrativeSystem.currentEventIndex.toString(),
           );
 
-          console.debug(`📖 Synced narrative: ${currentEvent.text}`);
         }
       }
     }
 
     // Update sky and info bar
     refreshWorldStateImmediately("initial-sync");
-    console.debug("✅ Initial sync complete");
 
     // Handle automatic room joining
     if (typeof handleReconnectionRoomJoin === "function") {
       handleReconnectionRoomJoin();
     }
   }
+
+  // modules/voyageSync.js calls this when the server's voyage data arrives.
+  // It lives inside this file's DOMContentLoaded closure, so since the split
+  // into modules the module could not see it: every "voyage-start-time" and
+  // "voyage-state" event threw "performInitialSync is not defined" and the
+  // first sync never ran unless the data happened to arrive before this
+  // script did.
+  window.performInitialSync = performInitialSync;
+  // The same module also places a player who has no room yet; it needs these two.
+  RBV.enterRoom = enterRoom;
+  RBV.findPlayerCabin =
+    typeof findPlayerCabin === "function" ? findPlayerCabin : null;
+
+  // A dropped connection comes back as a brand-new socket that stands in no
+  // room on the server. Without rejoining, the player kept seeing the room
+  // but heard no chat in it, was missing from its passenger list and could not
+  // ring the telegraph until the next change of room.
+  let socketWasConnected = socket.connected;
+  socket.on("connect", () => {
+    if (!socketWasConnected) {
+      socketWasConnected = true;
+      return;
+    }
+    if (!currentRoom.name) return;
+    socket.emit("join-room", { room: currentRoom.name });
+    socket.emit("request-room-players", currentRoom.name);
+  });
 
   refreshWorldStateImmediately("script-init");
 
@@ -895,7 +842,6 @@ document.addEventListener("DOMContentLoaded", function () {
   // cross-loop lag or jitter.
   window.updateSkyGradient = updateSkyGradient;
 
-  console.debug("✅ Initialized sky image and info bar updates.");
 
   function initClouds() {
     const canvas = document.createElement("canvas");
@@ -920,7 +866,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const cloudContainer = ensureCloudContainer();
     if (!cloudContainer) {
-      console.warn("⚠️ Could not find or create .cloud-container for clouds");
       return;
     }
 
@@ -932,7 +877,6 @@ document.addEventListener("DOMContentLoaded", function () {
     cloudContainer.appendChild(canvas);
     const ctx = canvas.getContext("2d");
     if (!ctx) {
-      console.warn("⚠️ Could not acquire 2d context for cloud canvas");
       return;
     }
 
@@ -964,11 +908,11 @@ document.addEventListener("DOMContentLoaded", function () {
     cloudImages.night.src = "/images/animations/clouds/night.png";
 
     cloudImages.day.onload = () =>
-      console.debug("✅ Loaded cloud image: day.png");
+      {};
     cloudImages.ms.onload = () =>
-      console.debug("✅ Loaded cloud image: ms.png");
+      {};
     cloudImages.night.onload = () =>
-      console.debug("✅ Loaded cloud image: night.png");
+      {};
 
     function applyCloudTexture(type = "ms") {
       if (!cloudImages[type]) return;
@@ -977,7 +921,6 @@ document.addEventListener("DOMContentLoaded", function () {
       clouds.forEach((cloud) => {
         cloud.image = cloudImages[type];
       });
-      console.debug(`☁️ Cloud texture forced to ${type}.png`);
     }
 
     function spawnCloud(forceType = null, rng = null, spawnElapsed = null) {
@@ -1025,7 +968,6 @@ document.addEventListener("DOMContentLoaded", function () {
         spawnCloud(null, Math.random, elapsedNow - age);
       }
       lastCloudSlot = Math.floor(elapsedNow / CLOUD_SLOT_SEC);
-      console.debug(`☁️ Reseeded ${count} clouds (density ${density})`);
     };
 
     // Deterministic cloud spawn check for a given time slot
@@ -1134,15 +1076,11 @@ document.addEventListener("DOMContentLoaded", function () {
     applyCloudTexture(currentCloudTexture);
 
     animate();
-    console.debug("🔄 Started clouds animation loop.");
 
     window.setCloudTexture = (type = currentCloudTexture) =>
       applyCloudTexture(type);
     window.forceCloudTextureMS = () => applyCloudTexture("ms");
     if (currentCloudTexture !== "ms") {
-      console.debug(
-        `☁️ Applied queued cloud texture ${currentCloudTexture}.png after init.`,
-      );
     }
   }
 
@@ -1259,7 +1197,6 @@ document.addEventListener("DOMContentLoaded", function () {
     init() {
       const sceneLayer = document.querySelector(".scene-layer");
       if (!sceneLayer) {
-        console.warn("⚠️ No .scene-layer for birds");
         return;
       }
 
@@ -1270,11 +1207,10 @@ document.addEventListener("DOMContentLoaded", function () {
       this.spriteImg = new Image();
       this.spriteImg.src = this.SPRITE_SRC;
       this.spriteImg.onload = () => {
-        console.debug("🐦 Bird sprite loaded");
         this.start();
       };
       this.spriteImg.onerror = () =>
-        console.warn("⚠️ Failed to load bird sprite");
+        {};
     },
 
     start() {
@@ -1290,7 +1226,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         this.catchUp();
         this.spawnTimer = setInterval(() => this.checkSpawns(), 1000);
-        console.debug("🐦 Bird spawning synced to v.voyageStartTime");
       };
       tryStart();
     },
@@ -1324,9 +1259,6 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       this.lastSpawnSlot = currentSlot;
-      console.debug(
-        `🐦 Bird catch-up complete: ${this.birds.length} birds on screen`,
-      );
     },
 
     checkSpawns() {
@@ -1492,14 +1424,13 @@ document.addEventListener("DOMContentLoaded", function () {
     smokeImage.src = "/images/animations/smoke/day.png";
     let currentSmokeTexture = "day";
 
-    smokeImage.onload = () => console.debug("✅ Loaded smoke image: day.png");
+    smokeImage.onload = () => {};
 
     // Expose a setter so the sky system can swap the smoke sprite at dusk/night
     window.setSmokeTexture = (type = "day") => {
       if (type === currentSmokeTexture) return;
       currentSmokeTexture = type;
       smokeImage.src = `/images/animations/smoke/${type}.png`;
-      console.debug(`💨 Smoke texture changed to ${type}.png`);
     };
 
     // Define the positions of the three funnels as simple percentages since container is now positioned like ship
@@ -1522,7 +1453,6 @@ document.addEventListener("DOMContentLoaded", function () {
     function initPropellers() {
       const propellerContainer = document.querySelector(".propeller-container");
       if (!propellerContainer) {
-        console.warn("⚠️ Propeller container not found");
         return;
       }
 
@@ -1535,7 +1465,6 @@ document.addEventListener("DOMContentLoaded", function () {
       propellerContainer.appendChild(canvas);
       const ctx = canvas.getContext("2d");
       if (!ctx) {
-        console.warn("⚠️ Could not acquire 2d context for propeller canvas");
         return;
       }
 
@@ -1675,7 +1604,6 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       requestAnimationFrame(animatePropellers);
-      console.debug("🔄 Started propeller bubble loop.");
     }
 
     // Update existing particle positions when canvas resizes
@@ -1851,7 +1779,6 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }
 
-    console.debug("🔄 Started smoke animation loop.");
 
     // Start propeller bubbles
     initPropellers();
@@ -1871,19 +1798,16 @@ document.addEventListener("DOMContentLoaded", function () {
   const loadingInterval = setInterval(() => {
     progress += 1000;
     progressBar.style.width = `${progress}%`;
-    console.debug(`📈 Loading progress: ${progress}%`);
 
     if (progress >= 100) {
       clearInterval(loadingInterval);
       startButton.style.display = "block";
-      console.debug("✅ Loading complete. Start button displayed.");
     }
   }, 500);
 
   startButton.addEventListener("click", () => {
-    console.debug("🚀 Start button clicked.");
     refreshWorldStateImmediately("start-button");
-    whistleSound.play();
+    whistleSound.play().catch(() => {});
     loadingScreen.style.transition = "opacity 1s ease";
     loadingScreen.style.opacity = "0";
     setTimeout(() => {
@@ -1901,15 +1825,12 @@ document.addEventListener("DOMContentLoaded", function () {
         if (desiredSongIndex !== -1) {
           musicPlayer.currentSongIndex = desiredSongIndex;
           document.getElementById("song-select").value = desiredSongIndex;
-          console.debug(`🎵 Set current song to: ${desiredSongName}`);
         } else {
-          console.warn("⚠️ Desired song not found in the playlist.");
         }
 
         musicPlayer.isPlaying = true;
         musicPlayer.loadCurrentSong();
         musicPlayer.updatePlayButton();
-        console.debug("🎶 Music started.");
       }
 
       // Smart spawn logic based on voyage progress
@@ -1935,18 +1856,12 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (lastRoom) {
-              console.debug(
-                `🔄 Restoring player to last room: ${lastRoom.name}`,
-              );
               enterRoom(lastRoom);
               return; // Don't do the spawn logic below
             } else if (
               lastRoomName === "Mars" ||
               lastRoomName === "5741544e4559"
             ) {
-              console.debug(
-                `🔄 Restoring player to secret room: ${lastRoomName}`,
-              );
               enterRoom({
                 id: "5741544e4559",
                 name: "Mars",
@@ -1958,9 +1873,6 @@ document.addEventListener("DOMContentLoaded", function () {
               });
               return;
             } else {
-              console.debug(
-                `⚠️ Last room "${lastRoomName}" not found, proceeding with spawn logic`,
-              );
               localStorage.removeItem("lastRoom"); // Clean up invalid data
             }
           }
@@ -1977,13 +1889,10 @@ document.addEventListener("DOMContentLoaded", function () {
           if (spawnRoom) {
             enterRoom(spawnRoom);
           } else {
-            console.error("❌ Could not find ship spawn location");
+            console.error("Could not find ship spawn location");
           }
         } else {
           // Ship hasn't departed yet - spawn at Southampton docks
-          console.debug(
-            `⚓ Voyage not yet departed (${elapsedSeconds}s elapsed) - spawning at Southampton`,
-          );
           localStorage.removeItem("lastRoom");
 
           const initialRoom = deckRooms.southampton.find(
@@ -1993,7 +1902,7 @@ document.addEventListener("DOMContentLoaded", function () {
             enterRoom(initialRoom);
           } else {
             console.error(
-              "❌ Initial room not found, defaulting to Berth 44 Forward Docks",
+              "Initial room not found, defaulting to Berth 44 Forward Docks",
             );
             const defaultRoom = deckRooms.southampton.find(
               (r) => r.name === "Berth 44 Forward Docks",
@@ -2001,7 +1910,6 @@ document.addEventListener("DOMContentLoaded", function () {
             if (defaultRoom) enterRoom(defaultRoom);
           }
         }
-        console.debug("🔑 Attempted to enter initial room.");
       }, 100); // Check every 100ms until server time arrives
     }, 1000);
   });
@@ -2021,11 +1929,10 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   function enterRoom(room) {
-    console.debug("🔄 enterRoom called with:", room.name);
 
     const characterData = JSON.parse(sessionStorage.getItem("character"));
     if (!characterData) {
-      console.error("❌ No character data found.");
+      console.error("No character data found.");
       return;
     }
 
@@ -2033,7 +1940,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const locationDisplay = document.querySelector(".location-display");
 
     if (!chatContainer || !locationDisplay) {
-      console.error("❌ Required DOM elements not found");
+      console.error("Required DOM elements not found");
       return;
     }
 
@@ -2052,7 +1959,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Play close door sound if leaving a room
     if (currentRoom.name) {
       closeDoorSound.currentTime = 0;
-      closeDoorSound.play();
+      closeDoorSound.play().catch(() => {});
       socket.emit("leave-room", {
         room: currentRoom.name,
       });
@@ -2060,7 +1967,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     setTimeout(() => {
       if (!room) {
-        console.error("❌ Room object is undefined");
+        console.error("Room object is undefined");
         return;
       }
 
@@ -2070,7 +1977,6 @@ document.addEventListener("DOMContentLoaded", function () {
       // Set new room
       currentRoom.name = room.location.chatRoom;
       currentRoom.id = room.id;
-      console.debug(`🔑 Set new room: ${currentRoom.name}`);
 
       // Show room name label for rooms with replaced images
       const roomDisplayNames = {
@@ -2142,15 +2048,6 @@ document.addEventListener("DOMContentLoaded", function () {
           roomNameLabel.style.display = "none";
         }
       }
-      console.debug(
-        `🏨 Entered room with currentRoom.name set to: ${currentRoom.name}`,
-      );
-      console.debug(
-        `🖼️ Available room images:`,
-        roomImages[currentRoom.name]
-          ? roomImages[currentRoom.name].images.length
-          : "none",
-      );
 
       // Always start a newly entered room with a fresh local chat buffer.
       chatHistory.rooms[currentRoom.name] = [];
@@ -2169,51 +2066,18 @@ document.addEventListener("DOMContentLoaded", function () {
         );
       };
 
-      const bstNow = getBSTTime();
-      const bstHours = bstNow.getHours();
-      const activeInterval = imageIntervals.find(
-        (iv) => bstHours >= iv.start && bstHours <= iv.end,
-      );
-
       if (chatRoom === "5741544e4559") {
         imageSrc = "/images/Mars.jpg";
       } else if (roomImages[chatRoom]) {
         const roomData = roomImages[chatRoom];
-
-        let targetImages = roomData.images;
-        let isMsVariant = false;
-
-        if (
-          activeInterval &&
-          activeInterval.className.startsWith("ms") &&
-          roomData.variants &&
-          roomData.variants.ms &&
-          roomData.variants.ms.length > 0
-        ) {
-          targetImages = roomData.variants.ms;
-          isMsVariant = true;
-        }
-
-        // Sanitize index
-        if (roomData.currentIndex >= targetImages.length) {
+        if (roomData.currentIndex >= roomData.images.length) {
           roomData.currentIndex = 0;
         }
-        const imageToShow = targetImages[roomData.currentIndex];
-
-        // If a sunset variant exists and we are in an ms-* interval show it
-        if (isMsVariant) {
-          imageSrc = `/images/animations/locations/${encodeURIComponent(
-            "britannic (sunset)",
-          )}/${imageToShow}`;
-        } else {
-          // Regular behaviour
-          // Check if this is a Southampton location
-          if (isSouthamptonRoom(room)) {
-            imageSrc = `/images/animations/locations/southampton/${imageToShow}`;
-          } else {
-            imageSrc = `/images/animations/locations/britannic/${imageToShow}`;
-          }
-        }
+        const imageToShow = roomData.images[roomData.currentIndex];
+        // The Britannic's pictures in the time of day's set (night, sunrise/sunset), the day picture otherwise
+        imageSrc = isSouthamptonRoom(room)
+          ? `/images/animations/locations/southampton/${imageToShow}`
+          : britannicImagePath(imageToShow);
       } else {
         // Check if this is a Southampton location
         if (isSouthamptonRoom(room)) {
@@ -2229,7 +2093,7 @@ document.addEventListener("DOMContentLoaded", function () {
         chatContainer.style.display = "block";
         locationDisplay.style.display = "block";
         openDoorSound.currentTime = 0;
-        openDoorSound.play();
+        openDoorSound.play().catch(() => {});
 
         chatContainer.classList.remove("slide-out");
         locationDisplay.classList.remove("slide-out");
@@ -2250,49 +2114,19 @@ document.addEventListener("DOMContentLoaded", function () {
           locationDisplay.classList.remove("slide-in");
         }, 800);
 
-        // Update minigame visibility if applicable
-        const minigameBtn = document.getElementById("gym-minigame-btn");
-        if (minigameBtn) {
-          minigameBtn.style.display =
-            room.type === "gymnasium" ? "flex" : "none";
-        } else {
-          console.warn("⚠️ Gym minigame button not found");
-        }
-
-        const videoPokerBtn = document.getElementById("video-poker-btn");
-        if (videoPokerBtn) {
-          if (
-            room.id === "first_class_lounge_a" ||
-            room.id === "first_class_smoking_room_a"
-          ) {
-            videoPokerBtn.style.display = "flex";
-          } else {
-            videoPokerBtn.style.display = "none";
-          }
-        } else {
-          console.warn("⚠️ Video poker button not found");
-        }
-
-        // Show games toggle button in specific rooms
+        // The card table is in the first class smoking room and lounge
         const gamesToggleBtn = document.getElementById("games-toggle-btn");
         if (gamesToggleBtn) {
-          if (
+          const hasGames =
             room.id === "first_class_lounge_a" ||
-            room.id === "first_class_smoking_room_a"
-          ) {
-            gamesToggleBtn.style.display = "block";
-          } else {
-            gamesToggleBtn.style.display = "none";
-            gamesToggleBtn.textContent = "Games";
-            const gamesPopup = document.querySelector(".games-popup");
-            if (gamesPopup) {
-              gamesPopup.remove();
-            }
-          }
+            room.id === "first_class_smoking_room_a";
+          gamesToggleBtn.style.display = hasGames ? "block" : "none";
+          // a games list left open in the last room goes with it
+          closeGamesMenu();
+          if (!hasGames) closeVideoPokerGame();
         }
 
         localStorage.setItem("lastRoom", room.name);
-        console.debug(`💾 Saved last room to localStorage: ${room.name}`);
 
         const interiorTypes = [
           "grand-staircase",
@@ -2314,16 +2148,58 @@ document.addEventListener("DOMContentLoaded", function () {
           const eatDrinkPopup = document.querySelector(".eat-drink-popup");
           if (eatDrinkPopup) eatDrinkPopup.remove();
 
-          const isDiningRoom =
-            room.id === "first_class_dining_room_d" ||
-            room.id === "a_la_carte_restaurant";
-          const isOutdoorRoom = room.type && !interiorTypes.includes(room.type);
+          // What is served where:
+          //   a dining room      the whole menu;
+          //   a smoking room, lounge, reception room, the Palm Court
+          //                      drinks and light fare under "Eat & Drink",
+          //                      tobacco under its own button;
+          //   an open deck       tobacco only.
+          // A room is looked up by its id, never by its type alone: the à la
+          // carte restaurant's type is "first-class", which is not in the
+          // interior list, so it was treated as an open deck and offered
+          // tobacco only.
+          const diningRooms = [
+            "first_class_dining_room_d",
+            "a_la_carte_restaurant",
+            "dockside_cafe",
+          ];
+          const loungeRooms = [
+            "first_class_smoking_room_a",
+            "second_class_smoke_room_b",
+            "third_class_smoke_room_b",
+            "first_class_lounge_a",
+            "verandah_palm_court_a",
+            "first_class_reception_d",
+            "restaurant_reception_room",
+          ];
+          const isDiningRoom = diningRooms.includes(room.id);
+          const isLoungeRoom = loungeRooms.includes(room.id);
+          const isOutdoorRoom =
+            !isDiningRoom &&
+            !isLoungeRoom &&
+            room.type &&
+            !interiorTypes.includes(room.type);
+          const menuMode = isDiningRoom
+            ? "full"
+            : isLoungeRoom
+              ? "drinks"
+              : isOutdoorRoom
+                ? "tobacco"
+                : "";
 
-          eatDrinkBtn.style.display =
-            isDiningRoom || isOutdoorRoom ? "block" : "none";
-          eatDrinkBtn.dataset.tobaccoOnly = isOutdoorRoom ? "true" : "false";
-          // Outdoor rooms only offer tobacco, so the button says so
-          eatDrinkBtn.textContent = isOutdoorRoom ? "Tobacco" : "Eat & Drink";
+          eatDrinkBtn.dataset.menuMode = menuMode;
+          eatDrinkBtn.dataset.tobaccoOnly =
+            menuMode === "tobacco" ? "true" : "false";
+          eatDrinkBtn.style.display = menuMode ? "block" : "none";
+          // Open decks only offer tobacco, so the button says so
+          eatDrinkBtn.textContent =
+            menuMode === "tobacco" ? "Tobacco" : "Eat & Drink";
+
+          const tobaccoBtn = document.getElementById("tobacco-btn");
+          if (tobaccoBtn) {
+            tobaccoBtn.style.display = menuMode === "drinks" ? "block" : "none";
+            tobaccoBtn.textContent = "Tobacco";
+          }
         }
 
         // Engine order telegraph: bridge/wheelhouse prop only
@@ -2362,7 +2238,6 @@ document.addEventListener("DOMContentLoaded", function () {
           onError: finishRoomEnter,
         });
       } else {
-        console.warn("⚠️ No image source available for room", room.name);
         finishRoomEnter();
       }
 
@@ -2370,7 +2245,6 @@ document.addEventListener("DOMContentLoaded", function () {
       try {
         locationImageSystem.preloadRoomImages(currentRoom.name);
       } catch (e) {
-        console.warn("⚠️ Error while preloading room images:", e);
       }
 
       // Remove any existing cabin action buttons
@@ -2508,14 +2382,12 @@ document.addEventListener("DOMContentLoaded", function () {
         timestamp: Date.now(),
       };
 
-      console.debug("✉️ Sending message:", messageData);
       socket.emit("chat-message", messageData);
       chatInput.value = "";
     }
   }
 
   function updateChatDisplay() {
-    console.debug("🔄 Updating chat display for room:", currentRoom.name);
     const chatMessages = document.getElementById("chat-messages");
     chatMessages.innerHTML = "";
 
@@ -2532,7 +2404,6 @@ document.addEventListener("DOMContentLoaded", function () {
       messagesToShow = chatHistory.rooms[currentRoom.name] || [];
     }
 
-    console.debug(`📦 Found ${messagesToShow.length} messages to display`);
 
     messagesToShow.forEach((data) => {
       const messageDiv = document.createElement("div");
@@ -2570,15 +2441,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Only scroll to bottom if explicitly requested (not automatic on mode switch)
     // This prevents jarring scroll behavior when switching between local/global chat
-    console.debug(
-      `✅ Updated chat display with ${messagesToShow.length} messages`,
-    );
   }
 
   // Add a toggle for global chat
   function toggleGlobalChat() {
     isGlobalChat = !isGlobalChat;
-    console.debug(`🔄 Toggled global chat. Now isGlobalChat: ${isGlobalChat}`);
 
     const systemMessage = {
       type: "system",
@@ -2623,26 +2490,20 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       if (data.character && data.character.forename && data.character.surname) {
         addChatMessage(data);
-        console.debug(
-          `✉️ Message from ${data.character.forename}: ${data.message}`,
-        );
       } else {
-        console.warn("⚠️ Received chat message without character data:", data);
       }
     } catch (error) {
-      console.error(`❌ Error handling incoming message: ${error.message}`);
+      console.error(`Error handling incoming message: ${error.message}`);
     }
   });
 
   // Handle join room errors (admin-only mode)
   socket.on("join-error", (error) => {
-    console.warn("🚫 Join room error:", error);
     alert(error.message || "Unable to join the game at this time.");
   });
 
   // Handle admin-only mode disconnection
   socket.on("admin-only-mode", (data) => {
-    console.warn("🚫 Admin-only mode:", data);
     alert(data.message || "Game access is restricted to administrators only.");
     // Redirect to registration page
     window.location.href = "/";
@@ -2651,9 +2512,6 @@ document.addEventListener("DOMContentLoaded", function () {
   // Handle room message history when joining a room
   socket.on("room-message-history", (data) => {
     const { room, messages } = data;
-    console.debug(
-      `📚 Received ${messages.length} messages from room history for: ${room}`,
-    );
 
     // Intentionally ignore replayed room history so entering a room starts fresh.
     if (!chatHistory.rooms[room]) {
@@ -2662,30 +2520,25 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   socket.on("user-joined", (data) => {
-    console.debug("📢 User joined:", data);
     addChatMessage({
       type: "system",
       message: `${data.character.forename} ${data.character.surname} has entered the room`,
       room: currentRoom.name, // room.id
       timestamp: Date.now(),
     });
-    console.debug("📝 Added user-joined system message.");
   });
 
   socket.on("user-left", (data) => {
-    console.debug("📢 User left:", data);
     addChatMessage({
       type: "system",
       message: `${data.character.forename} ${data.character.surname} has left the room`,
       room: currentRoom.name, // room.id
       timestamp: Date.now(),
     });
-    console.debug("📝 Added user-left system message.");
   });
 
   // Function to add a chat message
   function addChatMessage(data) {
-    console.debug("📝 Adding chat message:", data);
 
     // Store message in room history
     if (!chatHistory.rooms[data.room]) {
@@ -2804,7 +2657,7 @@ document.addEventListener("DOMContentLoaded", function () {
     !cancelReport ||
     !reportForm
   ) {
-    console.error("❌ Report system elements not found:", {
+    console.error("Report system elements not found:", {
       reportBtn: !!reportBtn,
       reportModal: !!reportModal,
       closeReportModal: !!closeReportModal,
@@ -2812,11 +2665,9 @@ document.addEventListener("DOMContentLoaded", function () {
       reportForm: !!reportForm,
     });
   } else {
-    console.debug("✅ Report system elements found");
 
     reportBtn.addEventListener("click", () => {
       reportModal.style.display = "block";
-      console.debug("🚨 Report modal opened");
     });
 
     closeReportModal.addEventListener("click", () => {
@@ -2868,20 +2719,19 @@ document.addEventListener("DOMContentLoaded", function () {
           alert("Thank you. Your report has been sent to the moderators.");
           reportModal.style.display = "none";
           reportForm.reset();
-          console.info("✅ Report submitted successfully");
         } else {
           const failureMessage =
             result.details ||
             result.error ||
             "The report could not be sent. Please try again.";
           alert(failureMessage);
-          console.error("❌ Report submission failed:", result.error);
+          console.error("Report submission failed:", result.error);
         }
       } catch (error) {
         alert(
           "The report could not be sent. Please check your connection and try again.",
         );
-        console.error("❌ Report submission error:", error);
+        console.error("Report submission error:", error);
       }
     });
   }
@@ -2899,7 +2749,7 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("rules-popup").style.display = "none";
     deckplansPopup.style.display = "block";
     openMapSound.currentTime = 0; // Reset to start
-    openMapSound.play();
+    openMapSound.play().catch(() => {});
 
     // Show appropriate deckplan based on player location
     if (isPlayerInSouthampton()) {
@@ -2908,7 +2758,6 @@ document.addEventListener("DOMContentLoaded", function () {
       showBritannicDeckplans();
     }
 
-    console.debug("🗺️ Deckplans popup opened and sound played.");
   });
 
   closeDeckplansBtn.addEventListener("click", () => {
@@ -3010,7 +2859,6 @@ document.addEventListener("DOMContentLoaded", function () {
     // Show the default category (Town of Southampton)
     showSouthamptonCategory("town");
 
-    console.debug("🗺️ Showing Southampton deckplan");
   }
 
   // Function to show specific Southampton category
@@ -3065,9 +2913,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Southampton room area clicked: berth_44_walkaway`,
-            );
             enterRoom(room);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -3168,9 +3013,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 Ground room area clicked: dockside_cafe`,
-            );
             enterRoom(docksideCafe);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -3218,9 +3060,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 Ground room area clicked: berth_44_forward`,
-            );
             enterRoom(berth44Forward);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -3271,9 +3110,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 Ground room area clicked: first_class_gangway`,
-            );
             enterRoom(firstClassGangway);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -3324,7 +3160,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(`🔍 Berth 44 Ground room area clicked: crew_gangway`);
             enterRoom(crewGangway);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -3372,9 +3207,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 Ground room area clicked: third_class_gangway`,
-            );
             enterRoom(thirdClassGangway);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -3425,7 +3257,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(`🔍 Berth 44 Ground room area clicked: berth_44_aft`);
             enterRoom(berth44Aft);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -3497,9 +3328,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 2nd Floor room area clicked: covered_walkway`,
-            );
             enterRoom(coveredWalkway);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -3545,9 +3373,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            console.debug(
-              `🔍 Berth 44 2nd Floor room area clicked: boarding_tower`,
-            );
             enterRoom(boardingTower);
             deckplansPopup.style.display = "none"; // Close popup on selection
           });
@@ -3572,7 +3397,6 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
 
-    console.debug(`🗺️ Showing Southampton category: ${category}`);
 
     const southamptonMarkers = deckplansPopup
       ? deckplansPopup.querySelectorAll(".room-marker[data-room-id]")
@@ -3638,7 +3462,6 @@ document.addEventListener("DOMContentLoaded", function () {
       setMarkerCountAttr(link, roomId, room.name);
       link.addEventListener("click", (e) => {
         e.preventDefault();
-        console.debug(`🔍 SVG room area clicked: ${roomId}`);
         enterRoom(room);
       });
       link.addEventListener("mouseenter", (e) => {
@@ -3657,9 +3480,6 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     });
     emitRoomCountBatch(Array.from(svgRoomIds));
-    console.debug(
-      `🗺️ Built ${svgRoomIds.size} room markers for ${deck} from data`,
-    );
   }
 
   function showBritannicDeckplans() {
@@ -3702,14 +3522,12 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
     document.querySelector(`[data-deck="${currentDeck}"]`).click();
-    console.debug("🗺️ Showing Britannic deckplans");
   }
 
   deckButtons.forEach((button) => {
     button.addEventListener("click", () => {
       const deck = button.getAttribute("data-deck");
       deckButtons.forEach((b) => b.classList.toggle("active", b === button));
-      console.debug(`🖱️ Deck button clicked: ${deck}`);
       currentDeckImage.src = `/images/decks/${deck}.jpg`;
       roomMarkers.innerHTML = "";
       const existingSvg = document.querySelector(".deck-svg-overlay");
@@ -3722,15 +3540,10 @@ document.addEventListener("DOMContentLoaded", function () {
       renderShipDeckOverlay(deck);
 
       if (deckRooms[deck]) {
-        console.debug(`✅ Found ${deckRooms[deck].length} rooms for ${deck}`);
         const roomsToRequest = new Set();
         deckRooms[deck].forEach((room) => {
           if (room.isSVG) {
-            console.debug(`ℹ️ Room ${room.name} is SVG, skipping marker`);
           } else if (room.x !== undefined && room.y !== undefined) {
-            console.debug(
-              `📍 Creating marker for ${room.name} at ${room.x}%, ${room.y}%`,
-            );
             const marker = document.createElement("div");
             marker.className = `room-marker ${room.type} ${room.id}`;
             marker.style.left = `${room.x}%`;
@@ -3746,7 +3559,6 @@ document.addEventListener("DOMContentLoaded", function () {
             setMarkerCountAttr(marker, room.location.chatRoom, room.name);
 
             marker.addEventListener("click", () => {
-              console.debug(`🔍 Room marker clicked: ${room.name}`);
               enterRoom(room);
             });
 
@@ -3768,23 +3580,17 @@ document.addEventListener("DOMContentLoaded", function () {
             });
 
             roomMarkers.appendChild(marker);
-            console.debug(`📍 Added room marker for: ${room.name}`);
             roomsToRequest.add(room.location.chatRoom);
           } else {
-            console.warn(
-              `🚫 Skipped adding marker for ${room.name} (no coordinates)`,
-            );
           }
         });
         emitRoomCountBatch(Array.from(roomsToRequest));
       } else {
-        console.warn(`❌ No rooms found for deck: ${deck}`);
       }
     });
   });
 
   // Note: Deck plan initialization is now handled dynamically in deckplans button click
-  console.debug("🗺️ Initialized deck plans functionality.");
 
   // The room markers put #room-tooltip just right of the cursor, which runs
   // off the window for rooms near the bow: flip it to the cursor's left there
@@ -3840,7 +3646,6 @@ document.addEventListener("DOMContentLoaded", function () {
   function drawLocationImage(imagePath, isResize = false, callbacks = {}) {
     const ctx = ensureLocationCanvas();
     if (!ctx || !imagePath) return;
-    console.debug("🔍 drawLocationImage called:", { imagePath, isResize });
     if (!isResize && imagePath === currentLocationImageSrc) {
       // Already showing: still tell the caller, or entering a room that shares the
       // picture (or re-entering the same room) never slides the panels back in.
@@ -3873,7 +3678,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     };
     renderImage.onerror = (err) => {
-      console.error("❌ Failed to draw location image", imagePath, err);
+      console.error("Failed to draw location image", imagePath, err);
       renderImage.onload = null;
       renderImage.onerror = null;
       if (typeof onError === "function") {
@@ -3889,7 +3694,6 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       roomCountsCache.set(roomId, Number(count));
     } catch (e) {
-      console.warn("Could not cache room count", roomId, e);
     }
 
     if (
@@ -3946,7 +3750,6 @@ document.addEventListener("DOMContentLoaded", function () {
   if (chatColorPicker) {
     chatColorPicker.addEventListener("input", (e) => {
       const selectedColor = e.target.value;
-      console.debug(`🎨 Chat color preview: ${selectedColor}`);
       applyOwnChatColor(selectedColor);
 
       if (chatColorEmitTimeout) {
@@ -3955,7 +3758,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
       chatColorEmitTimeout = setTimeout(() => {
         chatColorEmitTimeout = null;
-        console.debug(`📤 Sending chat color update: ${selectedColor}`);
         emitChatColorChange(selectedColor);
       }, 250);
     });
@@ -3972,7 +3774,6 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   socket.on("assign-chat-color", (color) => {
-    console.debug(`🎨 Assigned chat color from server: ${color}`);
     applyOwnChatColor(color);
     if (chatColorPicker) {
       chatColorPicker.value = color;
@@ -3981,7 +3782,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   socket.on("update-chat-color", ({ socketId, userId, color }) => {
     const idToLookup = socketId || userId;
-    console.debug(`🎨 User ${idToLookup} changed chat color to: ${color}`);
     updateMessagesForUser(idToLookup, color);
 
     if (socket && socket.id && idToLookup === socket.id) {
@@ -3994,7 +3794,6 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   socket.on("game-user-count", (count) => {
-    console.debug("🎮 Received game-user-count:", count);
     document.getElementById("people").textContent = `Passengers: ${count}`;
   });
 
@@ -4012,19 +3811,16 @@ document.addEventListener("DOMContentLoaded", function () {
       openMapSound.pause();
     }
     rulesPopup.style.display = "block";
-    console.debug("📋 Rules popup opened");
   });
 
   closeRulesBtn.addEventListener("click", () => {
     rulesPopup.style.display = "none";
-    console.debug("📋 Rules popup closed");
   });
 
   // Close rules popup when clicking outside
   window.addEventListener("click", (event) => {
     if (event.target === rulesPopup) {
       rulesPopup.style.display = "none";
-      console.debug("📋 Rules popup closed by clicking outside");
     }
   });
 
@@ -4034,13 +3830,9 @@ document.addEventListener("DOMContentLoaded", function () {
   if (refreshBtn) {
     refreshBtn.addEventListener("click", () => {
       // Log the action for debugging
-      console.debug(
-        `🔄 Refresh button clicked, currentRoom.name: ${currentRoom.name}`,
-      );
 
       // Check if there's a current room and images available
       if (!currentRoom.name || !roomImages[currentRoom.name]) {
-        console.warn("⚠️ Cannot refresh: No images available for this room");
         return;
       }
 
@@ -4054,13 +3846,10 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       if (!roomName) roomName = currentRoom?.name;
       if (!roomName)
-        return console.warn("testCycleRoomImages: No room specified");
+        return;
       const roomData = roomImages[roomName];
-      if (!roomData) return console.warn(`No roomImages entry for ${roomName}`);
+      if (!roomData) return;
       const images = roomData.images || [];
-      console.debug(
-        `🔎 testCycleRoomImages: testing ${images.length} images for ${roomName}`,
-      );
 
       for (let i = 0; i < images.length; i++) {
         const candidate = images[i];
@@ -4070,40 +3859,29 @@ document.addEventListener("DOMContentLoaded", function () {
         const p = isSouthampton
           ? `/images/animations/locations/southampton/${candidate}`
           : `/images/animations/locations/britannic/${candidate}`;
-        console.debug(`🔁 Trying ${i + 1}/${images.length}: ${p}`);
         await new Promise((resolve) => {
           drawLocationImage(p, false, {
             onLoad: () => {
-              console.debug(`✅ Success: ${p}`);
               setTimeout(resolve, delay);
             },
             onError: (err) => {
-              console.warn(`❌ Fail: ${p}`, err);
               setTimeout(resolve, delay);
             },
           });
         });
       }
-      console.debug(
-        "✅ testCycleRoomImages: Completed testing images for",
-        roomName,
-      );
     } catch (err) {
-      console.error("❌ testCycleRoomImages error:", err);
+      console.error("testCycleRoomImages error:", err);
     }
   };
 
   window.showRoomImagesList = (roomName) => {
     if (!roomName) roomName = currentRoom?.name;
-    if (!roomName) return console.warn("showRoomImagesList: no room specified");
+    if (!roomName) return;
     if (!roomImages[roomName])
-      return console.warn(`No roomImages entry for ${roomName}`);
-    console.debug(
-      `📋 Images for ${roomName}:`,
-      roomImages[roomName].images || [],
-    );
+      return;
     if (roomImages[roomName].variants)
-      console.debug(`📋 Variants:`, roomImages[roomName].variants);
+      {}
   };
 
   const SECRET_ROOM_ALIAS = "5741544e4559";
@@ -4141,41 +3919,20 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!roomImages[roomName]) return;
 
       const imageSet = roomImages[roomName].images;
-      console.debug(`🖼️ Preloading ${imageSet.length} images for ${roomName}`);
-
-      // Skip if already preloaded for this room
-      if (this.preloadedRooms.has(roomName)) return;
-      this.preloadedRooms.add(roomName);
-
-      // Check if this is a Southampton location
+      // Southampton's pictures, or the Britannic's in the time of day's set; once a room and set
       const isSouthamptonImage =
         deckRooms.southampton &&
         deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
-      const folder = isSouthamptonImage ? "southampton" : "britannic";
+      const tod = isSouthamptonImage ? "day" : locationTimeOfDay();
+      const key = `${roomName}|${tod}`;
+      if (this.preloadedRooms.has(key)) return;
+      this.preloadedRooms.add(key);
       imageSet.forEach((imageName) => {
-        this.preload(`/images/animations/locations/${folder}/${imageName}`);
-      });
-
-      // Preload time-of-day variants if present (e.g., ms or night)
-      const variants = roomImages[roomName].variants || {};
-      console.debug(
-        `🖼️ Preloading variant folders for ${roomName}:`,
-        Object.keys(variants),
-      );
-      Object.keys(variants).forEach((key) => {
-        // Map variant key to folder name if necessary
-        const variantFolder =
-          key === "ms"
-            ? "britannic (sunset)"
-            : key === "night"
-              ? "britannic (night)"
-              : "britannic";
-        variants[key].forEach((vImage) => {
-          // The browser encodes the space in a plain path the same way, so one request does
-          this.preload(
-            `/images/animations/locations/${encodeURIComponent(variantFolder)}/${vImage}`,
-          );
-        });
+        this.preload(
+          isSouthamptonImage
+            ? `/images/animations/locations/southampton/${imageName}`
+            : britannicImagePath(imageName, tod),
+        );
       });
     },
 
@@ -4185,94 +3942,44 @@ document.addEventListener("DOMContentLoaded", function () {
       const canvasCtx = ensureLocationCanvas();
       if (!canvasCtx) return false;
 
-      // Determine active variant and target images
-      const currentBST = getBSTTime();
-      const activeInterval = imageIntervals.find(
-        (iv) =>
-          currentBST.getHours() >= iv.start && currentBST.getHours() <= iv.end,
-      );
-
-      let targetImages = roomData.images;
-      let isMsVariant = false;
-
-      if (
-        activeInterval &&
-        activeInterval.className.startsWith("ms") &&
-        roomData.variants &&
-        roomData.variants.ms &&
-        roomData.variants.ms.length > 0
-      ) {
-        targetImages = roomData.variants.ms;
-        isMsVariant = true;
-      }
-
+      const targetImages = roomData.images;
       // Calculate next index and update immediately
       const previousIndex = roomData.currentIndex;
       roomData.currentIndex = (roomData.currentIndex + 1) % targetImages.length;
       const newImage = targetImages[roomData.currentIndex];
 
-      console.debug(
-        `🔄 Cycling room image to: ${newImage} (${roomData.currentIndex + 1}/${
-          targetImages.length
-        })`,
-      );
 
-      // Set new image source right away
-      // Check if this is a Southampton location
       const isSouthamptonImage =
         deckRooms.southampton &&
         deckRooms.southampton.some((r) => r.location.chatRoom === roomName);
+      const dayPath = isSouthamptonImage
+        ? `/images/animations/locations/southampton/${newImage}`
+        : britannicImagePath(newImage, "day");
+      // the Britannic's pictures in the time of day's set (night, sunrise/sunset), the day picture otherwise
+      const newImagePath = isSouthamptonImage
+        ? dayPath
+        : britannicImagePath(newImage);
 
-      if (isMsVariant) {
-        const candidateFolders = [
-          "britannic (sunset)",
-          encodeURIComponent("britannic (sunset)"),
-          "britannic",
-        ];
-        let msTried = 0;
-        const msTryNext = () => {
-          if (msTried >= candidateFolders.length) {
-            console.warn(
-              `⚠️ All MS variants failed for ${roomName}, leaving default`,
-              candidateFolders,
-            );
-            // Revert index on error
-            roomData.currentIndex = previousIndex;
-            return;
-          }
-          const folder = candidateFolders[msTried++];
-          const msPath = `/images/animations/locations/${folder}/${newImage}`;
-          console.debug(`🔁 Trying MS variant path: ${msPath}`);
-          drawLocationImage(msPath, false, {
-            onLoad: () => console.debug(`✅ Loaded MS variant ${msPath}`),
-            onError: () => {
-              console.warn(`❌ Failed to load MS variant ${msPath}`);
-              msTryNext();
-            },
-          });
-        };
-        msTryNext();
-      } else {
-        const newImagePath = isSouthamptonImage
-          ? `/images/animations/locations/southampton/${newImage}`
-          : `/images/animations/locations/britannic/${newImage}`;
-
-        drawLocationImage(newImagePath, false, {
-          onLoad: () => {
-            console.debug(`✅ Loaded ${newImagePath}`);
-          },
-          onError: () => {
-            console.error(`❌ Failed to load image: ${newImagePath}`);
-            addChatMessage({
-              type: "system",
-              message: `There was a problem changing the view.`,
-              room: roomName,
-              timestamp: Date.now(),
-            });
-            roomData.currentIndex = previousIndex;
-          },
+      const failed = () => {
+        console.error(`Failed to load image: ${newImagePath}`);
+        addChatMessage({
+          type: "system",
+          message: `There was a problem changing the view.`,
+          room: roomName,
+          timestamp: Date.now(),
         });
-      }
+        roomData.currentIndex = previousIndex;
+      };
+      drawLocationImage(newImagePath, false, {
+        onLoad: () => {
+        },
+        onError: () => {
+          if (newImagePath === dayPath) return failed();
+          // a missing night or sunset version: the day picture
+          failedLocationImages.add(newImagePath);
+          drawLocationImage(dayPath, false, { onError: failed });
+        },
+      });
 
       return true;
     },
@@ -4303,7 +4010,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const bioElement = document.getElementById("profile-bio");
 
       // Populate avatar
-      avatarImg.src = characterData.avatar || "/images/default-avatar.png";
+      avatarImg.src = characterData.avatar || "/images/default-avatar.svg";
 
       // Populate name
       nameElement.textContent = `${characterData.forename} ${characterData.surname}`;
@@ -4341,273 +4048,314 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // Video Poker Game
-  const videoPokerBtn = document.getElementById("video-poker-btn");
+  // Draw poker, jacks or better. The server shuffles, deals, draws and pays;
+  // this only shows the table. The cards in /images/cards/ are Byron Knoll's
+  // Vector Playing Cards (public domain) with a back by BdRGames (CC0); see
+  // scripts/cards/make_cards.js.
   const videoPokerPopup = document.getElementById("video-poker-popup");
-  const closeVideoPokerBtn = document.querySelector(".close-video-poker");
+  const closeVideoPokerBtn = videoPokerPopup.querySelector(".close-video-poker");
   const dealDrawBtn = document.getElementById("deal-draw-btn");
-  const vpHoldBtn = document.getElementById("vp-hold-btn");
-  const handRanking = document.querySelector(".hand-ranking");
-  const vpStatus = document.querySelector(".vp-status");
-  const vpCards = document.querySelectorAll(".vp-card");
+  const vpStatus = videoPokerPopup.querySelector(".vp-status");
+  const vpCards = Array.from(videoPokerPopup.querySelectorAll(".vp-card"));
+  const vpStakes = Array.from(videoPokerPopup.querySelectorAll(".vp-stake"));
+  const vpPayRows = Array.from(
+    videoPokerPopup.querySelectorAll(".vp-payouts [data-hand]"),
+  );
 
-  // Poker game state
-  const vpBetSelect = document.getElementById("vp-bet-select");
+  // The table is laid over the room picture, above the room's name, buttons
+  // and passengers' tab (the tab used to lie over its buttons)
+  const vpRoomPicture = document.querySelector(".location-display");
+  if (vpRoomPicture) vpRoomPicture.appendChild(videoPokerPopup);
+
+  const CARD_DIR = "/images/cards/";
+  const CARD_RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+  const CARD_SUITS = ["clubs", "diamonds", "hearts", "spades"];
+  const RANK_WORD = { A: "Ace", K: "King", Q: "Queen", J: "Jack" };
+  const cardSrc = (card) =>
+    card
+      ? `${CARD_DIR}${card.suit}-${String(card.rank).toLowerCase()}.webp`
+      : `${CARD_DIR}back.webp`;
+  const cardName = (card) => `${RANK_WORD[card.rank] || card.rank} of ${card.suit}`;
+  const pounds = (n) => `£${Number.isInteger(n) ? n : Number(n).toFixed(2)}`;
+  // "Two Pair" -> "Two pair", as the pay table prints it
+  const handName = (rank) =>
+    rank ? rank.charAt(0) + rank.slice(1).toLowerCase() : "";
+
+  // the faces are fetched once, when the table is first opened
+  let cardFacesLoaded = false;
+  function loadCardFaces() {
+    if (cardFacesLoaded) return;
+    cardFacesLoaded = true;
+    CARD_SUITS.forEach((suit) =>
+      CARD_RANKS.forEach((rank) => {
+        new Image().src = cardSrc({ suit, rank });
+      }),
+    );
+  }
 
   const videoPoker = {
     hand: [],
     held: [false, false, false, false, false],
-    phase: "idle",
-    currentBet: 0,
-
-    init() {
-      this.phase = "idle";
-      this.held = [false, false, false, false, false];
-      this.currentBet = 0;
-      dealDrawBtn.textContent = "Deal";
-      if (vpHoldBtn) vpHoldBtn.style.opacity = "0.5";
-      if (vpBetSelect) vpBetSelect.disabled = false;
-      handRanking.textContent = "";
-      handRanking.classList.remove("win");
-      if (vpStatus) vpStatus.textContent = "Press Deal to begin";
-
-      // Reset all cards to card-back
-      vpCards.forEach((card) => {
-        card.classList.add("card-back");
-        card.classList.remove("held", "dealing");
-        const rank = card.querySelector(".rank");
-        const suit = card.querySelector(".suit");
-        if (rank) rank.textContent = "";
-        if (suit) suit.textContent = "";
-      });
-    },
-
-    updateCardDisplay() {
-      for (let i = 0; i < 5; i++) {
-        const card = document.querySelector(`.vp-card[data-index="${i}"]`);
-        const rank = card.querySelector(".rank");
-        const suit = card.querySelector(".suit");
-
-        if (this.hand[i]) {
-          card.classList.remove("card-back");
-          rank.textContent = this.hand[i].rank;
-          suit.textContent = this.hand[i].symbol;
-          // The server sends "red" or "black"; print them in card inks
-          const ink = this.hand[i].color === "red" ? "#a8151c" : "#1c1712";
-          rank.style.color = ink;
-          suit.style.color = ink;
-          if (this.phase !== "deal" || !this.held[i]) {
-            card.classList.add("dealing");
-            setTimeout(() => card.classList.remove("dealing"), 400);
-          }
-          card.classList.toggle("held", this.held[i]);
-        }
-      }
-    },
-
-    toggleHold(index) {
-      if (this.phase !== "deal") return;
-      this.held[index] = !this.held[index];
-      const card = document.querySelector(`.vp-card[data-index="${index}"]`);
-      card.classList.toggle("held", this.held[index]);
-    },
+    phase: "idle", // idle, dealing, deal (choosing holds), drawing
+    stake: 0,
   };
 
-  // Initialize video poker button event
-  if (videoPokerBtn) {
-    videoPokerBtn.addEventListener("click", () => {
-      openVideoPokerGame();
+  function vpSetPhase(phase) {
+    videoPoker.phase = phase;
+    videoPokerPopup.dataset.phase = phase;
+    dealDrawBtn.textContent =
+      phase === "deal" || phase === "drawing" ? "Draw" : "Deal";
+    dealDrawBtn.disabled = phase === "dealing" || phase === "drawing";
+    vpStakes.forEach((b) => {
+      b.disabled = phase !== "idle";
     });
   }
 
-  // Close poker popup when close button is clicked
-  if (closeVideoPokerBtn) {
-    closeVideoPokerBtn.addEventListener("click", () => {
-      videoPokerPopup.style.display = "none";
+  // fresh: which cards were just dealt (they drop onto the baize)
+  function vpShowCards(fresh) {
+    vpCards.forEach((el, i) => {
+      const card = videoPoker.hand[i];
+      const held = !!videoPoker.held[i];
+      el.querySelector("img").src = cardSrc(card);
+      el.classList.toggle("card-back", !card);
+      el.classList.toggle("held", held);
+      el.setAttribute("aria-pressed", held ? "true" : "false");
+      el.setAttribute(
+        "aria-label",
+        card ? cardName(card) + (held ? ", held" : "") : "Card face down",
+      );
+      if (fresh && fresh[i]) {
+        el.classList.remove("dealt");
+        void el.offsetWidth; // start the drop again
+        el.style.setProperty("--deal-delay", `${i * 60}ms`);
+        el.classList.add("dealt");
+      }
     });
   }
 
-  // "Deal" button — sends bet to server, waits for dealt hand
-  dealDrawBtn.addEventListener("click", () => {
-    const betAmount = parseFloat(vpBetSelect ? vpBetSelect.value : 0);
-    if (betAmount > 0 && playerMoney < betAmount) {
-      if (vpStatus) vpStatus.textContent = "Not enough money for that bet";
-      return;
-    }
-    dealDrawBtn.disabled = true;
-    socket.emit("poker-deal", { bet: betAmount });
+  function vpMarkPayRow(rank) {
+    vpPayRows.forEach((row) =>
+      row.classList.toggle("win", !!rank && row.dataset.hand === rank),
+    );
+  }
+
+  function vpSetStake(bet) {
+    videoPoker.stake = bet;
+    vpStakes.forEach((b) =>
+      b.setAttribute(
+        "aria-pressed",
+        Number(b.dataset.bet) === bet ? "true" : "false",
+      ),
+    );
+  }
+
+  function vpReset() {
+    videoPoker.hand = [];
+    videoPoker.held = [false, false, false, false, false];
+    vpShowCards();
+    vpMarkPayRow(null);
+    vpSetPhase("idle");
+    vpStatus.textContent = "";
+  }
+
+  function openVideoPokerGame() {
+    loadCardFaces();
+    // a hand in play stays on the table when it is closed and opened again
+    if (videoPoker.phase === "idle") vpReset();
+    videoPokerPopup.classList.add("open");
+    videoPokerPopup.setAttribute("aria-hidden", "false");
+    dealDrawBtn.focus();
+  }
+
+  // (also called on entering a room, so it looks the table up itself)
+  function closeVideoPokerGame() {
+    const popup = document.getElementById("video-poker-popup");
+    if (!popup || !popup.classList.contains("open")) return;
+    popup.classList.remove("open");
+    popup.setAttribute("aria-hidden", "true");
+  }
+
+  closeVideoPokerBtn.addEventListener("click", closeVideoPokerGame);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeVideoPokerGame();
   });
 
-  // Server dealt cards
+  vpStakes.forEach((b) =>
+    b.addEventListener("click", () => {
+      if (videoPoker.phase !== "idle") return;
+      vpSetStake(Number(b.dataset.bet) || 0);
+    }),
+  );
+
+  vpCards.forEach((el, i) =>
+    el.addEventListener("click", () => {
+      if (videoPoker.phase !== "deal" || !videoPoker.hand[i]) return;
+      videoPoker.held[i] = !videoPoker.held[i];
+      vpShowCards();
+    }),
+  );
+
+  // One button: Deal, then Draw
+  dealDrawBtn.addEventListener("click", () => {
+    if (videoPoker.phase === "idle") {
+      const bet = videoPoker.stake;
+      if (bet > 0 && playerMoney < bet) {
+        vpStatus.textContent = `You haven't enough money for a ${pounds(bet)} stake.`;
+        return;
+      }
+      vpSetPhase("dealing");
+      socket.emit("poker-deal", { bet });
+    } else if (videoPoker.phase === "deal") {
+      vpSetPhase("drawing");
+      socket.emit("poker-hold", { held: [...videoPoker.held] });
+    }
+  });
+
   socket.on("poker-dealt", ({ hand, money }) => {
     playerMoney = money;
     updateMoneyDisplay();
     videoPoker.hand = hand;
-    videoPoker.phase = "deal";
     videoPoker.held = [false, false, false, false, false];
-    videoPoker.updateCardDisplay();
-    dealDrawBtn.textContent = "Deal";
-    dealDrawBtn.disabled = false;
-    if (vpHoldBtn) vpHoldBtn.style.opacity = "1";
-    if (vpBetSelect) vpBetSelect.disabled = true;
-    handRanking.textContent = "";
-    handRanking.classList.remove("win");
-    const betAmount = parseFloat(vpBetSelect ? vpBetSelect.value : 0);
-    if (vpStatus)
-      vpStatus.textContent =
-        betAmount > 0
-          ? `Bet: £${betAmount.toFixed(2)} — choose cards to hold, then press Draw`
-          : "Choose cards to hold, then press Draw";
+    vpMarkPayRow(null);
+    vpShowCards([true, true, true, true, true]);
+    vpSetPhase("deal");
+    vpStatus.textContent = "";
   });
 
-  socket.on("poker-error", ({ message }) => {
-    if (vpStatus) vpStatus.textContent = message;
-    dealDrawBtn.disabled = false;
+  // a refused deal or draw ends the hand (the server has let it go)
+  socket.on("poker-error", ({ message } = {}) => {
+    vpStatus.textContent = message || "The table could not deal that hand.";
+    vpSetPhase("idle");
   });
 
-  // "Draw" button — sends held cards to server, waits for result
-  if (vpHoldBtn) {
-    vpHoldBtn.addEventListener("click", () => {
-      if (videoPoker.phase !== "deal") return;
-      vpHoldBtn.disabled = true;
-      socket.emit("poker-hold", { held: [...videoPoker.held] });
-    });
-  }
-
-  // Server evaluated the hand
-  socket.on(
-    "poker-result",
-    ({ hand, rank, multiplier, winnings, bet, money }) => {
-      playerMoney = money;
-      updateMoneyDisplay();
-      videoPoker.hand = hand;
-      videoPoker.phase = "idle";
-      videoPoker.updateCardDisplay();
-      if (vpHoldBtn) {
-        vpHoldBtn.style.opacity = "0.5";
-        vpHoldBtn.disabled = false;
-      }
-      if (vpBetSelect) vpBetSelect.disabled = false;
-
-      handRanking.textContent = rank;
-      const isWin = multiplier > 0;
-      handRanking.classList.toggle("win", isWin);
-
-      // .hand-ranking already names the hand; the status gives the money
-      if (isWin && bet > 0) {
-        if (vpStatus) vpStatus.textContent = `You win £${winnings.toFixed(2)}`;
-      } else if (bet > 0) {
-        if (vpStatus) vpStatus.textContent = `You lose £${bet.toFixed(2)}`;
-      } else {
-        if (vpStatus)
-          vpStatus.textContent = isWin ? "A winning hand" : "No win";
-      }
-    },
-  );
-
-  // Card click event for selecting holds
-  vpCards.forEach((card) => {
-    card.addEventListener("click", () => {
-      const index = parseInt(card.getAttribute("data-index"));
-      videoPoker.toggleHold(index);
-    });
+  socket.on("poker-result", ({ hand, rank, multiplier, winnings, bet, money }) => {
+    playerMoney = money;
+    updateMoneyDisplay();
+    const replaced = videoPoker.held.map((h) => !h);
+    videoPoker.hand = hand;
+    videoPoker.held = [false, false, false, false, false];
+    vpShowCards(replaced);
+    vpSetPhase("idle");
+    const won = multiplier > 0;
+    vpMarkPayRow(won ? rank : null);
+    const name = handName(rank);
+    if (won && bet > 0) vpStatus.textContent = `${name}. ${pounds(winnings)} paid.`;
+    else if (won) vpStatus.textContent = `${name}.`;
+    else if (bet > 0) vpStatus.textContent = `${name}. The ${pounds(bet)} stake is lost.`;
+    else vpStatus.textContent = `${name}. No win.`;
   });
 
-  function openVideoPokerGame() {
-    if (!videoPokerPopup) return;
-    // Move poker popup into location-display so it overlays the room image
-    const locationDisplay = document.querySelector(".location-display");
-    if (locationDisplay && !locationDisplay.contains(videoPokerPopup)) {
-      locationDisplay.appendChild(videoPokerPopup);
-    }
-    videoPokerPopup.style.display = "block";
-    videoPoker.init();
-  }
-
+  // Games: a short paper list under the button
   const gamesToggleBtn = document.getElementById("games-toggle-btn");
+
+  // (also called on entering a room)
+  function closeGamesMenu() {
+    const popup = document.querySelector(".games-popup");
+    if (popup) popup.remove();
+    const btn = document.getElementById("games-toggle-btn");
+    if (btn) btn.textContent = "Games";
+  }
+
   if (gamesToggleBtn) {
     gamesToggleBtn.addEventListener("click", () => {
-      const existingPopup = document.querySelector(".games-popup");
-      if (existingPopup) {
-        existingPopup.remove();
-        gamesToggleBtn.textContent = "Games";
-      } else {
-        showGamesOptions();
-        gamesToggleBtn.textContent = "Close Games";
+      if (document.querySelector(".games-popup")) {
+        closeGamesMenu();
+        return;
       }
+      // one thing over the picture at a time
+      const menu = document.querySelector(".eat-drink-popup");
+      if (menu) menu.remove();
+      resetMenuButtons();
+      collapsePlayersDrawer();
+      showGamesOptions();
+      gamesToggleBtn.textContent = "Close Games";
     });
   }
 
   function showGamesOptions() {
-    const existingPopup = document.querySelector(".games-popup");
-    if (existingPopup) {
-      existingPopup.remove();
-    }
-
     const locationDisplay = document.querySelector(".location-display");
     if (!locationDisplay) return;
-
     const popup = document.createElement("div");
     popup.className = "games-popup";
     popup.innerHTML = `
-      <div class="gp-icons">
-        <button class="gp-icon" type="button" data-game="video-poker" data-label="Poker">
-          <span class="material-icons">casino</span>
-        </button>
-      </div>
-      <div class="gp-tooltip" style="display:none"></div>
-    `;
-
-    // Tooltip on hover
-    popup.querySelectorAll(".gp-icon").forEach((btn) => {
-      btn.addEventListener("mouseenter", () => {
-        const tip = popup.querySelector(".gp-tooltip");
-        tip.textContent = btn.dataset.label;
-        tip.style.display = "block";
-      });
-      btn.addEventListener("mouseleave", () => {
-        popup.querySelector(".gp-tooltip").style.display = "none";
-      });
-    });
-
+      <button type="button" class="gp-item" data-game="video-poker">Poker</button>`;
     locationDisplay.appendChild(popup);
-
-    const pokerCard = popup.querySelector('[data-game="video-poker"]');
-    if (pokerCard) {
-      pokerCard.addEventListener("click", () => {
-        popup.remove();
-        if (gamesToggleBtn) {
-          gamesToggleBtn.textContent = "Games";
-        }
+    popup
+      .querySelector('[data-game="video-poker"]')
+      .addEventListener("click", () => {
+        closeGamesMenu();
         openVideoPokerGame();
-        console.debug("🎰 Video Poker launched from games popup");
       });
-    }
+  }
+
+  // Log Out: needs and money saved, the session ended on the server, then
+  // back to the page where one logs in
+  const logoutBtn = document.getElementById("logout-btn");
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      logoutBtn.disabled = true;
+      try {
+        if (typeof window.saveStatsToServer === "function") window.saveStatsToServer();
+      } catch (e) {}
+      try {
+        await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
+      } catch (e) {}
+      try {
+        sessionStorage.removeItem("character");
+      } catch (e) {}
+      window.location.href = "/main/main.html";
+    });
   }
 
   // Eat/Drink button functionality (toggle menu)
   const eatDrinkBtn = document.getElementById("eat-drink-btn");
-  if (eatDrinkBtn) {
-    eatDrinkBtn.addEventListener("click", () => {
-      const existingPopup = document.querySelector(".eat-drink-popup");
-      if (existingPopup) {
-        existingPopup.remove();
-        eatDrinkBtn.textContent =
-          eatDrinkBtn.dataset.tobaccoOnly === "true"
-            ? "Tobacco"
-            : "Eat & Drink";
-      } else {
-        const onlyTobacco = eatDrinkBtn.dataset.tobaccoOnly === "true";
-        showEatDrinkOptions(onlyTobacco);
-        eatDrinkBtn.textContent = "Close Menu";
-      }
-    });
+  const tobaccoBtn = document.getElementById("tobacco-btn");
+
+  function resetMenuButtons() {
+    if (eatDrinkBtn) {
+      eatDrinkBtn.textContent =
+        eatDrinkBtn.dataset.menuMode === "tobacco" ? "Tobacco" : "Eat & Drink";
+    }
+    if (tobaccoBtn) tobaccoBtn.textContent = "Tobacco";
   }
 
-  // Function to show eat/drink options
-  function showEatDrinkOptions(onlyTobacco = false) {
+  // One menu at a time: a button closes its own menu, or swaps the other's
+  function toggleMenu(btn, mode) {
+    const existingPopup = document.querySelector(".eat-drink-popup");
+    const wasOwn = existingPopup && existingPopup.dataset.owner === btn.id;
+    if (existingPopup) existingPopup.remove();
+    resetMenuButtons();
+    if (wasOwn) return;
+    closeGamesMenu();
+    collapsePlayersDrawer();
+    showEatDrinkOptions(mode, btn.id);
+    btn.textContent = "Close Menu";
+  }
+
+  if (eatDrinkBtn) {
+    eatDrinkBtn.addEventListener("click", () => {
+      toggleMenu(
+        eatDrinkBtn,
+        eatDrinkBtn.dataset.menuMode ||
+          (eatDrinkBtn.dataset.tobaccoOnly === "true" ? "tobacco" : "full"),
+      );
+    });
+  }
+  if (tobaccoBtn) {
+    tobaccoBtn.addEventListener("click", () => toggleMenu(tobaccoBtn, "tobacco"));
+  }
+
+  // Function to show eat/drink options. mode: "full" (a dining room),
+  // "drinks" (a smoking room or lounge: drinks first, light fare, no
+  // entrées) or "tobacco"
+  function showEatDrinkOptions(mode = "full", ownerId = "eat-drink-btn") {
+    if (mode === true) mode = "tobacco"; // (the old call: onlyTobacco)
+    if (mode === false) mode = "full";
+    const onlyTobacco = mode === "tobacco";
     const popup = document.createElement("div");
     popup.className = "eat-drink-popup";
+    popup.dataset.mode = mode;
+    popup.dataset.owner = ownerId;
 
     const tobaccoOnlySidebar = `
           <div class="edm-category" data-category="tobacco">
@@ -4677,10 +4425,52 @@ document.addEventListener("DOMContentLoaded", function () {
           </div>
     `;
 
+    // A smoking room or lounge: the bar first, then light fare
+    const drinksSidebar = `
+          <div class="edm-category" data-category="alcoholic_beverages">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▼</span> Alcoholic Beverages
+            </div>
+            <div class="edm-subcategories" style="display:flex">
+              <div class="edm-subcat-btn active" data-top="alcoholic_beverages" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="beer">Beer</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="cocktails">Cocktails</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="wines_and_champagne">Wines & Champagne</div>
+              <div class="edm-subcat-btn" data-top="alcoholic_beverages" data-sub="spirits">Spirits</div>
+            </div>
+          </div>
+          <div class="edm-category" data-category="soft_beverages">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▶</span> Soft Beverages
+            </div>
+            <div class="edm-subcategories">
+              <div class="edm-subcat-btn active" data-top="soft_beverages" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="common">Common</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="tea">Tea</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="coffee">Coffee</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="juice">Juice</div>
+              <div class="edm-subcat-btn" data-top="soft_beverages" data-sub="hot_beverages">Hot Beverages</div>
+            </div>
+          </div>
+          <div class="edm-category" data-category="food">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▶</span> Light Fare
+            </div>
+            <div class="edm-subcategories">
+              <div class="edm-subcat-btn active" data-top="food" data-sub="all">All</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="light_meal">Light Meal</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="side">Side</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="fruit">Fruit</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="cakes">Cakes</div>
+              <div class="edm-subcat-btn" data-top="food" data-sub="desserts">Desserts</div>
+            </div>
+          </div>
+    `;
+
     popup.innerHTML = `
       <div class="edm-body">
         <div class="edm-sidebar">
-          ${onlyTobacco ? tobaccoOnlySidebar : fullSidebar}
+          ${onlyTobacco ? tobaccoOnlySidebar : mode === "drinks" ? drinksSidebar : fullSidebar}
         </div>
         <div class="edm-content">
           <div class="edm-items-grid"></div>
@@ -4704,9 +4494,18 @@ document.addEventListener("DOMContentLoaded", function () {
       itemsGrid.innerHTML = "";
       if (typeof MENU_DATA === "undefined") return;
 
+      // (a smoking room or lounge serves no entrées or ices: its "All" is
+      // only what its own headings list)
+      const lightFare = ["light_meal", "side", "fruit", "cakes", "desserts"];
       const filtered = MENU_DATA.filter((item) => {
         if (item.topCategory !== topCategory) return false;
         if (subCategory !== "all" && item.subCategory !== subCategory)
+          return false;
+        if (
+          mode === "drinks" &&
+          topCategory === "food" &&
+          !lightFare.includes(item.subCategory)
+        )
           return false;
         return true;
       });
@@ -4770,7 +4569,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Paid items — server validates and deducts money
       if (playerMoney < item.price) {
-        console.debug(`💰 Cannot afford ${item.name} (£${item.price})`);
         return;
       }
 
@@ -4782,7 +4580,6 @@ document.addEventListener("DOMContentLoaded", function () {
       });
       socket.once("purchase-result", (result) => {
         if (!result.success) {
-          console.debug(`💰 Purchase denied: ${result.message}`);
           return;
         }
         if (typeof result.money === "number") {
@@ -4839,9 +4636,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       }
 
-      console.debug(
-        `🍽️ Consumed ${item.name} | hunger:${item.hungry} thirst:${item.thirsty} drunk:${item.drunk}`,
-      );
       saveStatsToServer();
     }
 
@@ -4850,6 +4644,12 @@ document.addEventListener("DOMContentLoaded", function () {
       const tobaccoCat = popup.querySelector('[data-category="tobacco"]');
       if (tobaccoCat) tobaccoCat.classList.add("open");
       renderItems("tobacco", "all");
+    } else if (mode === "drinks") {
+      const barCat = popup.querySelector(
+        '[data-category="alcoholic_beverages"]',
+      );
+      if (barCat) barCat.classList.add("open");
+      renderItems("alcoholic_beverages", "all");
     } else {
       const foodCat = popup.querySelector('[data-category="food"]');
       if (foodCat) foodCat.classList.add("open");
@@ -4916,6 +4716,32 @@ document.addEventListener("DOMContentLoaded", function () {
     locationDisplay.appendChild(roomPlayersDrawer);
   }
 
+  // The passengers' list and the room's menus share the picture, and the list
+  // was drawn over any menu left open: one at a time
+  function collapsePlayersDrawer() {
+    const drawer = document.getElementById("players-drawer");
+    const list = document.getElementById("players-popup");
+    const btn = document.getElementById("players-btn");
+    if (!list || !list.classList.contains("open")) return;
+    if (drawer) {
+      drawer.classList.remove("open");
+      drawer.setAttribute("aria-expanded", "false");
+    }
+    list.classList.remove("open");
+    list.setAttribute("aria-hidden", "true");
+    if (btn) {
+      btn.classList.remove("open");
+      btn.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function closeRoomMenus() {
+    const menu = document.querySelector(".eat-drink-popup");
+    if (menu) menu.remove();
+    resetMenuButtons();
+    closeGamesMenu();
+  }
+
   function setRoomPlayersCount(count = 0) {
     if (!roomPlayersBtn) return;
     const total = Math.max(0, Number(count) || 0);
@@ -4967,16 +4793,21 @@ document.addEventListener("DOMContentLoaded", function () {
     const birthdateText = formatPassengerBirthdate(player.birthdate);
     const age = calculatePassengerAge(player.birthdate);
     const ageText = Number.isFinite(age) ? ` (${age})` : "";
-    const bioText = player.bio || "No biography provided.";
+    // The player's own words, as text (line breaks kept)
+    const bioText = escapeHtml(player.bio || "No biography provided.").replace(
+      /\r?\n/g,
+      "<br>",
+    );
+    const nameText = escapeHtml(player.name);
 
     playerContent.innerHTML = DOMPurify.sanitize(`
       <div class="player-popup-header">
         <div class="player-popup-avatar">
-          <img src="${player.avatar || "/images/default-avatar.png"}" alt="${player.name}" />
+          <img src="${escapeHtml(player.avatar || "/images/default-avatar.svg")}" alt="${nameText}" />
         </div>
         <div class="player-popup-meta">
-          <div class="player-popup-name">${player.name}${ageText}</div>
-          ${birthdateText ? `<div class="player-popup-birthdate">${birthdateText}</div>` : ""}
+          <div class="player-popup-name">${nameText}${ageText}</div>
+          ${birthdateText ? `<div class="player-popup-birthdate">${escapeHtml(birthdateText)}</div>` : ""}
         </div>
       </div>
       <div class="player-popup-bio">${bioText}</div>
@@ -4989,12 +4820,11 @@ document.addEventListener("DOMContentLoaded", function () {
   function requestRoomPlayers() {
     if (!socket || !currentRoom.name) {
       console.error(
-        "❌ Cannot request room players: socket or room not available",
+        "Cannot request room players: socket or room not available",
       );
       return;
     }
 
-    console.debug(`👥 Requesting players for room: ${currentRoom.name}`);
     socket.emit("request-room-players", currentRoom.name);
   }
 
@@ -5011,7 +4841,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function displayRoomPlayers(players) {
     const playersList = document.getElementById("players-list");
     if (!playersList) {
-      console.error("❌ Room players list element not found");
+      console.error("Room players list element not found");
       return;
     }
 
@@ -5039,20 +4869,19 @@ document.addEventListener("DOMContentLoaded", function () {
         `${currentCharacter.forename} ${currentCharacter.surname}` ===
           player.name;
 
+      const safeName = escapeHtml(player.name);
       playerDiv.innerHTML = DOMPurify.sanitize(`
-        <button type="button" class="player-avatar player-avatar-button" aria-label="View bio for ${player.name}">
-          <img src="${player.avatar || "/images/default-avatar.png"}" alt="${
-            player.name
-          }" />
+        <button type="button" class="player-avatar player-avatar-button" aria-label="View bio for ${safeName}">
+          <img src="${escapeHtml(player.avatar || "/images/default-avatar.svg")}" alt="${safeName}" />
         </button>
         <div class="player-info">
-          <div class="player-name">${player.name}${
+          <div class="player-name">${safeName}${
             isCurrentPlayer ? " (You)" : ""
           }</div>
-          <div class="player-class">${passengerClassLabel(player.cabin)}</div>
-          <div class="player-cabin">${
-            player.cabin_number || player.cabin || "No cabin assigned"
-          }</div>
+          <div class="player-class">${escapeHtml(passengerClassLabel(player.cabin))}</div>
+          <div class="player-cabin">${escapeHtml(
+            player.cabin_number || player.cabin || "No cabin assigned",
+          )}</div>
         </div>
       `);
 
@@ -5068,7 +4897,6 @@ document.addEventListener("DOMContentLoaded", function () {
       playersList.appendChild(playerDiv);
     });
 
-    console.debug(`👥 Displayed ${players.length} players in room`);
   }
 
   setRoomPlayersCount(0);
@@ -5099,12 +4927,10 @@ document.addEventListener("DOMContentLoaded", function () {
         );
 
         if (willOpen) {
+          closeRoomMenus();
           requestRoomPlayers();
         }
 
-        console.debug(
-          `👥 Room players panel ${willOpen ? "opened" : "closed"}`,
-        );
       },
       true,
     );
@@ -5117,7 +4943,6 @@ document.addEventListener("DOMContentLoaded", function () {
     closePlayerInfoBtn.addEventListener("click", () => {
       if (playerInfoPopup) {
         playerInfoPopup.style.display = "none";
-        console.debug("👤 Player info popup closed");
       }
     });
   }
@@ -5126,7 +4951,6 @@ document.addEventListener("DOMContentLoaded", function () {
     playerInfoPopup.addEventListener("click", (event) => {
       if (event.target === playerInfoPopup) {
         playerInfoPopup.style.display = "none";
-        console.debug("👤 Player info popup closed from backdrop");
       }
     });
   }
@@ -5144,14 +4968,12 @@ document.addEventListener("DOMContentLoaded", function () {
       roomPlayersPopup.setAttribute("aria-hidden", "true");
       roomPlayersBtn?.classList.remove("open");
       roomPlayersBtn?.setAttribute("aria-expanded", "false");
-      console.debug("👥 Room players popup closed by clicking outside");
     }
   });
 
   // Socket listener for room players response
   if (socket) {
     socket.on("room-players", (data) => {
-      console.debug("👥 Received room players data:", data);
       if (data.roomId === currentRoom.name) {
         displayRoomPlayers(data.players);
       }
@@ -5167,13 +4989,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function startDepartureSequence() {
     if (!DEPARTURE_SEQUENCE_ENABLED) {
-      console.debug("🚧 Departure sequence disabled for testing");
       return;
     }
     if (departureStarted) return;
     departureStarted = true;
 
-    console.debug("🚢 Starting departure sequence...");
 
     // Only teleport if player is in Southampton
     let shouldTeleport = false;
@@ -5185,7 +5005,6 @@ document.addEventListener("DOMContentLoaded", function () {
         (r) => r.location && r.location.chatRoom === currentRoom.name,
       );
     }
-    console.debug("🧭 Teleport check:", { shouldTeleport, currentRoom });
     if (shouldTeleport) {
       // Prefer using enterRoom with a real room object
       const target =
@@ -5213,8 +5032,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Play whistle sound
     const whistleSound = new Audio("/sounds/whistle.mp3");
     whistleSound.volume = 0.7;
-    whistleSound.play();
-    console.debug("📯 Playing ship whistle...");
+    whistleSound.play().catch(() => {});
 
     // Start "Leaving Port" music midway through whistle (assuming whistle is ~3 seconds)
     setTimeout(() => {
@@ -5254,7 +5072,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const NEEDLES_COMPLETE_MS = TIMELINE_MS.NEEDLES_COMPLETE;
 
     if (!southamptonCity || !dock) {
-      console.warn("⚠️ Southampton elements not found for departure");
       return;
     }
 
@@ -5267,7 +5084,6 @@ document.addEventListener("DOMContentLoaded", function () {
           el.style.display = "none";
         }
       });
-      console.debug(`🌊 Southampton scenery hidden (${reason})`);
     };
 
     const maybeHideSouthamptonVisuals = (
@@ -5294,7 +5110,6 @@ document.addEventListener("DOMContentLoaded", function () {
           el.style.display = "none";
         }
       });
-      console.debug(`🌫️ Coastal terrain hidden (${reason})`);
     };
 
     const maybeHideCoastalTerrain = (
@@ -5474,13 +5289,6 @@ document.addEventListener("DOMContentLoaded", function () {
         landMiddlePosition = elapsedSinceDeparture * 6;
       }
 
-      console.debug(
-        `🎬 Starting animation from position: ${departurePosition.toFixed(
-          1,
-        )}px (${Math.floor(
-          elapsedSinceDeparture / 60,
-        )}min since departure, speed=${currentSpeed.toFixed(1)}kts)`,
-      );
     }
     // startTime already defined above - using server voyage time
     let lastTimestamp = Date.now();
@@ -5532,37 +5340,15 @@ document.addEventListener("DOMContentLoaded", function () {
             naturalH === 0
           ) {
             // Image says it's complete but reports zero natural size - that is unusual
-            console.warn(
-              "⚠️ Yacht image reports complete but natural size 0 — forcing a re-layout check",
-              innerImg.src,
-            );
           }
           if (innerImg && !innerImg.complete) {
             innerImg.addEventListener(
               "load",
               () => {
-                console.debug(
-                  "🔁 Yacht image loaded during spawn:",
-                  innerImg.src,
-                  {
-                    naturalWidth: innerImg.naturalWidth,
-                    naturalHeight: innerImg.naturalHeight,
-                    rectAfterLoad: innerImg.getBoundingClientRect(),
-                  },
-                );
               },
               { once: true },
             );
           }
-          console.debug("⛵ A yacht appears in the distance...", {
-            elem: randomYacht,
-            rect,
-            imgRect,
-            imgSrc: innerImg ? innerImg.src : null,
-            imgLoaded: innerImg ? innerImg.complete : null,
-            naturalWidth: naturalW,
-            naturalHeight: naturalH,
-          });
           // If the container bounding box is still zero width/height, but we
           // have a valid natural size from the image, ensure the container is
           // forced to that size for visibility (this helps debug image styling
@@ -5575,14 +5361,6 @@ document.addEventListener("DOMContentLoaded", function () {
           ) {
             randomYacht.style.width = `${innerImg.naturalWidth}px`;
             randomYacht.style.height = `${innerImg.naturalHeight}px`;
-            console.debug(
-              "🛠️ Forced container size to image natural size:",
-              randomYacht.getBoundingClientRect(),
-              {
-                forcedWidth: innerImg.naturalWidth,
-                forcedHeight: innerImg.naturalHeight,
-              },
-            );
           }
         }
       }
@@ -5593,9 +5371,8 @@ document.addEventListener("DOMContentLoaded", function () {
     window.spawnYachtNow = () => {
       try {
         spawnYachtRandomly();
-        console.debug("🔧 spawnYachtNow executed");
       } catch (e) {
-        console.error("🔧 spawnYachtNow failed", e);
+        console.error("spawnYachtNow failed", e);
       }
     };
 
@@ -5612,12 +5389,6 @@ document.addEventListener("DOMContentLoaded", function () {
         y.style.opacity = "1";
         const inner =
           y.querySelector("img") || y.querySelector(".southampton-yacht");
-        console.debug("🔧 spawned (all) ", y, y.getBoundingClientRect(), {
-          imgSrc: inner ? inner.src : null,
-          imgLoaded: inner ? inner.complete : null,
-          naturalWidth: inner ? inner.naturalWidth : null,
-          naturalHeight: inner ? inner.naturalHeight : null,
-        });
       });
       // Do NOT auto-update alignment — yachts should remain where CSS puts them.
     };
@@ -5633,7 +5404,6 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!water) {
         const brit = document.querySelector(".britannic");
         if (!brit) {
-          console.warn("alignYachtsToShip: water or Britannic not found");
           return;
         }
         waterRect = brit.getBoundingClientRect();
@@ -5646,7 +5416,6 @@ document.addEventListener("DOMContentLoaded", function () {
         ),
       );
       if (yachts.length === 0) {
-        console.warn("alignYachtsToShip: No yacht containers found");
         return;
       }
 
@@ -5663,11 +5432,6 @@ document.addEventListener("DOMContentLoaded", function () {
       // newOffset will move the yachts by -avgDiff (to align to brit bottom) then add desiredDelta
       const newOffset = Math.round(curOffset - avgDiff + desiredDelta);
       root.style.setProperty("--yacht-offset", `${newOffset}px`);
-      console.debug("alignYachtsToShip applied", {
-        avgDiff,
-        curOffset,
-        newOffset,
-      });
     };
 
     // Developer helpers to tune yacht vertical offset at runtime
@@ -5675,11 +5439,9 @@ document.addEventListener("DOMContentLoaded", function () {
       const root = document.documentElement;
       const n = Number(px);
       if (Number.isNaN(n)) {
-        console.warn("setYachtOffset: invalid value", px);
         return;
       }
       root.style.setProperty("--yacht-offset", `${n}px`);
-      console.debug(`✨ Yacht offset set to ${n}px`);
     };
 
     window.incYachtOffset = (delta = 10) => {
@@ -5700,42 +5462,35 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       const next = Math.round(cur + Number(delta));
       root.style.setProperty("--yacht-offset", `${next}px`);
-      console.debug(`✨ Yacht offset changed ${cur}->${next}px`);
     };
 
     // Per-yacht controls: change each yacht's vertical offset and horizontal position
     window.setIndividualYachtOffset = (index, px) => {
       // index: 1|2|3, px: number or string with units
       if (![1, 2, 3].includes(Number(index))) {
-        console.warn("setIndividualYachtOffset: invalid index", index);
         return;
       }
       const root = document.documentElement;
       const v = typeof px === "string" ? px : `${Number(px)}px`;
       root.style.setProperty(`--yacht-offset-${index}`, v);
-      console.debug(`🚤 Yacht ${index} offset set to ${v}`);
     };
 
     window.setYachtLeft = (index, value) => {
       // Set the left position of a yacht container; value can be percent or px
       const idx = Number(index);
       if (![1, 2, 3].includes(idx)) {
-        console.warn("setYachtLeft: invalid index", index);
         return;
       }
       const el = document.querySelector(`.yacht-${idx}-container`);
       if (!el) {
-        console.warn("setYachtLeft: container not found", idx);
         return;
       }
       el.style.left = value;
-      console.debug(`🚤 Yacht ${idx} left position now ${value}`);
     };
 
     window.setYachtScale = (index, scale) => {
       const idx = Number(index);
       if (![1, 2, 3].includes(idx)) {
-        console.warn("setYachtScale: invalid index", index);
         return;
       }
       // Setting the CSS variable for scale already in use by the stylesheet
@@ -5743,7 +5498,6 @@ document.addEventListener("DOMContentLoaded", function () {
         `--yacht-scale-${idx}`,
         String(scale),
       );
-      console.debug(`🚤 Yacht ${idx} scale set to`, scale);
     };
 
     window.resetYachtOffsets = () => {
@@ -5751,16 +5505,14 @@ document.addEventListener("DOMContentLoaded", function () {
       [1, 2, 3].forEach((i) =>
         root.style.removeProperty(`--yacht-offset-${i}`),
       );
-      console.debug("↩️ Yacht offsets reset to default");
     };
 
     // Debug helper to force Cherbourg night sprite for testing
     window.showCherbourgNight = (show = true) => {
       try {
         const el = document.querySelector(".cherbourg-night");
-        if (!el) return console.warn("cherbourg-night element not found");
+        if (!el) return;
         el.style.opacity = show ? 1 : 0;
-        console.debug(`🌙 Cherbourg night sprite ${show ? "shown" : "hidden"}`);
       } catch (e) {
         console.error("Failed to toggle cherbourg-night:", e);
       }
@@ -5777,9 +5529,6 @@ document.addEventListener("DOMContentLoaded", function () {
         root.style.setProperty("--cherbourg-brightness", String(brightness));
         root.style.setProperty("--cherbourg-saturation", String(saturation));
         root.style.setProperty("--cherbourg-contrast", String(contrast));
-        console.debug(
-          `🌙 Cherbourg sprite tuned: brightness=${brightness} saturation=${saturation} contrast=${contrast}`,
-        );
       } catch (e) {
         console.error("Failed to set cherbourg brightness:", e);
       }
@@ -5791,7 +5540,6 @@ document.addEventListener("DOMContentLoaded", function () {
         root.style.removeProperty("--cherbourg-brightness");
         root.style.removeProperty("--cherbourg-saturation");
         root.style.removeProperty("--cherbourg-contrast");
-        console.debug("🌙 Cherbourg sprite brightness reset to CSS defaults.");
       } catch (e) {
         console.error("Failed to reset cherbourg brightness:", e);
       }
@@ -5805,9 +5553,6 @@ document.addEventListener("DOMContentLoaded", function () {
         root.style.setProperty("--cherbourg-bottom", bottom);
         const el = document.querySelector(".cherbourg-night");
         if (el) el.style.left = "";
-        console.debug(
-          `📍 Cherbourg position set: left=${left}, bottom=${bottom}`,
-        );
       } catch (e) {
         console.error("Failed to set cherbourg position:", e);
       }
@@ -5818,7 +5563,6 @@ document.addEventListener("DOMContentLoaded", function () {
       try {
         const root = document.documentElement;
         root.style.setProperty("--cherbourg-width", size);
-        console.debug(`📏 Cherbourg width set to: ${size}`);
       } catch (e) {
         console.error("Failed to set cherbourg size:", e);
       }
@@ -5829,7 +5573,6 @@ document.addEventListener("DOMContentLoaded", function () {
       try {
         const root = document.documentElement;
         root.style.removeProperty("--cherbourg-width");
-        console.debug("📏 Cherbourg width reset to default");
       } catch (e) {
         console.error("Failed to reset cherbourg size:", e);
       }
@@ -5855,11 +5598,9 @@ document.addEventListener("DOMContentLoaded", function () {
           document.body.removeChild(tmp);
           num = parseFloat(bottomPx) || null;
         } catch (e) {
-          console.warn("getYachtBaseline: fallback parse failed", e);
           num = null;
         }
       }
-      console.debug(`--yacht-baseline: ${val} => ${num}px`);
       return num;
     };
 
@@ -5958,7 +5699,6 @@ document.addEventListener("DOMContentLoaded", function () {
         };
       });
 
-      console.debug("🛥️ Yacht positions:", res);
       return res;
     };
 
@@ -6075,10 +5815,6 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         } catch (err) {
           // Do nothing; keep fallback to whichever speed was last seen
-          console.warn(
-            "⚠️ Wave fallback speed calculation failed:",
-            err.message,
-          );
         }
       }
       if (typeof window.targetSpeed === "number") {
@@ -6162,7 +5898,6 @@ document.addEventListener("DOMContentLoaded", function () {
         !isleOfWightCompleted
       ) {
         if (!isleOfWightPassing) {
-          console.debug("🏝️ Passing Isle of Wight (The Needles)...");
           isleOfWightPassing = true;
         }
 
@@ -6184,7 +5919,6 @@ document.addEventListener("DOMContentLoaded", function () {
           isleOfWight.style.opacity = "1";
         }
       } else if (elapsedTime >= NEEDLES_COMPLETE && !isleOfWightCompleted) {
-        console.debug("✅ Isle of Wight passage complete");
         isleOfWightCompleted = true;
         if (isleOfWight) {
           isleOfWight.style.opacity = "0"; // Fade out after passing
@@ -6257,7 +5991,6 @@ document.addEventListener("DOMContentLoaded", function () {
           yacht.element.classList.remove("visible");
           yacht.element.style.opacity = "0";
           activeYachts.splice(i, 1);
-          console.debug("⛵ Yacht has passed out of view");
         } else {
           // Update yacht container transform with translateX only so the
           // yacht image inside can keep its `translate(-50%, 0) scale(...)`.
@@ -6291,24 +6024,15 @@ document.addEventListener("DOMContentLoaded", function () {
         // Check if departure already happened (player joined late or refreshed)
         if (elapsedSeconds > TIMELINE_SECONDS.DEPARTURE_DELAY + 5) {
           // 5 second grace period after departure
-          console.info(
-            `🚢 Departure already occurred (${Math.floor(
-              elapsedSeconds / 60,
-            )} min elapsed) - skipping sequence`,
-          );
           departureStarted = true; // Mark as started to prevent re-triggering
           // Start animation at current state without playing sounds/music/teleport
           animateDeparture();
         } else {
           // Normal departure - play full sequence
-          console.debug(
-            "🚢 Starting departure at server-synced 12 minute mark",
-          );
           startDepartureSequence();
         }
       }
     }, 1000); // Check every second
   } else {
-    console.debug("🚧 Departure sequence scheduling skipped (disabled)");
   }
 });

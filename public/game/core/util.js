@@ -14,7 +14,21 @@
     return `${item.topCategory}|${item.subCategory}|${item.name}`;
   }
 
-  RBV.util = { createSeededRng, menuItemKey };
+  // A player's own text (a name, a biography) goes into markup as text: a
+  // link, an image or a form written into a biography was shown to everyone
+  // who opened it.
+  function escapeHtml(value) {
+    return String(value == null ? "" : value).replace(
+      /[&<>"']/g,
+      (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+          c
+        ],
+    );
+  }
+
+  RBV.util = { createSeededRng, menuItemKey, escapeHtml };
   window.createSeededRng = createSeededRng;
   window.menuItemKey = menuItemKey;
+  window.escapeHtml = escapeHtml;
 })(window.RBV);

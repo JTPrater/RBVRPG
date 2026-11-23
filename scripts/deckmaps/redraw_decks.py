@@ -40,7 +40,9 @@ DECKS = {
     "boat_deck": ("1_Boat_Deck.jpg", (2650, 2150, 12650, 4350)),
     "a_deck": ("2_A_Deck_B_Deck.jpg", (2850, 120, 13560, 2200)),
     "b_deck": ("2_A_Deck_B_Deck.jpg", (120, 2230, 17800, 4450)),
-    "c_deck": ("3_C_Deck_D_Deck.jpg", (450, 380, 17850, 2290)),
+    # (2026-11-23: the region began at y 380 and cut the port side of the hull off; it ended at 2290 and took in the
+    #  berth note and a dimension line that belong under the deck)
+    "c_deck": ("3_C_Deck_D_Deck.jpg", (450, 180, 17850, 2080)),
     "d_deck": ("3_C_Deck_D_Deck.jpg", (850, 2270, 17900, 4330)),
     "e_deck": ("4_E_Deck_F_Deck.jpg", (450, 380, 16800, 2420)),
     "f_deck": ("4_E_Deck_F_Deck.jpg", (450, 2440, 16800, 4500)),
@@ -59,7 +61,7 @@ def centreline_angle(red):
     if lines is None:
         return 0.0
     angs, lens = [], []
-    for x1, y1, x2, y2 in lines[:, 0]:
+    for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4):      # (N, 1, 4) or (N, 4), by OpenCV version
         a = np.degrees(np.arctan2(y2 - y1, x2 - x1))
         if abs(a) < 5.0:
             angs.append(a)

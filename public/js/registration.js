@@ -81,7 +81,6 @@ document.addEventListener("DOMContentLoaded", function () {
   // Event listener for cabin type selection
   cabinSelect.addEventListener("change", async function () {
     const cabinType = this.value;
-    console.log(`🏠 Cabin type selected: ${cabinType}`);
 
     if (!cabinType) {
       cabinNumberSelect.innerHTML =
@@ -99,11 +98,10 @@ document.addEventListener("DOMContentLoaded", function () {
         `/api/get_available_cabins?cabin_type=${encodeURIComponent(cabinType)}`,
       );
 
-      console.log(`📡 Cabin API response status: ${response.status}`);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error("❌ Cabin API error:", errorData);
+        console.error("Cabin API error:", errorData);
         throw new Error(
           errorData.error || `Server responded with status: ${response.status}`,
         );
@@ -117,10 +115,6 @@ document.addEventListener("DOMContentLoaded", function () {
         typeof rawCabins[0] === "object"
           ? rawCabins
           : rawCabins; // Backwards compatible if server returns strings
-      console.log(
-        `✅ Received ${availableCabins.length} available cabins:`,
-        availableCabins,
-      );
 
       // Clear existing options
       cabinNumberSelect.innerHTML =
@@ -184,7 +178,7 @@ document.addEventListener("DOMContentLoaded", function () {
         alert("No cabins are currently available for this cabin type.");
       }
     } catch (error) {
-      console.error("❌ Error fetching available cabins:", error);
+      console.error("Error fetching available cabins:", error);
       cabinNumberSelect.innerHTML =
         '<option value="">-- Error loading cabins --</option>';
       alert(

@@ -1,0 +1,3 @@
+{"covered": "all", "fill": 0.5,
+ "lamps": [{"p": [570, 84], "k": "ceiling", "lens_ell": [40, 12]}, {"p": [1228, 366], "k": "ceiling", "lens_ell": [14, 5]}],
+ "zones": [[90, 390, 1500, 600]]}

@@ -13,9 +13,11 @@
       rel="stylesheet"
     />
     <link
-      href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&display=swap"
       rel="stylesheet"
     />
+    <!-- the page in the player's language -->
+    <script src="/js/i18n.js"></script>
   </head>
   <body>
     <div id="loading-screen">
@@ -180,7 +182,7 @@
               <button class="panel-btn" id="rules-btn">Rules</button>
               <button class="panel-btn">Purser</button>
               <button class="panel-btn">Daily Programme</button>
-              <button class="panel-btn">Log Out</button>
+              <button class="panel-btn" id="logout-btn">Log Out</button>
             </div>
             <div class="status-bars">
               <div class="status-bar">
@@ -306,6 +308,10 @@
                 value="#c0932b"
               />
             </div>
+            <div class="language-selector">
+              <label for="language-select">Language</label>
+              <select id="language-select" class="lang-select"></select>
+            </div>
           </div>
         </div>
 
@@ -408,14 +414,13 @@
           </div>
         </div>
 
-        <div class="location-display">
+        <div class="location-display" data-i18n-content="Choose a room from the Deckplans.">
           <canvas
             class="location-canvas"
             width="960"
             height="540"
             aria-label="Current Location"
           ></canvas>
-          <div id="room-name-label" class="room-name-label"></div>
           <button id="refresh-location-btn" class="location-control-btn">
             <span class="material-icons">refresh</span>
           </button>
@@ -432,20 +437,20 @@
               <div id="players-list" class="players-list"></div>
             </div>
           </div>
-          <button
-            id="eat-drink-btn"
-            class="eat-drink-button"
-            style="position: absolute; top: 10px; right: 10px; display: none"
-          >
-            Eat & Drink
-          </button>
-          <button
-            id="games-toggle-btn"
-            class="eat-drink-button"
-            style="position: absolute; top: 10px; right: 10px; display: none"
-          >
-            Games
-          </button>
+          <!-- The room's name and its own buttons, in one row along the
+               picture's top: the name gives way when the row is full -->
+          <div id="room-actions" class="room-actions">
+            <div id="room-name-label" class="room-name-label"></div>
+            <button id="tobacco-btn" class="eat-drink-button" style="display: none">
+              Tobacco
+            </button>
+            <button id="eat-drink-btn" class="eat-drink-button" style="display: none">
+              Eat &amp; Drink
+            </button>
+            <button id="games-toggle-btn" class="eat-drink-button" style="display: none">
+              Games
+            </button>
+          </div>
           <div id="telegraph-widget" class="telegraph-widget"></div>
         </div>
 
@@ -458,82 +463,43 @@
           </div>
         </div>
 
-        <div id="video-poker-popup" class="vp-overlay">
-          <div class="vp-table">
-            <span class="close-video-poker">&times;</span>
-            <div class="vp-felt">
-              <!-- Payout table -->
-              <div class="vp-payouts">
-                <div class="vp-pay-col">
-                  <span>Jacks or Better: 1x</span>
-                  <span>Two Pair: 2x</span>
-                  <span>Three of a Kind: 4x</span>
-                  <span>Straight: 6x</span>
-                  <span>Flush: 8x</span>
-                </div>
-                <div class="vp-pay-col">
-                  <span>Full House: 12x</span>
-                  <span>Four of a Kind: 25x</span>
-                  <span>Straight Flush: 50x</span>
-                  <span>Royal Flush: 500x</span>
-                </div>
+        <!-- Draw poker: a card table laid over the room picture. game.js puts it
+             in .location-display, above the room's name, buttons and the
+             passengers' tab. -->
+        <div id="video-poker-popup" class="vp-overlay" role="dialog" aria-modal="true" aria-label="Poker" aria-hidden="true">
+          <div class="vp-panel">
+            <div class="vp-top">
+              <div class="vp-payouts" role="table" aria-label="Pay table">
+                <div class="vp-pay" role="row" data-hand="Royal Flush"><span role="cell">Royal flush</span><span role="cell">500</span></div>
+                <div class="vp-pay" role="row" data-hand="Straight Flush"><span role="cell">Straight flush</span><span role="cell">50</span></div>
+                <div class="vp-pay" role="row" data-hand="Four of a Kind"><span role="cell">Four of a kind</span><span role="cell">25</span></div>
+                <div class="vp-pay" role="row" data-hand="Full House"><span role="cell">Full house</span><span role="cell">12</span></div>
+                <div class="vp-pay" role="row" data-hand="Flush"><span role="cell">Flush</span><span role="cell">8</span></div>
+                <div class="vp-pay" role="row" data-hand="Straight"><span role="cell">Straight</span><span role="cell">6</span></div>
+                <div class="vp-pay" role="row" data-hand="Three of a Kind"><span role="cell">Three of a kind</span><span role="cell">4</span></div>
+                <div class="vp-pay" role="row" data-hand="Two Pair"><span role="cell">Two pair</span><span role="cell">2</span></div>
+                <div class="vp-pay" role="row" data-hand="Jacks or Better"><span role="cell">Jacks or better</span><span role="cell">1</span></div>
               </div>
-              <!-- Status text -->
-              <div class="vp-status">Press Deal to begin</div>
-              <div class="hand-ranking"></div>
-              <!-- Cards -->
-              <div class="vp-cards">
-                <div class="vp-card card-back" data-index="0">
-                  <div class="vp-card-face">
-                    <div class="rank"></div>
-                    <div class="suit"></div>
-                  </div>
-                  <div class="vp-card-back-art"></div>
-                </div>
-                <div class="vp-card card-back" data-index="1">
-                  <div class="vp-card-face">
-                    <div class="rank"></div>
-                    <div class="suit"></div>
-                  </div>
-                  <div class="vp-card-back-art"></div>
-                </div>
-                <div class="vp-card card-back" data-index="2">
-                  <div class="vp-card-face">
-                    <div class="rank"></div>
-                    <div class="suit"></div>
-                  </div>
-                  <div class="vp-card-back-art"></div>
-                </div>
-                <div class="vp-card card-back" data-index="3">
-                  <div class="vp-card-face">
-                    <div class="rank"></div>
-                    <div class="suit"></div>
-                  </div>
-                  <div class="vp-card-back-art"></div>
-                </div>
-                <div class="vp-card card-back" data-index="4">
-                  <div class="vp-card-face">
-                    <div class="rank"></div>
-                    <div class="suit"></div>
-                  </div>
-                  <div class="vp-card-back-art"></div>
-                </div>
+              <button type="button" class="close-video-poker" aria-label="Leave the table">&times;</button>
+            </div>
+            <div class="vp-cards">
+              <button type="button" class="vp-card card-back" data-index="0" aria-pressed="false" aria-label="Card face down"><img src="/images/cards/back.webp" alt="" draggable="false" /><span class="vp-held">Held</span></button>
+              <button type="button" class="vp-card card-back" data-index="1" aria-pressed="false" aria-label="Card face down"><img src="/images/cards/back.webp" alt="" draggable="false" /><span class="vp-held">Held</span></button>
+              <button type="button" class="vp-card card-back" data-index="2" aria-pressed="false" aria-label="Card face down"><img src="/images/cards/back.webp" alt="" draggable="false" /><span class="vp-held">Held</span></button>
+              <button type="button" class="vp-card card-back" data-index="3" aria-pressed="false" aria-label="Card face down"><img src="/images/cards/back.webp" alt="" draggable="false" /><span class="vp-held">Held</span></button>
+              <button type="button" class="vp-card card-back" data-index="4" aria-pressed="false" aria-label="Card face down"><img src="/images/cards/back.webp" alt="" draggable="false" /><span class="vp-held">Held</span></button>
+            </div>
+            <p class="vp-status" aria-live="polite"></p>
+            <div class="vp-controls">
+              <div class="vp-stakes" role="group" aria-label="Stake">
+                <span class="vp-stakes-label">Stake</span>
+                <button type="button" class="vp-stake" data-bet="0" aria-pressed="true">None</button>
+                <button type="button" class="vp-stake" data-bet="1" aria-pressed="false">£1</button>
+                <button type="button" class="vp-stake" data-bet="5" aria-pressed="false">£5</button>
+                <button type="button" class="vp-stake" data-bet="10" aria-pressed="false">£10</button>
+                <button type="button" class="vp-stake" data-bet="25" aria-pressed="false">£25</button>
               </div>
-              <!-- Bet selector -->
-              <div class="vp-bet-row">
-                <select id="vp-bet-select">
-                  <option value="0">No bet</option>
-                  <option value="1">£1</option>
-                  <option value="5">£5</option>
-                  <option value="10">£10</option>
-                  <option value="25">£25</option>
-                </select>
-              </div>
-              <!-- Buttons -->
-              <div class="vp-controls">
-                <button id="deal-draw-btn" class="vp-btn">Deal</button>
-                <button id="vp-hold-btn" class="vp-btn">Draw</button>
-              </div>
+              <button type="button" id="deal-draw-btn" class="vp-btn">Deal</button>
             </div>
           </div>
         </div>
@@ -617,6 +583,7 @@
     <script src="../game/menuData.js?v=1"></script>
     <script src="../game/data/deckRooms.js"></script>
     <script src="../game/data/roomImages.js"></script>
-    <script src="../game/game.js?v=14"></script>
+    <script src="../game/data/timeOfDayImages.js"></script>
+    <script src="../game/game.js?v=15"></script>
   </body>
 </html>

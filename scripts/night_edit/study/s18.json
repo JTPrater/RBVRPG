@@ -1,0 +1,13 @@
+{"rows": [[{"p": "work/desun_night/2nd class b prom2.png", "box": [900,250,1250,720], "k": 0.75, "tag": "GAME night 2nd class b prom2"},
+           {"p": "work/p_night/2nd class b prom2.png", "box": [900,250,1250,720], "k": 0.75, "tag": "NEW"},
+           {"p": "G:2nd class b prom2.png", "box": [900,250,1250,720], "k": 0.75, "tag": "day"},
+           {"p": "work/desun_night/Bridge6.png", "box": [300,60,1100,620], "k": 0.62, "tag": "GAME night Bridge6"},
+           {"p": "work/p_night/Bridge6.png", "box": [300,60,1100,620], "k": 0.62, "tag": "NEW"}],
+          [{"p": "work/desun_twilight/1st B starb enclosed prom4.png", "box": [0,150,900,700], "k": 0.6, "tag": "GAME sunset 1st B starb enclosed prom4"},
+           {"p": "work/p_twilight/1st B starb enclosed prom4.png", "box": [0,150,900,700], "k": 0.6, "tag": "NEW"},
+           {"p": "work/desun_twilight/Bridge5.png", "box": [200,400,1400,1080], "k": 0.45, "tag": "GAME sunset Bridge5"},
+           {"p": "work/p_twilight/Bridge5.png", "box": [200,400,1400,1080], "k": 0.45, "tag": "NEW"}],
+          [{"p": "work/desun_night/BD first starb prom2.png", "box": [1400,300,1920,800], "k": 0.7, "tag": "GAME night BD first starb prom2"},
+           {"p": "work/p_night/BD first starb prom2.png", "box": [1400,300,1920,800], "k": 0.7, "tag": "NEW"},
+           {"p": "work/desun_night/1st port A enclosed prom2.png", "box": [900,100,1700,650], "k": 0.6, "tag": "GAME night 1st port A enclosed prom2"},
+           {"p": "work/p_night/1st port A enclosed prom2.png", "box": [900,100,1700,650], "k": 0.6, "tag": "NEW"}]], "q": 88}

@@ -2,7 +2,6 @@
   const setSfxVolume =
     RBV.audio?.setSfxVolume ||
     function () {
-      console.warn("⚠️ SFX volume control not ready");
     };
 
   const musicPlayer = {
@@ -15,7 +14,6 @@
     originalPlaylist: [],
 
     init() {
-      console.debug("🔧 Initializing music player...");
       const songSelect = document.getElementById("song-select");
 
       try {
@@ -28,7 +26,6 @@
           .then((songs) => {
             if (Array.isArray(songs)) {
               this.songs = songs;
-              console.debug(`✅ Loaded ${songs.length} songs.`);
 
               songSelect.innerHTML =
                 '<option value="">Select a song...</option>';
@@ -50,7 +47,7 @@
             }
           })
           .catch((error) => {
-            console.error("❌ Error loading songs:", error);
+            console.error("Error loading songs:", error);
             document.getElementById("current-song").textContent =
               "Error loading music";
           });
@@ -61,13 +58,12 @@
             this.currentSongIndex = selectedIndex;
             this.loadCurrentSong();
             if (this.isPlaying) {
-              this.audio.play();
+              this.audio.play().catch(() => {});
             }
           }
         });
 
         this.audio.addEventListener("ended", () => {
-          console.debug("🔁 Current song ended. Playing next.");
           this.playNext();
           songSelect.value = this.currentSongIndex;
         });
@@ -99,7 +95,7 @@
           .getElementById("repeat")
           .addEventListener("click", () => this.toggleRepeat());
       } catch (error) {
-        console.error("❌ Failed to initialize music player:", error);
+        console.error("Failed to initialize music player:", error);
       }
     },
 
@@ -108,7 +104,7 @@
       this.updateNowPlaying();
       if (this.isPlaying) {
         this.audio.play().catch((error) => {
-          console.error("❌ Error playing song:", error);
+          console.error("Error playing song:", error);
         });
       }
     },
@@ -121,7 +117,7 @@
             this.isPlaying = true;
           })
           .catch((error) => {
-            console.error("❌ Error playing music:", error);
+            console.error("Error playing music:", error);
           });
       } else {
         this.audio.pause();
@@ -135,13 +131,13 @@
 
       if (this.isRepeatOn) {
         this.loadCurrentSong();
-        if (this.isPlaying) this.audio.play();
+        if (this.isPlaying) this.audio.play().catch(() => {});
         return;
       }
 
       this.currentSongIndex = (this.currentSongIndex + 1) % this.songs.length;
       this.loadCurrentSong();
-      if (this.isPlaying) this.audio.play();
+      if (this.isPlaying) this.audio.play().catch(() => {});
     },
 
     playPrev() {
@@ -283,5 +279,4 @@
 
   RBV.music = { player: musicPlayer };
   window.musicPlayer = musicPlayer;
-  console.debug("✅ Defined musicPlayer object.");
 })(window.RBV);

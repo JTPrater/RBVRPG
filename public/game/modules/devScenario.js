@@ -23,7 +23,7 @@
   const KEY = "rbv:devNA";
   const HOUR_KEY = "rbv:devNAHour";
   const WX_KEY = "rbv:devNAWx";
-  const DEFAULT_ON = true;
+  const DEFAULT_ON = false; // (2026-11-23: off for the public test, as the note above asks)
 
   const stored = localStorage.getItem(KEY);
   v.DEV_NORTH_ATLANTIC = stored === null ? DEFAULT_ON : stored === "1";
@@ -152,10 +152,10 @@
 
   function buildPanel() {
     if (!v.DEV_NORTH_ATLANTIC) {
-      console.info(
-        "🧪 North Atlantic test available: localStorage.setItem('rbv:devNA','1') then reload.",
-      );
-      // The gear chip stays as the way back in: click re-enables the test
+      // The chip that switches the test on is for the developer only (every
+      // player saw it at the top left). Show it with
+      // localStorage.setItem("rbv:dev", "1") and a reload.
+      if (localStorage.getItem("rbv:dev") !== "1") return;
       const onTab = document.createElement("button");
       onTab.id = "dev-na-show";
       onTab.type = "button";
@@ -501,9 +501,6 @@
       pushRefresh();
       reseed();
     }, 400);
-    console.info(
-      "🧪 North Atlantic test scenario ACTIVE — controls top-left.",
-    );
   }
 
   document.addEventListener("DOMContentLoaded", buildPanel);

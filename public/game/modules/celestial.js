@@ -135,7 +135,6 @@
     // already sorted brightest-first in the data; keep it for early-out
     skyStars.sort((a, b) => a.mag - b.mag);
     skyReady = true;
-    console.debug(`✅ Sky catalogue ready: ${skyStars.length} stars.`);
   }
 
   // Per-dash params for the glitter path
@@ -1098,7 +1097,6 @@ function ensureLayers() {
     initSky();
     started = true;
     requestAnimationFrame(frame);
-    console.debug("✅ Celestial layer started (real sky, south-facing camera).");
   });
 
   RBV.celestial = {
