@@ -15,6 +15,11 @@ RBV.gameState = {
 };
 const currentRoom = RBV.gameState.currentRoom;
 const chatHistory = RBV.gameState.chatHistory;
+// enterRoom's move to the next room waits for the slide-out; a second pick in
+// that time replaces the first instead of entering both rooms in turn.
+// Declared up here: the first enterRoom can run while this file is still
+// starting (voyage data that arrived first places the player).
+let roomTransitionTimer = null;
 let isGlobalChat = RBV.gameState.isGlobalChat;
 Object.defineProperty(RBV.gameState, "isGlobalChat", {
   get() {
@@ -789,10 +794,11 @@ document.addEventListener("DOMContentLoaded", function () {
     // Update sky and info bar
     refreshWorldStateImmediately("initial-sync");
 
-    // Handle automatic room joining
-    if (typeof handleReconnectionRoomJoin === "function") {
-      handleReconnectionRoomJoin();
-    }
+    // Placing the player is left to the Start button (waitForSpawn), which
+    // brings them back to the room they were in. Placing them here as well,
+    // while the Start screen still showed, put every reloaded player in their
+    // cabin, saved the cabin as the room to come back to, and told the cabin
+    // and the next room "has entered" / "has left".
   }
 
   // modules/voyageSync.js calls this when the server's voyage data arrives.
@@ -802,10 +808,6 @@ document.addEventListener("DOMContentLoaded", function () {
   // first sync never ran unless the data happened to arrive before this
   // script did.
   window.performInitialSync = performInitialSync;
-  // The same module also places a player who has no room yet; it needs these two.
-  RBV.enterRoom = enterRoom;
-  RBV.findPlayerCabin =
-    typeof findPlayerCabin === "function" ? findPlayerCabin : null;
 
   // A dropped connection comes back as a brand-new socket that stands in no
   // room on the server. Without rejoining, the player kept seeing the room
@@ -971,7 +973,19 @@ document.addEventListener("DOMContentLoaded", function () {
     };
 
     // Deterministic cloud spawn check for a given time slot
+    let cloudSkySeed = null;
     function checkCloudSlots() {
+      // The sky comes from the voyage's own seed and weather: none before the
+      // server's voyage clock. When it arrives (or changes), the clouds placed
+      // meanwhile go and the sky is laid out afresh from the last few minutes
+      // (left alone, the first check after it replayed every cloud slot since
+      // departure, from a stand-in overcast sky).
+      if (!v.voyageStartTime) return;
+      if (cloudSkySeed !== v.voyageStartTime) {
+        cloudSkySeed = v.voyageStartTime;
+        clouds.length = 0;
+        lastCloudSlot = -1;
+      }
       const elapsed =
         typeof getElapsedSeconds === "function" ? getElapsedSeconds() : 0;
       const currentSlot = Math.floor(elapsed / CLOUD_SLOT_SEC);
@@ -1840,43 +1854,53 @@ document.addEventListener("DOMContentLoaded", function () {
 
         clearInterval(waitForSpawn);
         const elapsedSeconds = getElapsedSeconds();
+        const departed = elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY;
+
+        // Back to the room the player was in before the reload or the closed
+        // window: by id (several rooms share a name), else by name for a
+        // room saved before ids were. Once the ship has sailed, a room ashore
+        // is no longer there to go back to.
+        const lastRoomId = localStorage.getItem("lastRoomId");
+        const lastRoomName = localStorage.getItem("lastRoom");
+        if (lastRoomId || lastRoomName) {
+          const findLast = (match) => {
+            for (const deck in deckRooms) {
+              if (!Array.isArray(deckRooms[deck])) continue;
+              if (departed && deck === "southampton") continue;
+              const hit = deckRooms[deck].find(match);
+              if (hit) return hit;
+            }
+            return null;
+          };
+          const lastRoom =
+            (lastRoomId && findLast((r) => r.id === lastRoomId)) ||
+            (lastRoomName && findLast((r) => r.name === lastRoomName));
+
+          if (lastRoom) {
+            enterRoom(lastRoom);
+            return; // Don't do the spawn logic below
+          } else if (
+            lastRoomName === "Mars" ||
+            lastRoomName === "5741544e4559"
+          ) {
+            enterRoom({
+              id: "5741544e4559",
+              name: "Mars",
+              type: "secret",
+              location: {
+                chatRoom: "5741544e4559",
+                image: "Mars.jpg",
+              },
+            });
+            return;
+          }
+          // Nowhere to go back to
+          localStorage.removeItem("lastRoom");
+          localStorage.removeItem("lastRoomId");
+        }
 
         // If ship has already departed (past 12 minutes), spawn on ship
-        if (elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY) {
-          // Check if player was in a room before refresh
-          const lastRoomName = localStorage.getItem("lastRoom");
-          if (lastRoomName) {
-            // Try to find the room by name across all decks
-            let lastRoom = null;
-            for (const deck in deckRooms) {
-              if (deckRooms[deck]) {
-                lastRoom = deckRooms[deck].find((r) => r.name === lastRoomName);
-                if (lastRoom) break;
-              }
-            }
-
-            if (lastRoom) {
-              enterRoom(lastRoom);
-              return; // Don't do the spawn logic below
-            } else if (
-              lastRoomName === "Mars" ||
-              lastRoomName === "5741544e4559"
-            ) {
-              enterRoom({
-                id: "5741544e4559",
-                name: "Mars",
-                type: "secret",
-                location: {
-                  chatRoom: "5741544e4559",
-                  image: "Mars.jpg",
-                },
-              });
-              return;
-            } else {
-              localStorage.removeItem("lastRoom"); // Clean up invalid data
-            }
-          }
-
+        if (departed) {
           // Try to find player's cabin first, otherwise default to promenade
           const cabinRoom =
             typeof findPlayerCabin === "function" ? findPlayerCabin() : null;
@@ -1893,8 +1917,6 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         } else {
           // Ship hasn't departed yet - spawn at Southampton docks
-          localStorage.removeItem("lastRoom");
-
           const initialRoom = deckRooms.southampton.find(
             (r) => r.name === "Berth 44 Forward Docks",
           );
@@ -1936,6 +1958,27 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
+    // Picking a room puts the deck plan away (only Southampton's did)
+    const deckPlans = document.getElementById("deckplans-popup");
+    if (deckPlans) deckPlans.style.display = "none";
+    const roomTooltip = document.getElementById("room-tooltip");
+    if (roomTooltip) roomTooltip.style.display = "none";
+
+    // Already here: nothing to leave or join (doing both told the room
+    // "has left" and "has entered" for nothing)
+    const targetRoomName = room && room.location && room.location.chatRoom;
+    if (
+      !roomTransitionTimer &&
+      currentRoom.name &&
+      targetRoomName === currentRoom.name
+    ) {
+      return;
+    }
+    if (roomTransitionTimer) {
+      clearTimeout(roomTransitionTimer);
+      roomTransitionTimer = null;
+    }
+
     const chatContainer = document.getElementById("chat-container");
     const locationDisplay = document.querySelector(".location-display");
 
@@ -1963,9 +2006,13 @@ document.addEventListener("DOMContentLoaded", function () {
       socket.emit("leave-room", {
         room: currentRoom.name,
       });
+      // The last room's passengers go with it; the server sends the next
+      // room's list once we have joined it
+      clearRoomPlayers();
     }
 
-    setTimeout(() => {
+    roomTransitionTimer = setTimeout(() => {
+      roomTransitionTimer = null;
       if (!room) {
         console.error("Room object is undefined");
         return;
@@ -2126,7 +2173,10 @@ document.addEventListener("DOMContentLoaded", function () {
           if (!hasGames) closeVideoPokerGame();
         }
 
+        // The room to come back to after a reload; by id, since several rooms
+        // share a name (three Grand Staircases)
         localStorage.setItem("lastRoom", room.name);
+        localStorage.setItem("lastRoomId", room.id || "");
 
         const interiorTypes = [
           "grand-staircase",
@@ -2519,7 +2569,13 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
+  // Arrivals and departures of the room one stands in (the server sends the
+  // updated passenger list along with them)
+  const isThisRoom = (data) =>
+    data && data.character && (!data.roomId || data.roomId === currentRoom.name);
+
   socket.on("user-joined", (data) => {
+    if (!isThisRoom(data)) return;
     addChatMessage({
       type: "system",
       message: `${data.character.forename} ${data.character.surname} has entered the room`,
@@ -2529,6 +2585,7 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   socket.on("user-left", (data) => {
+    if (!isThisRoom(data)) return;
     addChatMessage({
       type: "system",
       message: `${data.character.forename} ${data.character.surname} has left the room`,
@@ -4837,6 +4894,13 @@ document.addEventListener("DOMContentLoaded", function () {
     return "Passenger";
   }
 
+  // Empties the passenger list between rooms
+  function clearRoomPlayers() {
+    const playersList = document.getElementById("players-list");
+    if (playersList) playersList.innerHTML = "";
+    setRoomPlayersCount(0);
+  }
+
   // Function to display room players in popup
   function displayRoomPlayers(players) {
     const playersList = document.getElementById("players-list");
@@ -5074,6 +5138,25 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!southamptonCity || !dock) {
       return;
     }
+
+    // Endless scrolling layers (.water, .swater, .waves, .land-middle) hold a
+    // .scroll-track two tiles wide; a tile is the layer's own width (fixed,
+    // since the scene is laid out at 1920 and scaled as a whole). Sliding the
+    // track by transform, wrapped every tile, looks exactly like scrolling the
+    // background but needs no repaint.
+    const trackTileW = new Map();
+    const slideTrack = (layer, position) => {
+      const track = layer && layer.firstElementChild;
+      if (!track) return;
+      let tileW = trackTileW.get(layer);
+      if (!tileW) {
+        tileW = layer.offsetWidth; // read once: a layout read every frame would cost more than it saves
+        if (!tileW) return; // not laid out (hidden): try again next frame
+        trackTileW.set(layer, tileW);
+      }
+      const x = ((position % tileW) + tileW) % tileW;
+      track.style.transform = `translate3d(${-x}px, 0, 0)`;
+    };
 
     let southamptonElementsHidden = false;
     const hideSouthamptonVisuals = (reason = "timeline-sync") => {
@@ -5854,15 +5937,9 @@ document.addEventListener("DOMContentLoaded", function () {
       southamptonCity.style.transform = `translateX(-${departurePosition}px)`;
       dock.style.transform = `translateX(-${departurePosition}px)`;
 
-      // Animate waves background position for infinite scroll effect (stays in place on screen)
-      if (waves) {
-        waves.style.backgroundPosition = `${-wavesPosition}px 0`;
-      }
-
-      // Animate water background position for infinite scroll effect (like waves)
-      if (water) {
-        water.style.backgroundPosition = `${-waterPosition}px 0`;
-      }
+      // Endless scroll of the wake, sea and coast: slide each layer's strip
+      slideTrack(waves, wavesPosition);
+      slideTrack(water, waterPosition);
 
       // Keep the vista wing water phase-locked to the scene water so the
       // texture scrolls straight through the scene edge without a seam
@@ -5874,14 +5951,11 @@ document.addEventListener("DOMContentLoaded", function () {
         }px 0`;
       }
 
-      // Animate swater background position for infinite scroll effect (like waves)
-      if (swater) {
-        swater.style.backgroundPosition = `${-swaterPosition}px 0`;
-      }
+      slideTrack(swater, swaterPosition);
 
-      // Animate land_middle background position - continues scrolling but fades out at Isle of Wight
+      // land_middle keeps scrolling but fades out at the Isle of Wight
       if (landMiddle) {
-        landMiddle.style.backgroundPosition = `${-landMiddlePosition}px 0`;
+        slideTrack(landMiddle, landMiddlePosition);
 
         // Start fading out land when Isle of Wight appears
         if (elapsedTime >= NEEDLES_PASS) {

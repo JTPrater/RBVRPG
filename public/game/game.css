@@ -445,10 +445,7 @@ body::-webkit-scrollbar-thumb {
   bottom: var(--water-bottom, 150px);
   left: 0;
   z-index: 1;
-  background-image: url("../images/animations/water.png");
-  background-repeat: repeat-x;
-  background-size: 100% 100%;
-  background-position: 0 0;
+  overflow: hidden;
 }
 
 .swater {
@@ -458,10 +455,7 @@ body::-webkit-scrollbar-thumb {
   bottom: var(--water-bottom, 150px);
   left: 0;
   z-index: 5; /* Highest water layer so foam overlays yachts */
-  background-image: url("../images/animations/swater.png");
-  background-repeat: repeat-x;
-  background-size: 100% 100%;
-  background-position: 0 0;
+  overflow: hidden;
 }
 
 .land-middle {
@@ -474,10 +468,36 @@ body::-webkit-scrollbar-thumb {
   z-index: 0.1;
   pointer-events: none;
   opacity: 1; /* Visible from the start */
-  background-image: url("../images/animations/locations/southampton/Land_middle.png");
+  overflow: hidden;
+}
+
+/* The sea, wake and coast scroll by sliding a strip two tiles wide (each
+   tile is the layer's own width) and wrapping it every tile — game.js
+   animateDeparture. A transform moves the already-drawn strip on the GPU;
+   scrolling background-position instead repainted these full-width layers
+   every frame, which made the scroll stall and catch up. */
+.scroll-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
   background-repeat: repeat-x;
-  background-size: 100% 100%;
-  background-position: 0 0;
+  background-size: 50% 100%;
+  will-change: transform;
+  pointer-events: none;
+}
+.water > .scroll-track {
+  background-image: url("../images/animations/water.png");
+}
+.swater > .scroll-track {
+  background-image: url("../images/animations/swater.png");
+}
+.waves > .scroll-track {
+  background-image: url("../images/animations/waves.png");
+}
+.land-middle > .scroll-track {
+  background-image: url("../images/animations/locations/southampton/Land_middle.png");
 }
 
 .land-end {
@@ -516,6 +536,7 @@ body::-webkit-scrollbar-thumb {
   opacity: 0;
   transition: opacity 1s ease;
   transform-origin: center;
+  will-change: transform; /* slid every frame by game.js */
   /* Ensure container gets a layout box even if the child is not yet fully
      loaded (helps debugging zero-width containers). The containers are
      positioned absolutely but should measure child size; this guards against
@@ -687,11 +708,7 @@ body::-webkit-scrollbar-thumb {
   z-index: 4;
   pointer-events: none;
   opacity: 0;
-  background-image: url("../images/animations/waves.png");
-  background-repeat: repeat-x;
-  background-size: 100% 100%;
-  background-position: 0 0;
-  overflow: hidden;
+  overflow: hidden; /* clips its .scroll-track (two tiles wide) */
 }
 
 /* Celestial layer (modules/celestial.js): sun/moon/stars above the sky
@@ -2938,9 +2955,9 @@ body.dev-timelapse .clouds {
   width: 100%;
   z-index: 1;
   pointer-events: none;
-  transition: transform 0.016s linear;
   opacity: 0;
   transform: translateX(0);
+  will-change: transform; /* slid every frame by game.js: moved on the GPU, not repainted */
 }
 
 /* Southampton city sprite */
@@ -2952,7 +2969,12 @@ body.dev-timelapse .clouds {
   width: 100%;
   z-index: 1;
   pointer-events: none;
-  transition: transform 0.016s linear;
+  will-change: transform; /* slid every frame by game.js: moved on the GPU, not repainted */
+}
+
+/* The dock slides with the city */
+.location.dock {
+  will-change: transform;
 }
 
 /* Eat & Drink Menu - overlays inside location-display */

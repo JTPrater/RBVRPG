@@ -1526,6 +1526,35 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
   color: var(--ink);
   box-shadow: none;
 }
+/* The song list: as wide as the box that opens it, about a dozen titles tall,
+   one line a title (125 songs with titles up to 150 characters filled the
+   screen). The full title shows under "Now Playing" once chosen. */
+#song-select {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#song-select::picker(select) {
+  inline-size: anchor-size(self-inline);
+  max-inline-size: anchor-size(self-inline);
+  max-block-size: min(22em, 60vh);
+  overflow-y: auto;
+}
+#song-select option {
+  display: block;
+  padding: 3px 10px;
+  font-size: 14px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#song-select option::checkmark {
+  display: none;
+}
+#song-select option:checked {
+  color: var(--red);
+}
 /* transport: a plain row of icons, no boxes */
 .audio-controls {
   display: flex;

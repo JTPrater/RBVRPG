@@ -1,9 +1,9 @@
 /**
- * Server voyage clock sync, narrative socket events, reconnection spawn.
+ * Server voyage clock sync and narrative socket events. (Where a player starts
+ * is game.js's waitForSpawn, after the Start button.)
  */
 (function (RBV) {
   const socket = RBV.socket;
-  const { TIMELINE_SECONDS } = window.VoyageState;
   const narrativeSystem = window.narrativeSystem;
 
   RBV.voyage = {
@@ -129,69 +129,4 @@
     }
   });
 
-  function handleReconnectionRoomJoin() {
-    const currentRoom = RBV.gameState.currentRoom;
-    if (currentRoom.name) {
-      return;
-    }
-
-    const characterData = JSON.parse(sessionStorage.getItem("character"));
-    if (!characterData) {
-      return;
-    }
-
-    const deckRooms = window.deckRooms;
-    // these two live inside game.js; it hands them over on RBV
-    const enterRoom = RBV.enterRoom;
-    const findPlayerCabin = RBV.findPlayerCabin;
-    const voyageAnchor = v.voyageStartTime || v.pendingVoyageStartTime || null;
-    const elapsedSeconds = voyageAnchor
-      ? Math.max(0, Math.floor((Date.now() - voyageAnchor) / 1000))
-      : 0;
-
-    if (!voyageAnchor) {
-    }
-
-    if (elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY) {
-
-      const cabinRoom =
-        typeof findPlayerCabin === "function" ? findPlayerCabin() : null;
-      const defaultShipRoom =
-        (deckRooms.boat || deckRooms.bd || deckRooms.boat_deck)?.find?.(
-          (r) => r.id === "port_promenade_bd",
-        ) || deckRooms?.a?.find?.((r) => r.id === "port_promenade_bd");
-
-      const fallbackRoom =
-        (deckRooms.boat || deckRooms.bd || deckRooms.boat_deck)?.[0] ||
-        deckRooms?.a?.[0] ||
-        deckRooms?.southampton?.[0] ||
-        null;
-      const spawnRoom = cabinRoom || defaultShipRoom || fallbackRoom;
-      if (spawnRoom && typeof enterRoom === "function") {
-        enterRoom(spawnRoom);
-      } else {
-        console.error("Could not find ship spawn location for reconnection");
-      }
-    } else {
-
-      const initialRoom = deckRooms.southampton?.find(
-        (r) => r.name === "Berth 44 Forward Docks",
-      );
-      const fallbackRoom =
-        initialRoom ||
-        deckRooms?.southampton?.[0] ||
-        (deckRooms.boat || deckRooms.bd || deckRooms.boat_deck)?.[0] ||
-        null;
-
-      if (fallbackRoom && typeof enterRoom === "function") {
-        enterRoom(fallbackRoom);
-      } else {
-        console.error(
-          "Could not determine any spawn location during reconnection",
-        );
-      }
-    }
-  }
-
-  window.handleReconnectionRoomJoin = handleReconnectionRoomJoin;
 })(window.RBV);

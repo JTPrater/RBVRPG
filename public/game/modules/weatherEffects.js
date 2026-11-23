@@ -211,10 +211,20 @@
     }
   }
 
+  // The first look after a page load shows the weather as it is; the fades
+  // are for changes while one watches
+  let shownOnce = false;
+
   function apply() {
     if (!ensureLayers()) return;
+    // No weather before the server's voyage clock: it is seeded by the
+    // voyage's start (a stand-in seed of 0 rained on every reload)
+    const voyage = RBV.voyage || {};
+    if (!(voyage.voyageStartTime || voyage.pendingVoyageStartTime)) return;
     const w = currentWeather();
     if (!w) return;
+    const fadeless = [veilLayer, fogLayer, rainCanvas];
+    if (!shownOnce) fadeless.forEach((el) => (el.style.transition = "none"));
 
     // The sky gradient itself grays out with cloud (updateSkyGradient);
     // this veil is only a whisper of gloom over the ship and sea in rain
@@ -239,6 +249,12 @@
 
     // Publish the wind for other scene systems (funnel smoke reads this)
     window.sceneWind = { kn: w.windKn, dirDeg: w.windDirDeg };
+
+    if (!shownOnce) {
+      shownOnce = true;
+      void fogLayer.offsetWidth; // take the new opacities without a fade...
+      fadeless.forEach((el) => (el.style.transition = "")); // ...then fade again
+    }
   }
 
   document.addEventListener("DOMContentLoaded", () => {

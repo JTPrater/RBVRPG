@@ -100,12 +100,13 @@
       if (!window.VoyageWeather) return;
 
       // Seed with the shared voyage start time so every client computes the
-      // same observation; before the server handshake, fall back to 0 and
-      // let the next sync correct it
+      // same observation. Before the server handshake there is no seed and so
+      // no report yet (a stand-in seed of 0 reported rain on every reload).
       const voyage = window.RBV && window.RBV.voyage;
       const seed =
         (voyage && (voyage.voyageStartTime || voyage.pendingVoyageStartTime)) ||
         0;
+      if (!seed) return;
       const dev =
         voyage &&
         voyage.DEV_NORTH_ATLANTIC &&

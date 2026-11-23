@@ -1227,14 +1227,116 @@ const TELEGRAPH_LABELS = {
 };
 const telegraphState = {};
 
-// Add this function at the top level of server.js
+// ── Who is in which room ─────────────────────────────────────────────────────
+// Kept per player (their account), not per connection. A phone that drops and
+// reconnects comes back as a new socket while the old one lingers until its
+// ping times out (over a minute), and a second tab is another socket of the
+// same player: counting sockets listed such players twice and told the room
+// "has entered" / "has left" on every reconnection. A dropped connection gets
+// PRESENCE_GRACE_MS to come back before the room hears "has left".
+const PRESENCE_GRACE_MS = Number(process.env.RBV_PRESENCE_GRACE_MS) || 20 * 1000;
+// roomId -> Map(playerKey -> { sockets: Set<socketId>, character, leaveTimer })
+const roomPresence = new Map();
+
+function presenceKey(socket) {
+  return socket.sessionUserId
+    ? `user:${socket.sessionUserId}`
+    : `socket:${socket.id}`;
+}
+
+function roomHeadcount(roomId) {
+  return roomPresence.get(roomId)?.size || 0;
+}
+
+function roomPlayerList(roomId) {
+  const members = roomPresence.get(roomId);
+  if (!members) return [];
+  return Array.from(members.values()).map(({ sockets, character }) => {
+    const c = character || {};
+    return {
+      id: sockets.values().next().value || null,
+      name: `${c.forename || ""} ${c.surname || ""}`.trim(),
+      avatar: c.avatar,
+      birthdate: c.birthdate,
+      bio: c.bio,
+      // Provide both cabin type and cabin number to client
+      cabin: c.cabin,
+      cabin_number: c.cabin_number,
+    };
+  });
+}
+
+// Everyone in the room gets the room's passenger list again
+function emitRoomPlayers(roomId) {
+  io.to(roomId).emit("room-players", {
+    roomId,
+    players: roomPlayerList(roomId),
+  });
+}
+
+// The room's head count, to every client (the deck plan shows them all)
 function emitRoomCount(roomId) {
-  const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-  // Emit to all connected clients, not just room members
   io.emit("room-count", {
     roomId: roomId,
-    count: roomSize,
+    count: roomHeadcount(roomId),
   });
+}
+
+// Puts the socket's player in the room. True when they were not there before
+// (and have not merely come back within the grace period).
+function presenceEnter(socket, roomId, character) {
+  let members = roomPresence.get(roomId);
+  if (!members) {
+    members = new Map();
+    roomPresence.set(roomId, members);
+  }
+  const key = presenceKey(socket);
+  const entry = members.get(key);
+  if (entry) {
+    entry.sockets.add(socket.id);
+    entry.character = character;
+    if (entry.leaveTimer) {
+      clearTimeout(entry.leaveTimer);
+      entry.leaveTimer = null;
+    }
+    return false;
+  }
+  members.set(key, {
+    sockets: new Set([socket.id]),
+    character,
+    leaveTimer: null,
+  });
+  return true;
+}
+
+// Takes the socket out of the room. When it was the player's last connection
+// there, the room hears "has left": at once, or for a dropped connection after
+// the grace period, unless the player is back in the room by then.
+function presenceExit(socket, roomId, { grace = false } = {}) {
+  const members = roomPresence.get(roomId);
+  const key = presenceKey(socket);
+  const entry = members && members.get(key);
+  if (!entry || !entry.sockets.delete(socket.id) || entry.sockets.size) return;
+  const announce = () => {
+    entry.leaveTimer = null;
+    if (members.get(key) !== entry || entry.sockets.size) return;
+    members.delete(key);
+    if (!members.size) roomPresence.delete(roomId);
+    io.to(roomId).emit("user-left", {
+      character: entry.character,
+      socketId: socket.id,
+      roomId,
+    });
+    emitRoomCount(roomId);
+    emitRoomPlayers(roomId);
+  };
+  if (entry.leaveTimer) clearTimeout(entry.leaveTimer);
+  entry.leaveTimer = null;
+  if (grace) {
+    entry.leaveTimer = setTimeout(announce, PRESENCE_GRACE_MS);
+  } else {
+    announce();
+  }
 }
 
 function getCurrentVoyageState() {
@@ -1539,39 +1641,47 @@ io.on("connection", async (socket) => {
   const currentVoyageState = getCurrentVoyageState();
   socket.emit("voyage-state", currentVoyageState);
 
-  let assignedColor = "#c0932b";
-  const sessionUserId = socket.request?.session?.userId;
+  // Who this is, from the session. Looked up alongside the handlers below
+  // rather than before them: until a handler is in place its events are lost,
+  // and a reconnecting client sends "join-room" the moment it connects (it was
+  // dropped, and the player stood in no room). Handlers that need the player
+  // load them themselves (requireSessionUser).
+  userChatColors[socket.id] = "#c0932b";
+  (async () => {
+    let assignedColor = "#c0932b";
+    const sessionUserId = socket.request?.session?.userId;
 
-  if (sessionUserId) {
-    try {
-      const dbUser = await User.findById(sessionUserId).select(
-        "email chatColor character",
-      );
-      if (dbUser) {
-        socket.userEmail = dbUser.email;
-        socket.character = dbUser.character || null;
-        socket.sessionUserId = dbUser._id;
-        if (isChatColor(dbUser.chatColor)) {
-          assignedColor = dbUser.chatColor;
+    if (sessionUserId) {
+      try {
+        const dbUser = await User.findById(sessionUserId).select(
+          "email chatColor character",
+        );
+        if (dbUser) {
+          socket.userEmail = dbUser.email;
+          socket.character = dbUser.character || null;
+          socket.sessionUserId = dbUser._id;
+          if (isChatColor(dbUser.chatColor)) {
+            assignedColor = dbUser.chatColor;
+          }
         }
+      } catch (err) {
+        console.error(
+          `Error loading session user ${sessionUserId}:`,
+          err.message,
+        );
       }
-    } catch (err) {
-      console.error(
-        `Error loading session user ${sessionUserId}:`,
-        err.message,
-      );
     }
-  } else {
-  }
+    if (!socket.connected) return; // gone while we looked
 
-  userChatColors[socket.id] = assignedColor;
+    userChatColors[socket.id] = assignedColor;
 
-  if (socket.sessionUserId) {
-    handleLoadStats(socket);
-  }
+    if (socket.sessionUserId) {
+      handleLoadStats(socket);
+    }
 
-  // Send the assigned color to the connected client
-  socket.emit("assign-chat-color", assignedColor);
+    // Send the assigned color to the connected client
+    socket.emit("assign-chat-color", assignedColor);
+  })();
   socket.emit("game-user-count", gameClientCount);
 
   // Send existing passengers to ALL new connections (public feature)
@@ -1598,7 +1708,6 @@ io.on("connection", async (socket) => {
 
   // Initialize per-socket variables
   let currentRoom = null;
-  let currentCharacter = null;
 
   onEvent("load-stats", async () => {
     const auth = await requireSessionUser(socket);
@@ -1644,22 +1753,26 @@ io.on("connection", async (socket) => {
       // Leave old room if switching rooms
       if (currentRoom && currentRoom !== room) {
         socket.leave(currentRoom);
-        socket.to(currentRoom).emit("user-left", {
-          character: currentCharacter,
-          socketId: socket.id,
-          roomId: currentRoom,
-        });
-        emitRoomCount(currentRoom);
+        presenceExit(socket, currentRoom);
       }
 
       socket.join(room);
       socket.character = character; // Store character data on socket
       currentRoom = room;
-      currentCharacter = character;
-      socket
-        .to(room)
-        .emit("user-joined", { character, socketId: socket.id, roomId: room });
-      emitRoomCount(room);
+      // Only a real arrival is announced: not a second tab, a reconnection
+      // within the grace period, or the same socket joining again
+      if (presenceEnter(socket, room, character)) {
+        socket
+          .to(room)
+          .emit("user-joined", { character, socketId: socket.id, roomId: room });
+        emitRoomCount(room);
+        emitRoomPlayers(room);
+      } else {
+        socket.emit("room-players", {
+          roomId: room,
+          players: roomPlayerList(room),
+        });
+      }
 
       // Send recent message history for this room
       const roomHistory = roomMessageHistory[room] || [];
@@ -1861,32 +1974,25 @@ io.on("connection", async (socket) => {
     }
 
     const { room } = data || {};
-    const character = socket.character;
     if (allowedRooms.includes(room)) {
       socket.leave(room);
-      socket
-        .to(room)
-        .emit("user-left", { character, socketId: socket.id, roomId: room });
-      emitRoomCount(room);
+      presenceExit(socket, room);
       if (currentRoom === room) {
         currentRoom = null;
-        currentCharacter = null;
       }
     }
   });
 
   onEvent("request-room-users", (roomId) => {
     if (allowedRooms.includes(roomId)) {
-      const roomSockets = io.sockets.adapter.rooms.get(roomId);
-      if (roomSockets) {
-        const userList = Array.from(roomSockets).map((socketId) => {
-          const userSocket = io.sockets.sockets.get(socketId);
-          return { socketId, character: userSocket.character };
-        });
-        socket.emit("room-users", { roomId, users: userList });
-      } else {
-        socket.emit("room-users", { roomId, users: [] });
-      }
+      const members = roomPresence.get(roomId);
+      const users = members
+        ? Array.from(members.values()).map(({ sockets, character }) => ({
+            socketId: sockets.values().next().value || null,
+            character,
+          }))
+        : [];
+      socket.emit("room-users", { roomId, users });
     }
   });
 
@@ -1921,30 +2027,10 @@ io.on("connection", async (socket) => {
 
   });
 
+  // Always answered, an empty room included, so the asker never keeps an old list
   onEvent("request-room-players", (roomId) => {
     if (allowedRooms.includes(roomId)) {
-      const roomSockets = io.sockets.adapter.rooms.get(roomId);
-      if (roomSockets) {
-        const players = Array.from(roomSockets)
-          .map((socketId) => {
-            const userSocket = io.sockets.sockets.get(socketId);
-            return userSocket
-              ? {
-                  id: socketId,
-                  name: `${userSocket.character.forename} ${userSocket.character.surname}`,
-                  avatar: userSocket.character.avatar,
-                  birthdate: userSocket.character.birthdate,
-                  bio: userSocket.character.bio,
-                  // Provide both cabin type and cabin number to client
-                  cabin: userSocket.character.cabin,
-                  cabin_number: userSocket.character.cabin_number,
-                }
-              : null;
-          })
-          .filter(Boolean);
-
-        socket.emit("room-players", { roomId, players });
-      }
+      socket.emit("room-players", { roomId, players: roomPlayerList(roomId) });
     }
   });
 
@@ -2215,22 +2301,11 @@ io.on("connection", async (socket) => {
         console.info(`Game client count decremented: ${gameClientCount}`);
       }
 
-      if (currentRoom && currentCharacter) {
-        // Notify others in the room that the user has left
-        socket.to(currentRoom).emit("user-left", {
-          character: currentCharacter,
-          socketId: socket.id,
-          roomId: currentRoom,
-        });
+      if (currentRoom) {
+        // The room hears "has left" only if the player does not come back
+        // within the grace period (a phone dropping its connection, a reload)
+        presenceExit(socket, currentRoom, { grace: true });
         console.info(`${socket.id} disconnected from room: ${currentRoom}`);
-
-        // Emit the updated room count to all clients in the room
-        const roomSizeAfterDisconnect =
-          io.sockets.adapter.rooms.get(currentRoom)?.size || 0;
-        io.to(currentRoom).emit("room-count", {
-          roomId: currentRoom,
-          count: roomSizeAfterDisconnect,
-        });
       }
 
       // Remove the user's character data

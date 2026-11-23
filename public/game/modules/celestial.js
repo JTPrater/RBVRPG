@@ -209,12 +209,22 @@ function ensureLayers() {
     return (12 + elapsedSeconds() / 3600) % 24;
   }
 
+  // The weather is drawn from the voyage's own seed (its start time), so there
+  // is none until the server's voyage clock arrives. Computing it with a
+  // stand-in seed of 0 made every reload overcast and rainy (and kept it for
+  // half a minute in this cache): the sky came back grey with every reload.
+  let cachedWeatherSeed = 0;
   function weatherNow() {
     const now = Date.now();
-    if (!cachedWeather || now - lastWeatherAt > WEATHER_REFRESH_MS) {
+    const v = RBV.voyage || {};
+    const seed = v.voyageStartTime || v.pendingVoyageStartTime || 0;
+    if (!seed) return null;
+    if (
+      !cachedWeather ||
+      seed !== cachedWeatherSeed ||
+      now - lastWeatherAt > WEATHER_REFRESH_MS
+    ) {
       if (window.VoyageWeather) {
-        const v = RBV.voyage || {};
-        const seed = v.voyageStartTime || v.pendingVoyageStartTime || 0;
         cachedWeather = window.VoyageWeather.computeWeatherAt(
           elapsedSeconds(),
           seed,
@@ -223,6 +233,7 @@ function ensureLayers() {
         if (window.applyDevWeather) {
           cachedWeather = window.applyDevWeather(cachedWeather);
         }
+        cachedWeatherSeed = seed;
         lastWeatherAt = now;
       }
     }
