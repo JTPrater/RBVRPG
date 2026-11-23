@@ -87,7 +87,9 @@
                 class="clouds night"
               />
 
-              <div class="water"></div>
+              <!-- The sea and coast layers scroll by sliding their
+                   .scroll-track (two tiles wide) — see game.css -->
+              <div class="water"><div class="scroll-track"></div></div>
               <!-- Camera rig: everything at "ship distance" (ship, wake,
                    smoke, ports, yachts). Scales down via --cam-zoom when the
                    viewport is wider than the scene, so browser zoom-out
@@ -131,12 +133,12 @@
               <div class="propeller-container">
                 <!-- Propeller animation canvas will be added here -->
               </div>
-              <div class="waves"></div>
+              <div class="waves"><div class="scroll-track"></div></div>
               <div class="smoke-container">
                 <!-- Smoke animation canvas will be added here -->
               </div>
-              <!-- Scrolling coastline, drawn as CSS background images -->
-              <div class="land-middle"></div>
+              <!-- Scrolling coastline -->
+              <div class="land-middle"><div class="scroll-track"></div></div>
               <div class="land-end"></div>
               <div class="yacht-1-container">
                 <img
@@ -166,7 +168,7 @@
                 />
               </div>
               </div>
-              <div class="swater"></div>
+              <div class="swater"><div class="scroll-track"></div></div>
             </div>
           </div>
 

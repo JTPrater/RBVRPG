@@ -5075,6 +5075,25 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
+    // Endless scrolling layers (.water, .swater, .waves, .land-middle) hold a
+    // .scroll-track two tiles wide; a tile is the layer's own width (fixed,
+    // since the scene is laid out at 1920 and scaled as a whole). Sliding the
+    // track by transform, wrapped every tile, looks exactly like scrolling the
+    // background but needs no repaint.
+    const trackTileW = new Map();
+    const slideTrack = (layer, position) => {
+      const track = layer && layer.firstElementChild;
+      if (!track) return;
+      let tileW = trackTileW.get(layer);
+      if (!tileW) {
+        tileW = layer.offsetWidth; // read once: a layout read every frame would cost more than it saves
+        if (!tileW) return; // not laid out (hidden): try again next frame
+        trackTileW.set(layer, tileW);
+      }
+      const x = ((position % tileW) + tileW) % tileW;
+      track.style.transform = `translate3d(${-x}px, 0, 0)`;
+    };
+
     let southamptonElementsHidden = false;
     const hideSouthamptonVisuals = (reason = "timeline-sync") => {
       if (southamptonElementsHidden) return;
@@ -5854,15 +5873,9 @@ document.addEventListener("DOMContentLoaded", function () {
       southamptonCity.style.transform = `translateX(-${departurePosition}px)`;
       dock.style.transform = `translateX(-${departurePosition}px)`;
 
-      // Animate waves background position for infinite scroll effect (stays in place on screen)
-      if (waves) {
-        waves.style.backgroundPosition = `${-wavesPosition}px 0`;
-      }
-
-      // Animate water background position for infinite scroll effect (like waves)
-      if (water) {
-        water.style.backgroundPosition = `${-waterPosition}px 0`;
-      }
+      // Endless scroll of the wake, sea and coast: slide each layer's strip
+      slideTrack(waves, wavesPosition);
+      slideTrack(water, waterPosition);
 
       // Keep the vista wing water phase-locked to the scene water so the
       // texture scrolls straight through the scene edge without a seam
@@ -5874,14 +5887,11 @@ document.addEventListener("DOMContentLoaded", function () {
         }px 0`;
       }
 
-      // Animate swater background position for infinite scroll effect (like waves)
-      if (swater) {
-        swater.style.backgroundPosition = `${-swaterPosition}px 0`;
-      }
+      slideTrack(swater, swaterPosition);
 
-      // Animate land_middle background position - continues scrolling but fades out at Isle of Wight
+      // land_middle keeps scrolling but fades out at the Isle of Wight
       if (landMiddle) {
-        landMiddle.style.backgroundPosition = `${-landMiddlePosition}px 0`;
+        slideTrack(landMiddle, landMiddlePosition);
 
         // Start fading out land when Isle of Wight appears
         if (elapsedTime >= NEEDLES_PASS) {
