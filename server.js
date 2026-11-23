@@ -201,7 +201,7 @@ const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: "rbvrpg-avatars",
-    allowed_formats: ["jpg", "jpeg", "png", "gif", "webp"],
+    allowed_formats: ["jpg", "jpeg", "png", "gif", "webp", "bmp", "avif"],
     transformation: [{ width: 200, height: 200, crop: "fill" }], // Resize to 200x200
     public_id: (req, file) =>
       `avatar-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
@@ -212,9 +212,17 @@ const upload = multer({
   storage,
   // 5MB avatar; text fields (names, bio) are small, so cap them well below multer's 1MB default
   limits: { fileSize: 5 * 1024 * 1024, fieldSize: 16 * 1024 },
+  // Accept anything that is actually an image. We deliberately do NOT gate on the
+  // browser-supplied Content-Type alone: browsers frequently send
+  // "application/octet-stream" (or the legacy "image/x-png") for a perfectly valid
+  // PNG/JPG — common on mobile and with drag-and-drop — which made good images fail
+  // as "Invalid file type". Cloudinary re-checks the real bytes against
+  // allowed_formats below and rejects anything that is not genuinely an image.
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (!allowedTypes.includes(file.mimetype)) {
+    const looksImage =
+      /^image\//i.test(file.mimetype) ||
+      /\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(file.originalname || "");
+    if (!looksImage) {
       cb(new Error("Invalid file type"), false);
       return;
     }
@@ -263,12 +271,14 @@ function getAvatarUploadErrorMessage(error) {
     return error.message;
   }
 
-  if (error.http_code === 400 && /invalid image file/i.test(error.message)) {
-    return "Avatar image could not be processed. Please re-save the PNG/JPG and try again.";
+  // Cloudinary rejects a non-image, or a format outside allowed_formats, with a
+  // 400. In the avatar flow that always means the file was not a usable image.
+  if (error.http_code === 400) {
+    return "That image couldn't be used. Please upload a JPG, PNG, GIF, WebP, BMP, or AVIF image.";
   }
 
   if (/invalid file type/i.test(error.message)) {
-    return "Avatar must be a JPG, PNG, GIF, or WebP image";
+    return "Please upload an image file (JPG, PNG, GIF, WebP, BMP, or AVIF).";
   }
 
   // Anything else (a database error, say) is not the visitor's business: its
