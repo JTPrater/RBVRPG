@@ -4,47 +4,70 @@
     <meta charset="UTF-8" />
     <title>Britannic Voyage - Passenger List</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="../css/list.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Raleway:wght@400;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&display=swap"
       rel="stylesheet"
     />
-    <!-- Font Awesome for icons -->
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css"
-    />
+    <link rel="stylesheet" href="/css/front.css" />
+    <link rel="stylesheet" href="/css/list.css" />
     <!-- DOMPurify for XSS protection -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.7/purify.min.js"></script>
     <script src="/js/i18n.js"></script>
   </head>
-  <body>
-    <div class="container">
-      <a href="/main/main.html" class="back-link">
-        <i class="fas fa-arrow-left"></i> Return to Main
-      </a>
-      <select class="lang-select list-lang" aria-label="Language"></select>
-      <h1>Passenger List</h1>
-      <div class="passenger-grid" id="passengerGrid">
-        <!-- Passengers will be inserted here dynamically -->
+  <body class="list">
+    <header class="board">
+      <nav class="board-links" aria-label="Pages">
+        <a href="/main/main.html" class="back-link">Home</a>
+        <a href="/main/registration.html">Register Now</a>
+      </nav>
+      <select class="lang-select" aria-label="Language"></select>
+    </header>
+
+    <main class="sheet">
+      <div class="container">
+        <div class="list-head">
+          <h1>Passenger List</h1>
+          <span id="passengerCount" class="count"></span>
+          <a href="/main/main.html#login" class="btn" id="aboard-link"
+            >Climb Aboard</a
+          >
+        </div>
+        <div class="passenger-grid" id="passengerGrid">
+          <!-- Passengers will be inserted here dynamically -->
+        </div>
+      </div>
+      <footer class="colophon">
+        <p>&copy; 2025 RMS Britannic Voyage. All rights reserved.</p>
+      </footer>
+    </main>
+
+    <div id="passengerModal" class="modal veil" style="display: none">
+      <div
+        class="modal-content card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalName"
+      >
+        <button type="button" class="close-btn" aria-label="Close">
+          &times;
+        </button>
+        <div class="modal-head">
+          <div class="modal-avatar">
+            <img src="" alt="Passenger Avatar" id="modalAvatar" />
+          </div>
+          <div class="modal-info">
+            <h2 id="modalName"></h2>
+            <div id="modalCabin" class="cabin"></div>
+            <div id="modalDob" class="dob"></div>
+          </div>
+        </div>
+        <span class="label">Biography:</span>
+        <div id="modalBio" class="bio"></div>
       </div>
     </div>
 
-    <div id="passengerModal" class="modal">
-      <div class="modal-content">
-        <span class="close-btn">&times;</span>
-        <div class="modal-avatar">
-          <img src="" alt="Passenger Avatar" id="modalAvatar" />
-        </div>
-        <div class="modal-info">
-          <h2 id="modalName"></h2>
-          <div id="modalDob" class="dob"></div>
-          <div id="modalCabin" class="cabin"></div>
-          <div id="modalBio" class="bio"></div>
-        </div>
-      </div>
-    </div>
-
-    <script src="../js/list.js"></script>
+    <script src="/js/list.js"></script>
   </body>
 </html>

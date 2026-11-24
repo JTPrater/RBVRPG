@@ -38,6 +38,7 @@
     countdown: "Регистрация откроется через {0} д {1} ч {2} мин {3} с",
     cabinsFailed: "Не удалось загрузить номера кают: {0} Обновите страницу или обратитесь в поддержку, если ошибка повторится.",
     tooMany: "Слишком много попыток. Подождите {0} мин. и попробуйте снова.",
+    fieldTooLong: "{0}: не больше {1} символов",
   },
   exact: {
     // the game screen
@@ -311,6 +312,24 @@
     "Register": "Зарегистрироваться",
     "Birth date must be between January 1st, 1819 and July 9th, 1919": "Дата рождения должна быть между 1 января 1819 и 9 июля 1919 года",
     "Registration failed. Please try again.": "Не удалось зарегистрироваться. Попробуйте ещё раз.",
+    "Choose a picture": "Выбрать картинку",
+    "Southampton, July 9th 1919, 9:30 AM": "Саутгемптон, 9 июля 1919 г., 9:30",
+    "Bio": "Биография",
+    // the server's refusals of a registration (server.js /api/register)
+    "No avatar file uploaded": "Не выбрана картинка для аватара",
+    "Please enter a valid email address": "Введите правильный адрес эл. почты",
+    "Password must be 6 to 72 characters": "Пароль должен быть длиной от 6 до 72 символов",
+    "Email already registered": "Эта эл. почта уже зарегистрирована",
+    "Invalid cabin selected": "Такой каюты нет. Выберите другую.",
+    "Selected cabin is fully booked": "В выбранной каюте не осталось мест",
+    "Avatar image must be 5MB or smaller": "Картинка аватара должна быть не больше 5 МБ",
+    "One of the fields is too long": "Одно из полей слишком длинное",
+    "That image couldn't be used. Please upload a JPG, PNG, GIF, WebP, BMP, or AVIF image.": "Эту картинку не удалось использовать. Загрузите изображение JPG, PNG, GIF, WebP, BMP или AVIF.",
+    "Please upload an image file (JPG, PNG, GIF, WebP, BMP, or AVIF).": "Загрузите файл изображения (JPG, PNG, GIF, WebP, BMP или AVIF).",
+    "Avatar upload failed": "Не удалось загрузить аватар",
+    // the boards and cards of the pages before the game
+    "Pages": "Страницы",
+    "Close": "Закрыть",
     // the passenger list
     "Passenger List": "Список пассажиров",
     "Return to Main": "На главную",

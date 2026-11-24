@@ -1,341 +1,198 @@
-/* registration.css - 1910s Aesthetic */
+/* Registration: a printed form, like the passenger's ticket in the game.
+   Ruled thick and thin round its edge, the line's burgee in the corner,
+   hairlines between its parts. (front.css has the shared look.) */
 
-:root {
-  /* Base Colors - Sepia & Edwardian Era */
-  --primary-color: #2b1810;
-  --secondary-color: #d4af37;
-  --accent-color: #f5f5dc;
-  --text-color: #3d2817;
-  --color-bronze: #8b6914;
-  --color-ivory: #fffef0;
-  --color-copper: #b87333;
-  --color-slate: #5a4a42;
-
-  /* Typography */
-  --font-primary: "Playfair Display", serif;
-  --font-secondary: "Raleway", sans-serif;
-
-  /* Spacing */
-  --spacing-unit: 24px;
-
-  /* Effects */
-  --transition-speed: 0.4s;
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 6px 12px rgba(0, 0, 0, 0.25);
-  --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.3);
-
-  /* Gradients */
-  --gradient-deco: linear-gradient(
-    135deg,
-    #d4af37 0%,
-    #b8860b 50%,
-    #8b6914 100%
-  );
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  margin: 0;
-  font-family: var(--font-secondary);
-  color: var(--text-color);
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background-image: linear-gradient(
-      135deg,
-      rgba(43, 24, 16, 0.88) 0%,
-      rgba(60, 40, 32, 0.85) 50%,
-      rgba(43, 24, 16, 0.9) 100%
-    ),
-    repeating-linear-gradient(
-      0deg,
-      rgba(0, 0, 0, 0.03),
-      rgba(0, 0, 0, 0.03) 2px,
-      transparent 2px,
-      transparent 4px
-    ),
-    url("../images/rms britannic new background.png");
-  background-size: cover, 100% 100%, cover;
-  background-position: center, 0 0, center;
-  background-repeat: no-repeat, repeat, no-repeat;
-  background-attachment: fixed, fixed, fixed;
-  padding: var(--spacing-unit);
-  line-height: 1.8;
+.registration .sheet {
+  padding: clamp(18px, 3.2vw, 40px) clamp(10px, 2vw, 24px) clamp(26px, 4vw, 52px);
 }
 
 .registration-container {
-  width: 100%;
-  max-width: 700px;
-  padding: 3rem;
-  background: linear-gradient(
-    135deg,
-    rgba(245, 245, 220, 0.97),
-    rgba(245, 245, 220, 0.95)
-  );
-  border: 2px solid var(--secondary-color);
-  border-radius: 0;
-  box-shadow: var(--shadow-lg);
   position: relative;
-  overflow: hidden;
+  max-width: 860px;
+  margin: 0 auto;
+  border: 2px solid #2a221a;
+  outline: 1px solid #2a221a;
+  outline-offset: -7px;
+  padding: clamp(24px, 3.4vw, 40px) clamp(20px, 4.2vw, 50px) clamp(26px, 3.6vw, 44px);
 }
-
-.registration-container::before {
+/* the White Star burgee, as on the ticket */
+.registration-container::after {
   content: "";
   position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  border: 1px dashed var(--secondary-color);
-  opacity: 0.2;
-  pointer-events: none;
+  top: clamp(26px, 3.6vw, 44px);
+  right: clamp(22px, 4.2vw, 50px);
+  width: clamp(40px, 5vw, 52px);
+  aspect-ratio: 60 / 36;
+  background: var(--burgee) center / contain no-repeat;
 }
 
 .registration-container h1 {
-  font-family: var(--font-primary);
-  font-size: 2.2rem;
-  color: var(--text-color);
-  letter-spacing: 2px;
-  text-align: center;
-  margin-bottom: 2rem;
-  position: relative;
-  z-index: 1;
+  border-bottom: 1px solid var(--ink);
+  padding: 0 70px 12px 0;
+  font-size: clamp(26px, 3.4vw, 34px);
+  line-height: 1.15;
 }
 
-.registration-container h1::after {
-  content: "✦ ✦ ✦";
-  display: block;
-  font-size: 1rem;
-  letter-spacing: 8px;
-  color: var(--secondary-color);
-  opacity: 0.7;
-  margin-top: 1rem;
+.form-section {
+  border-bottom: 1px solid var(--rule);
+  padding: 22px 0 24px;
 }
-
-form {
-  position: relative;
-  z-index: 1;
-}
-
 .form-group {
-  margin-bottom: 2rem;
+  min-width: 0;
+}
+
+.two-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 28px;
+}
+
+/* the passenger: the portrait beside the names, like a passport's page */
+.passenger-fields {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  grid-template-areas:
+    "portrait forename surname"
+    "portrait birth birth";
+  gap: 18px 28px;
+  align-items: start;
+}
+.passenger-fields .portrait {
+  grid-area: portrait;
+}
+/* the date's box is as wide as the name above it; what is said under it
+   (the age, or why the date is refused) has the whole row */
+.passenger-fields .birth {
+  grid-area: birth;
+}
+.passenger-fields .birth input {
+  width: calc(50% - 14px);
+}
+
+.portrait-frame {
   position: relative;
-  border-bottom: 1px solid var(--secondary-color);
-  padding-bottom: 1.5rem;
+  width: 112px;
+  height: 112px;
+  border: 1px solid var(--ink-2);
+  background: var(--paper-deep);
 }
-
-.form-group:last-of-type {
-  border-bottom: none;
-}
-
-label {
-  display: block;
-  margin-bottom: 12px;
-  font-family: var(--font-primary);
-  font-size: 1.1rem;
-  color: var(--text-color);
-  font-weight: 600;
-  letter-spacing: 0.5px;
-}
-
-input,
-select,
-textarea {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid var(--secondary-color);
-  border-radius: 2px;
-  font-size: 1rem;
-  color: var(--text-color);
-  transition: all var(--transition-speed) ease;
-  background: rgba(255, 255, 255, 0.95);
-  font-family: var(--font-secondary);
-}
-
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: var(--secondary-color);
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.1);
-  background: rgba(255, 255, 255, 1);
-}
-
-input[type="date"] {
-  width: 100%;
-}
-
-input[type="date"]:invalid {
-  border-color: #c41e3a;
-}
-
-textarea {
-  resize: vertical;
-  min-height: 120px;
-  line-height: 1.7;
-}
-
-select {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23d4af37' viewBox='0 0 16 16'%3E%3Cpath d='M8 11l-7-7h14l-7 7z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 15px center;
-  padding-right: 40px;
-}
-
-/* Avatar Preview */
 #avatar-preview {
-  width: 110px;
-  height: 110px;
-  border: 2px solid var(--secondary-color);
-  border-radius: 2px;
-  margin-top: 12px;
-  background: #fff;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  padding: 8px;
   background-size: cover;
   background-position: center;
-  box-shadow: var(--shadow-sm);
-}
-
-#avatar-preview::before {
-  content: "Your Avatar";
-  color: var(--secondary-color);
-  opacity: 0.5;
-  font-size: 0.8rem;
   text-align: center;
 }
+#avatar-preview::before {
+  content: attr(data-i18n-content);
+  color: var(--ink-2);
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.25;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+#avatar-preview.has-picture::before {
+  content: none;
+}
+/* the file box itself lies over the frame, unseen: a click on the frame
+   opens it, and the browser's "choose a file" hint points at the frame */
+.portrait-frame input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0;
+}
+.portrait-frame:hover {
+  border-color: var(--ink);
+}
+.portrait-frame:hover #avatar-preview::before {
+  color: var(--red);
+}
+.portrait-frame:focus-within {
+  outline: 1px solid var(--ink);
+  outline-offset: -3px;
+}
 
-#avatar-preview[style*="backgroundImage"]::before {
+/* what the form works out, under the box it comes from */
+#age-display,
+.capacity-info {
+  display: block;
+  margin-top: 7px;
+  color: var(--ink-2);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.3;
+}
+#age-display:empty {
   display: none;
 }
-
-/* Age Display */
-#age-display {
+/* figures stand upright: the italic's stroke in "1/2" reads as a bar */
+.capacity-info span {
+  font-style: normal;
+}
+.departure {
+  grid-column: 1 / -1;
+}
+.departure .printed {
   display: block;
-  margin-top: 8px;
-  font-style: italic;
-  color: var(--color-slate);
-  font-size: 0.95rem;
+  font-size: 17px;
 }
 
-/* Error Messages */
+input.invalid {
+  border-color: var(--red);
+}
 .error-message {
-  color: #c41e3a;
-  font-size: 0.9rem;
-  margin-top: 8px;
+  margin-top: 7px;
+  color: var(--red);
+  font-size: 15px;
   font-style: italic;
+  line-height: 1.3;
 }
 
-/* Submit Button */
-button {
-  background: var(--gradient-deco);
-  color: var(--primary-color);
-  padding: 12px 2.2rem;
-  border: 2px solid var(--secondary-color);
-  border-radius: 2px;
-  cursor: pointer;
-  font-family: var(--font-secondary);
-  font-size: 1rem;
-  font-weight: 600;
-  transition: all var(--transition-speed) ease;
-  margin-top: 1.5rem;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  display: block;
-  margin-left: auto;
-  margin-right: auto;
-  box-shadow: var(--shadow-md);
-  position: relative;
-  overflow: hidden;
-}
-
-button::before {
-  content: "";
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(
-    circle,
-    rgba(255, 255, 255, 0.15) 0%,
-    transparent 70%
-  );
-  transform: scale(0);
-  transition: transform 0.5s;
-}
-
-button:hover {
-  background: linear-gradient(135deg, #e8c547 0%, #c4970d 50%, #9a7a1a 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(212, 175, 55, 0.25);
-}
-
-button:hover::before {
-  transform: scale(1);
-}
-
-button:active {
-  transform: translateY(1px);
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .registration-container {
-    max-width: 95%;
-    padding: 2rem 1.5rem;
-  }
-
-  .registration-container h1 {
-    font-size: 1.8rem;
-    letter-spacing: 1px;
-  }
-
-  .registration-container h1::after {
-    font-size: 0.85rem;
-    letter-spacing: 6px;
-  }
-
-  label {
-    font-size: 1rem;
-  }
-
-  input,
-  select,
-  textarea {
-    font-size: 0.95rem;
-    padding: 10px;
-  }
-
-  button {
-    font-size: 0.9rem;
-    padding: 10px 1.5rem;
-  }
-
-  .form-group {
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
-  }
-}
-
-/* the language picker above the title */
-.lang-row {
+.form-foot {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  margin-bottom: 0.5rem;
+  gap: 14px 26px;
+  padding-top: 24px;
 }
-.lang-row select {
-  padding: 0.3rem 0.5rem;
-  font: inherit;
-  font-size: 0.95rem;
-  cursor: pointer;
+.form-foot .form-error {
+  flex: 1 1 auto;
+  line-height: 1.35;
+}
+.form-foot .btn {
+  flex: 0 0 auto;
+  min-width: 232px;
+}
+
+@media (max-width: 720px) {
+  .passenger-fields {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "portrait forename"
+      "portrait surname"
+      "birth birth";
+  }
+  .passenger-fields .birth input {
+    width: 100%;
+  }
+  .two-columns {
+    grid-template-columns: 1fr;
+  }
+  .form-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .form-foot .btn {
+    min-width: 0;
+  }
 }
