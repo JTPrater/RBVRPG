@@ -2818,6 +2818,9 @@ document.addEventListener("DOMContentLoaded", function () {
           const roomName = getRoomNameById(data.room);
           const roomSpan = document.createElement("span");
           roomSpan.textContent = `(${roomName})`;
+          // the room is the game's own words, in the reader's language
+          // (the line around it is a player's, and stays as written)
+          roomSpan.dataset.i18n = "";
           roomSpan.style.textDecoration = "underline";
           roomSpan.style.cursor = "pointer";
           roomSpan.addEventListener("click", () => {
@@ -3959,7 +3962,13 @@ document.addEventListener("DOMContentLoaded", function () {
       // Update tooltip if it's currently being displayed for this room
       const tooltip = document.getElementById("room-tooltip");
       if (tooltip && tooltip.style.display === "block") {
-        if (tooltip.textContent.startsWith(`${roomName} · `)) {
+        // the tooltip may show the room's name in the reader's language
+        const shown = tooltip.textContent;
+        const named =
+          window.RBV_I18N && typeof window.RBV_I18N.tr === "function"
+            ? window.RBV_I18N.tr(roomName)
+            : roomName;
+        if (shown.startsWith(`${roomName} · `) || shown.startsWith(`${named} · `)) {
           tooltip.textContent = roomCountLabel(roomName, count);
         }
       }
@@ -4804,7 +4813,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Tooltip on hover
         card.addEventListener("mouseenter", (e) => {
-          const desc = escapeHtml(item.description || "").replace(/\n/g, "<br>");
           let statsHtml = "";
           if (item.hungry)
             statsHtml += `<span class="edm-stat edm-stat-hunger"><span class="material-icons">restaurant</span> ${item.hungry > 0 ? "+" : ""}${item.hungry}</span>`;
@@ -4819,9 +4827,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
           tooltip.innerHTML = `
             <div class="edm-tooltip-title">${escapeHtml(item.name)}</div>
-            <div class="edm-tooltip-desc">${desc}</div>
+            <div class="edm-tooltip-desc"></div>
             ${statsHtml ? `<div class="edm-tooltip-stats">${statsHtml}</div>` : ""}
           `;
+          // one text, its line breaks kept by the stylesheet (pre-line): a
+          // description cut into lines could not be put into another
+          // language whole
+          tooltip.querySelector(".edm-tooltip-desc").textContent =
+            item.description || "";
           tooltip.style.display = "block";
         });
 
@@ -5161,18 +5174,23 @@ document.addEventListener("DOMContentLoaded", function () {
           player.name;
 
       const safeName = escapeHtml(player.name);
+      const cabinShown = player.cabin_number || player.cabin;
+      // "(You)" and "No cabin assigned" are the game's own words inside a
+      // passenger's name and cabin (data-i18n: put into the reader's language)
       playerDiv.innerHTML = DOMPurify.sanitize(`
         <button type="button" class="player-avatar player-avatar-button" aria-label="View bio for ${safeName}">
           <img src="${escapeHtml(player.avatar || "/images/default-avatar.svg")}" alt="${safeName}" />
         </button>
         <div class="player-info">
           <div class="player-name">${safeName}${
-            isCurrentPlayer ? " (You)" : ""
+            isCurrentPlayer ? ' <span data-i18n="">(You)</span>' : ""
           }</div>
           <div class="player-class">${escapeHtml(passengerClassLabel(player.cabin))}</div>
-          <div class="player-cabin">${escapeHtml(
-            player.cabin_number || player.cabin || "No cabin assigned",
-          )}</div>
+          <div class="player-cabin">${
+            cabinShown
+              ? escapeHtml(cabinShown)
+              : '<span data-i18n="">No cabin assigned</span>'
+          }</div>
         </div>
       `);
 

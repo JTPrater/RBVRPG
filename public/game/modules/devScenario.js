@@ -177,8 +177,13 @@
     if (RBV.weatherFx) RBV.weatherFx.apply();
     // Keep the scenario's story text pinned even if a voyage handler ran
     // before the guards were in place
+    // (it may be showing in the reader's language: that is the same line)
     const story = document.getElementById("story-text");
-    if (story && story.textContent.indexOf("North Atlantic") === -1) {
+    const shownNA =
+      window.RBV_I18N && typeof window.RBV_I18N.tr === "function"
+        ? window.RBV_I18N.tr(NA_TEXT)
+        : NA_TEXT;
+    if (story && story.textContent !== NA_TEXT && story.textContent !== shownNA) {
       story.textContent = NA_TEXT;
       story.style.opacity = "1";
     }

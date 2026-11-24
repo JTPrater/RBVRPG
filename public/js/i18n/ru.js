@@ -1,6 +1,7 @@
 // Русский. The keys are the English the game writes (see /js/i18n.js).
-// Phrases with a name in them are worded so the English name (a room, a
-// passenger) needs no case ending: "Вы вошли: First Class Smoking Room".
+// Phrases with a name in them are worded so the name (a room, a passenger)
+// needs no case ending: "Вы вошли: Курительный салон первого класса".
+// The rooms and the menus are in ru-game.js (the game page loads it too).
 (window.RBV_I18N_DICT = window.RBV_I18N_DICT || {}).ru = {
   t: {
     location: "Место: {0}",
@@ -39,6 +40,7 @@
     cabinsFailed: "Не удалось загрузить номера кают: {0} Обновите страницу или обратитесь в поддержку, если ошибка повторится.",
     tooMany: "Слишком много попыток. Подождите {0} мин. и попробуйте снова.",
     fieldTooLong: "{0}: не больше {1} символов",
+    cabinNamed: "Каюта {0}",
   },
   exact: {
     // the game screen
@@ -130,8 +132,9 @@
     "You lie down and get some rest.": "Вы ложитесь отдохнуть.",
     "Go Aboard": "Подняться на борт",
     "Food": "Еда",
-    "Alcoholic Beverages": "Алкогольные напитки",
-    "Soft Beverages": "Безалкогольные напитки",
+    // (short: the menu's side column is narrow)
+    "Alcoholic Beverages": "Алкогольные",
+    "Soft Beverages": "Безалкогольные",
     "Light Fare": "Лёгкие блюда",
     "All": "Всё",
     "Beer": "Пиво",
@@ -154,6 +157,37 @@
     "Pipes": "Трубки",
     "Cigarettes": "Сигареты",
     "No items available": "Ничего нет",
+    // the game screen's pictures (read aloud by screen readers)
+    "Game Top Bar": "Верхняя панель",
+    "Game Bottom Bar": "Нижняя панель",
+    "Day Clouds": "Дневные облака",
+    "Morning/Sunset Clouds": "Утренние и закатные облака",
+    "Night Clouds": "Ночные облака",
+    "Isle of Wight": "Остров Уайт",
+    "Southampton City": "Город Саутгемптон",
+    "Dock": "Причал",
+    "Cherbourg Night": "Шербур ночью",
+    "Britannic Day": "«Британник» днём",
+    "Britannic Dusk": "«Британник» в сумерках",
+    "Britannic Night": "«Британник» ночью",
+    "Southampton Yacht 1": "Яхта в Саутгемптоне 1",
+    "Southampton Yacht 2": "Яхта в Саутгемптоне 2",
+    "Southampton Yacht 3": "Яхта в Саутгемптоне 3",
+    "Character Avatar": "Аватар персонажа",
+    "Avatar": "Аватар",
+    "Engine order telegraph": "Машинный телеграф",
+    // the voyage and boarding
+    "North Atlantic": "Северная Атлантика",
+    "We are now deep in the North Atlantic, making steady progress. The open ocean stretches to every horizon.": "Мы уже далеко в Северной Атлантике и уверенно идём вперёд. Открытый океан простирается до самого горизонта.",
+    "You board the RMS Britannic by the Boarding Tower.": "Вы поднимаетесь на борт RMS Britannic через посадочную башню.",
+    "You board the RMS Britannic by the First Class Gangway.": "Вы поднимаетесь на борт RMS Britannic по трапу первого класса.",
+    "Crew": "Экипаж",
+    "(You)": "(вы)",
+    "No cabin assigned": "Каюта не назначена",
+    "Unable to join the game at this time.": "Сейчас войти в игру не получается.",
+    "Game access is restricted to administrators only.": "Сейчас вход в игру открыт только администраторам.",
+    "The report could not be sent. Please try again.": "Не удалось отправить жалобу. Попробуйте ещё раз.",
+    "Your session expired. Please log in again.": "Сеанс истёк. Войдите снова.",
     "Engine Telegraph": "Машинный телеграф",
     "STOP": "СТОП",
     "STAND BY": "ТОВСЬ",
