@@ -1,5 +1,4 @@
 document.addEventListener("DOMContentLoaded", function () {
-  const socket = io();
   const passengerGrid = document.getElementById("passengerGrid");
   const modal = document.getElementById("passengerModal");
   const closeBtn = document.querySelector(".close-btn");
@@ -106,24 +105,21 @@ document.addEventListener("DOMContentLoaded", function () {
     return card;
   }
 
-  // Handle initial passengers load
-  socket.on("initial-passengers", (passengers) => {
-    passengerGrid.innerHTML = "";
-    if (Array.isArray(passengers)) {
-      passengers.forEach((passenger) => {
-        if (passenger) {
-          passengerGrid.appendChild(createPassengerCard(passenger));
-        }
-      });
-    }
-  });
-
-  // Handle new passenger additions
-  socket.on("new-passenger", (passenger) => {
-    if (passenger) {
-      passengerGrid.appendChild(createPassengerCard(passenger));
-    }
-  });
+  // The passengers, from the server (a page that is left open shows newcomers
+  // when it is opened again)
+  fetch("/api/passengers")
+    .then((response) => (response.ok ? response.json() : []))
+    .then((passengers) => {
+      passengerGrid.innerHTML = "";
+      if (Array.isArray(passengers)) {
+        passengers.forEach((passenger) => {
+          if (passenger) {
+            passengerGrid.appendChild(createPassengerCard(passenger));
+          }
+        });
+      }
+    })
+    .catch((error) => console.error("Passenger list:", error));
 
   // Close modal when clicking the close button
   closeBtn.addEventListener("click", closeModal);

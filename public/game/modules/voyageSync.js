@@ -37,6 +37,12 @@
   });
 
   socket.on("voyage-state", (currentVoyageState) => {
+    if (!currentVoyageState) return;
+    // the voyage's start comes in the same message (it was a second one)
+    if (typeof currentVoyageState.startTime === "number") {
+      v.voyageStartTime = currentVoyageState.startTime;
+      v.pendingVoyageStartTime = currentVoyageState.startTime;
+    }
 
     v.pendingVoyageState = currentVoyageState;
     v.latestVoyageState = currentVoyageState;
