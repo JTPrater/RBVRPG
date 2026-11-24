@@ -4,10 +4,13 @@
 // phrase into the chosen language where it appears, so nothing else has to
 // change. Each language is a dictionary in /js/i18n/<code>.js: exact phrases
 // ("exact") and the wording of the phrases with a number or a name in them
-// ("t", filled in by the patterns below). Alerts are translated too.
+// ("t", filled in by the patterns below). Alerts are translated too. A page
+// can ask for more of a dictionary: <script src="/js/i18n.js" data-parts="game">
+// also loads /js/i18n/<code>-game.js (the rooms and the menus, 2026-11-24).
 //
-// Left as written: what players write (chat, names, biographies), the names of
-// rooms and cabins, and the dishes and drinks on the menus.
+// Left as written: what players write (chat, names, biographies) and the
+// songs' titles. An element inside one of those that is the game's own words
+// (the room beside a line in the global chat) is marked data-i18n.
 //
 // The choice is kept in localStorage ("rbv:lang"); the first time, the
 // browser's own language is used if there is a dictionary for it.
@@ -21,8 +24,8 @@
   const CODES = new Set(LANGS.map((l) => l[0]));
   // data-i18n-content: text a stylesheet shows (content: attr(data-i18n-content))
   const ATTRS = ["placeholder", "title", "aria-label", "alt", "data-i18n-content"];
-  // never touched: players' own words, room names, icons (their names are
-  // ligatures), the menus' dishes, and the language list itself
+  // never touched: players' own words, icons (their names are ligatures),
+  // the songs' titles and the language list itself
   const SKIP = [
     "script",
     "style",
@@ -36,15 +39,18 @@
     ".player-popup-bio",
     "#profile-name",
     "#profile-bio",
-    ".room-name-label",
-    ".edm-item-card",
-    ".edm-item-name",
-    ".edm-tooltip-title",
-    ".edm-tooltip-desc",
     // the songs' titles (the prompt and "Now Playing:" are translated)
     "#song-select option:not([value=''])",
     ".lang-select",
   ].join(",");
+
+  // inside those, the game's own words again
+  const OPT_IN = "[data-i18n]";
+
+  // the dictionary's parts this page asks for (data-parts="game")
+  const PARTS = ((document.currentScript && document.currentScript.dataset.parts) || "")
+    .split(/[\s,]+/)
+    .filter((p) => /^[a-z]+$/.test(p));
 
   const dicts = (window.RBV_I18N_DICT = window.RBV_I18N_DICT || {});
   const origText = new WeakMap(); // text node -> the English the game wrote
@@ -91,7 +97,7 @@
     [new RegExp(`^Date: (\\d{1,2}) (${MONTHS.join("|")}), (.+)$`), (m, t) => t.date && fill(t.date, m[1], t.months[MONTHS.indexOf(m[2])], m[3])],
     [new RegExp(`^(\\d{1,2}) (${MONTHS.join("|")}) (\\d{4})$`), (m, t) => t.dateLong && fill(t.dateLong, m[1], t.months[MONTHS.indexOf(m[2])], m[3])],
     [/^(\d+) [Pp]assengers?$/, (m, t) => t.passengerCount && fill(plural(t.passengerCount, m[1]), m[1])],
-    [/^You have entered (.+)$/, (m, t) => t.entered && fill(t.entered, m[1])],
+    [/^You have entered (.+)$/, (m, t) => t.entered && fill(t.entered, tr(m[1]))],
     [/^(.+) has entered the room$/, (m, t) => t.joined && fill(t.joined, m[1])],
     [/^(.+) has left the room$/, (m, t) => t.left && fill(t.left, m[1])],
     [/^Switched to (.+) chat$/, (m, t) => t.switched && fill(t.switched, tr(m[1]))],
@@ -115,6 +121,13 @@
     [/^Failed to load cabin numbers: ([\s\S]+?)\s*Please try refreshing the page or contact support if the issue persists\.$/, (m, t) => t.cabinsFailed && fill(t.cabinsFailed, m[1])],
     // the server's rate limits (server.js limitReached)
     [/^Too many (?:attempts|login attempts|requests)\. Please wait (\d+) minutes? and try again\.$/, (m, t) => t.tooMany && fill(t.tooMany, m[1])],
+    // a cabin by its number: "Cabin A1", "Cabin B-81"
+    [/^Cabin ([A-Z]-?\d+)$/, (m, t) => t.cabinNamed && fill(t.cabinNamed, m[1])],
+    // a room named in brackets beside a line of the global chat
+    [/^\((.+)\)$/, (m) => {
+      const inner = tr(m[1]);
+      return inner !== m[1] ? `(${inner})` : undefined;
+    }],
     // a registration field over its length (server.js REGISTRATION_FIELD_LIMITS)
     [/^(Forename|Surname|Bio) must be (\d+) characters or fewer$/, (m, t) => t.fieldTooLong && fill(t.fieldTooLong, tr(m[1]), m[2])],
   ];
@@ -156,7 +169,12 @@
 
   // ------------------------------------------------------------------ page
   function skipped(el) {
-    return !el || (el.closest && el.closest(SKIP));
+    if (!el || !el.closest) return true;
+    return !!el.closest(SKIP) && !el.closest(OPT_IN);
+  }
+  // a skipped element with some of the game's own words inside it
+  function holdsOptIn(el) {
+    return !!(el.querySelector && el.querySelector(OPT_IN));
   }
   function doText(node) {
     const cur = node.data;
@@ -190,19 +208,25 @@
       if (!skipped(root.parentElement) && /[A-Za-z]/.test(root.data)) doText(root);
       return;
     }
-    if (root.nodeType !== 1 || skipped(root)) return;
-    doAttrs(root);
+    if (root.nodeType !== 1) return;
+    const rootSkipped = skipped(root);
+    if (rootSkipped && !holdsOptIn(root)) return;
+    if (!rootSkipped) doAttrs(root);
     const tw = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
       acceptNode(n) {
-        if (n.nodeType === 1 && n.matches(SKIP)) return NodeFilter.FILTER_REJECT;
+        // a skipped part is passed over whole, unless it holds the game's
+        // own words (then only those are visited)
+        if (n.nodeType === 1 && n.matches(SKIP) && !n.matches(OPT_IN)) {
+          return holdsOptIn(n) ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_REJECT;
+        }
         return NodeFilter.FILTER_ACCEPT;
       },
     });
     let n;
     while ((n = tw.nextNode())) {
       if (n.nodeType === 3) {
-        if (/[A-Za-z]/.test(n.data) || origText.has(n)) doText(n);
-      } else doAttrs(n);
+        if ((/[A-Za-z]/.test(n.data) || origText.has(n)) && !skipped(n.parentElement)) doText(n);
+      } else if (!skipped(n)) doAttrs(n);
     }
   }
 
@@ -233,15 +257,24 @@
   // ------------------------------------------------------ the dictionaries
   const loading = {};
   function load(code) {
-    if (code === "en" || dicts[code]) return Promise.resolve();
+    if (code === "en") return Promise.resolve();
     if (!loading[code]) {
-      loading[code] = new Promise((resolve) => {
-        const s = document.createElement("script");
-        s.src = `/js/i18n/${code}.js?v=1`;
-        s.onload = () => resolve();
-        s.onerror = () => resolve(); // no dictionary: the page stays in English
-        document.head.appendChild(s);
-      });
+      // the language's dictionary, then the parts this page asks for, run in
+      // that order (a part adds to its language's dictionary)
+      const files = [code, ...PARTS.map((p) => `${code}-${p}`)];
+      loading[code] = Promise.all(
+        files.map(
+          (file) =>
+            new Promise((resolve) => {
+              const s = document.createElement("script");
+              s.src = `/js/i18n/${file}.js?v=2`;
+              s.async = false;
+              s.onload = () => resolve();
+              s.onerror = () => resolve(); // no dictionary: the page stays in English
+              document.head.appendChild(s);
+            }),
+        ),
+      );
     }
     return loading[code];
   }

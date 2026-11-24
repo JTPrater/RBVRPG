@@ -1,4 +1,5 @@
 // Español. The keys are the English the game writes (see /js/i18n.js).
+// The rooms and the menus are in es-game.js (the game page loads it too).
 (window.RBV_I18N_DICT = window.RBV_I18N_DICT || {}).es = {
   t: {
     location: "Ubicación: {0}",
@@ -32,6 +33,7 @@
     cabinsFailed: "No se pudieron cargar los números de camarote: {0} Recarga la página o contacta con el soporte si el problema continúa.",
     tooMany: "Demasiados intentos. Espera {0} min y vuelve a intentarlo.",
     fieldTooLong: "{0}: {1} caracteres como máximo",
+    cabinNamed: "Camarote {0}",
   },
   exact: {
     // the game screen
@@ -147,6 +149,37 @@
     "Pipes": "Pipas",
     "Cigarettes": "Cigarrillos",
     "No items available": "No hay nada disponible",
+    // the game screen's pictures (read aloud by screen readers)
+    "Game Top Bar": "Barra superior",
+    "Game Bottom Bar": "Barra inferior",
+    "Day Clouds": "Nubes de día",
+    "Morning/Sunset Clouds": "Nubes del amanecer y el atardecer",
+    "Night Clouds": "Nubes de noche",
+    "Isle of Wight": "Isla de Wight",
+    "Southampton City": "Ciudad de Southampton",
+    "Dock": "Muelle",
+    "Cherbourg Night": "Cherburgo de noche",
+    "Britannic Day": "El Britannic de día",
+    "Britannic Dusk": "El Britannic al anochecer",
+    "Britannic Night": "El Britannic de noche",
+    "Southampton Yacht 1": "Yate en Southampton 1",
+    "Southampton Yacht 2": "Yate en Southampton 2",
+    "Southampton Yacht 3": "Yate en Southampton 3",
+    "Character Avatar": "Avatar del personaje",
+    "Avatar": "Avatar",
+    "Engine order telegraph": "Telégrafo de máquinas",
+    // the voyage and boarding
+    "North Atlantic": "Atlántico Norte",
+    "We are now deep in the North Atlantic, making steady progress. The open ocean stretches to every horizon.": "Estamos en pleno Atlántico Norte, avanzando a buen ritmo. El océano abierto se extiende hasta el horizonte.",
+    "You board the RMS Britannic by the Boarding Tower.": "Subes a bordo del RMS Britannic por la torre de embarque.",
+    "You board the RMS Britannic by the First Class Gangway.": "Subes a bordo del RMS Britannic por la pasarela de primera clase.",
+    "Crew": "Tripulación",
+    "(You)": "(tú)",
+    "No cabin assigned": "Sin camarote asignado",
+    "Unable to join the game at this time.": "Ahora mismo no es posible entrar en el juego.",
+    "Game access is restricted to administrators only.": "El acceso al juego está restringido a los administradores.",
+    "The report could not be sent. Please try again.": "No se pudo enviar el informe. Inténtalo de nuevo.",
+    "Your session expired. Please log in again.": "Tu sesión ha caducado. Vuelve a iniciar sesión.",
     "Engine Telegraph": "Telégrafo de máquinas",
     "STOP": "PARE",
     "STAND BY": "ATENCIÓN",

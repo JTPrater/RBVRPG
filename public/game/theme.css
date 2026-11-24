@@ -981,6 +981,9 @@ body,
   font-style: italic;
   line-height: 1.3;
   color: var(--ink-2);
+  /* the description is one text (so it can be put into the reader's
+     language whole); its own line breaks still show */
+  white-space: pre-line;
 }
 .edm-stat,
 .edm-stat-hunger,

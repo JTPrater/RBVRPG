@@ -2768,7 +2768,7 @@ const MENU_DATA = [
     "drunk": 0,
     "warm": 30,
     "price": 40,
-    "description": "Turtle Soup has been renowned as a symbol of the wealthy for many generations.\nYou'd have to be among the cr?me de la cr?me of society to be able\nto afford this dish. Is it even worth the price...?"
+    "description": "Turtle Soup has been renowned as a symbol of the wealthy for many generations.\nYou'd have to be among the crème de la crème of society to be able\nto afford this dish. Is it even worth the price...?"
   },
   {
     "name": "Sautéed Vegetables and Rice",
@@ -3132,7 +3132,7 @@ const MENU_DATA = [
     "drunk": 0,
     "warm": 20,
     "price": 2,
-    "description": "A gourmet Black Tea provided by Mariages Fréres. This tea blends<BR>flavorful Chinese teas with fruit found in the Golden Triangle's mountains\nto give it an overwhelming sense of flavor."
+    "description": "A gourmet Black Tea provided by Mariages Fréres. This tea blends\nflavorful Chinese teas with fruit found in the Golden Triangle's mountains\nto give it an overwhelming sense of flavor."
   },
   {
     "name": "Fujiyama Green Tea",
@@ -4510,7 +4510,7 @@ const MENU_DATA = [
     "drunk": 0,
     "warm": 0,
     "price": 0,
-    "description": "One of the perks of working in the Verandah Caf? or Smoking Room - you get\nto indulge in some ice cream in the pantry during your downtime. Perfect\nfor a sweet tooth! Just try not to eat too much."
+    "description": "One of the perks of working in the Verandah Café or Smoking Room - you get\nto indulge in some ice cream in the pantry during your downtime. Perfect\nfor a sweet tooth! Just try not to eat too much."
   },
   {
     "name": "Gatti's Reserve Champagne",
