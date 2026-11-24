@@ -25,8 +25,17 @@
   const WX_KEY = "rbv:devNAWx";
   const DEFAULT_ON = false; // (2026-11-23: off for the public test, as the note above asks)
 
+  // The server's stage (/api/stage.js, loaded before this): "north-atlantic"
+  // puts every player's ship in the open North Atlantic for the whole voyage,
+  // on the voyage's own clock: ship time, day and night, the weather and the
+  // moon run on in real time, the same for everyone. No panel then: its hour
+  // slider and timelapse are a developer's previews.
+  const PUBLIC_NA = window.RBV_VOYAGE_STAGE === "north-atlantic";
+  v.PUBLIC_NORTH_ATLANTIC = PUBLIC_NA;
+
   const stored = localStorage.getItem(KEY);
-  v.DEV_NORTH_ATLANTIC = stored === null ? DEFAULT_ON : stored === "1";
+  v.DEV_NORTH_ATLANTIC =
+    PUBLIC_NA || (stored === null ? DEFAULT_ON : stored === "1");
   const storedHour = parseFloat(localStorage.getItem(HOUR_KEY));
   v.DEV_HOUR = Number.isFinite(storedHour) ? storedHour : 17.5;
   const DAY_KEY = "rbv:devNADay";
@@ -62,11 +71,36 @@
   }
   v.DEV_MOON = storedMoon; // null = real 1920 ephemeris
 
+  // The public stage's clock: the voyage's elapsed time (12:00 on day 0 at its
+  // start, as the timeline's), read afresh by everything that asks; a
+  // developer's stored previews (hour, weather, moon) play no part in it
+  const voyageElapsed = () => {
+    const start = v.voyageStartTime || v.pendingVoyageStartTime;
+    return start ? Math.max(0, (Date.now() - start) / 1000) : 0;
+  };
+  if (PUBLIC_NA) {
+    Object.defineProperty(v, "DEV_DAY", {
+      configurable: true,
+      enumerable: true,
+      get: () => Math.floor(voyageElapsed() / 86400),
+      set() {},
+    });
+    Object.defineProperty(v, "DEV_HOUR", {
+      configurable: true,
+      enumerable: true,
+      get: () => (12 + (voyageElapsed() % 86400) / 3600) % 24,
+      set() {},
+    });
+    v.DEV_WEATHER = null;
+    v.DEV_MOON = null;
+  }
+
   // Scrubbed hour mapped onto the current dev day (timelapse advances the
   // day at each noon-crossing), for deterministic weather/astro. Days give
   // the timelapse a real calendar: the moon phase creeps, moonrise slides
   // ~50 min later each night, weather systems roll through.
   window.getDevElapsedSeconds = function () {
+    if (PUBLIC_NA) return Math.floor(voyageElapsed());
     return v.DEV_DAY * 86400 + ((v.DEV_HOUR - 12 + 24) % 24) * 3600;
   };
 
@@ -169,6 +203,11 @@
       return;
     }
     document.body.classList.add("dev-north-atlantic");
+    if (PUBLIC_NA) {
+      // the scene and the story once the other modules have booted; no panel
+      setTimeout(pushRefresh, 400);
+      return;
+    }
 
     const panel = document.createElement("div");
     panel.id = "dev-na-panel";

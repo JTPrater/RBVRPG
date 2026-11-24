@@ -20,6 +20,60 @@ const chatHistory = RBV.gameState.chatHistory;
 // Declared up here: the first enterRoom can run while this file is still
 // starting (voyage data that arrived first places the player).
 let roomTransitionTimer = null;
+
+// Who plays in this tab: the room to come back to is kept per player, as one
+// computer may be shared and one browser may have several characters logged
+// in, a tab each (core/me.js)
+function playerKey() {
+  try {
+    const id = sessionStorage.getItem("playerId");
+    if (id) return id;
+    const c = JSON.parse(sessionStorage.getItem("character")) || {};
+    return [c.forename, c.surname, c.cabin_number].join("|");
+  } catch (e) {
+    return "";
+  }
+}
+// The rooms to come back to, by player: { [playerKey]: { id, name } }, the
+// most recently used last (a handful kept)
+const LAST_ROOMS_KEY = "rbv:lastRooms";
+function lastRooms() {
+  try {
+    const all = JSON.parse(localStorage.getItem(LAST_ROOMS_KEY));
+    return all && typeof all === "object" && !Array.isArray(all) ? all : {};
+  } catch (e) {
+    return {};
+  }
+}
+// This player's room to come back to (null: none). A room given replaces it,
+// null forgets it.
+function setLastRoom(room) {
+  try {
+    const all = lastRooms();
+    const key = playerKey();
+    delete all[key];
+    if (room) all[key] = { id: room.id || "", name: room.name || "" };
+    const keys = Object.keys(all);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 12))) delete all[k];
+    localStorage.setItem(LAST_ROOMS_KEY, JSON.stringify(all));
+  } catch (e) {}
+}
+// This player's room to come back to, or null. One saved before rooms were
+// kept per player ("lastRoom" / "lastRoomId") is taken as this player's, once.
+function savedLastRoom() {
+  try {
+    const oldId = localStorage.getItem("lastRoomId");
+    const oldName = localStorage.getItem("lastRoom");
+    if (oldId || oldName) {
+      localStorage.removeItem("lastRoom");
+      localStorage.removeItem("lastRoomId");
+      setLastRoom({ id: oldId || "", name: oldName || "" });
+    }
+    return lastRooms()[playerKey()] || null;
+  } catch (e) {
+    return null;
+  }
+}
 let isGlobalChat = RBV.gameState.isGlobalChat;
 Object.defineProperty(RBV.gameState, "isGlobalChat", {
   get() {
@@ -260,7 +314,12 @@ document.addEventListener("DOMContentLoaded", function () {
         // to ~1% steps (imperceptible) and only re-apply when it changes.
         const b = (0.35 + 0.65 * lit).toFixed(2);
         const warm = (cl01(1 - Math.abs(altForTex) / 12) * 0.35).toFixed(2);
-        const filt = `brightness(${b}) sepia(${warm})`;
+        // In full daylight the filter changes nothing, yet a filter on a
+        // moving layer costs the browser a pass of its own every frame: none
+        const filt =
+          b === "1.00" && warm === "0.00"
+            ? "none"
+            : `brightness(${b}) sepia(${warm})`;
         if (filt !== window.__cloudSmokeFilt) {
           window.__cloudSmokeFilt = filt;
           const cloudCanvas = document.querySelector(".cloud-container canvas");
@@ -271,7 +330,8 @@ document.addEventListener("DOMContentLoaded", function () {
         // The wake foam (.waves z4, .swater z5) rides above the celestial
         // water ink, so it stays day-bright at night unless relit here.
         // .water (z1) gets both this and the ink — the darkest layer.
-        const wFilt = `brightness(${(0.24 + 0.76 * lit).toFixed(2)})`;
+        const wB = (0.24 + 0.76 * lit).toFixed(2);
+        const wFilt = wB === "1.00" ? "none" : `brightness(${wB})`;
         if (wFilt !== window.__waterFilt) {
           window.__waterFilt = wFilt;
           for (const sel of [".water", ".waves", ".swater", "#water-wing"]) {
@@ -1035,7 +1095,12 @@ document.addEventListener("DOMContentLoaded", function () {
       return 0;
     }
 
-    function animate() {
+    // Clouds drift 6-12 px a second: redrawn on the scene's shared frames,
+    // about 30 a second (RBV.sceneFrame, core/rbv.js). Their place comes from
+    // the voyage clock, not from the frame count.
+    function animate(now) {
+      requestAnimationFrame(animate);
+      if (!RBV.sceneFrame(now)) return;
       // Full backing-store clear regardless of the dpr transform — with
       // canvas.width in logical units, dpr < 1 (browser zoom-out) cleared
       // only part of the canvas and clouds smeared into giant blobs
@@ -1073,8 +1138,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Deterministic cloud spawning synced across clients
       checkCloudSlots();
-
-      requestAnimationFrame(animate);
     }
 
     // Initial spawn to populate the sky using seeded positions
@@ -1089,7 +1152,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     applyCloudTexture(currentCloudTexture);
 
-    animate();
+    requestAnimationFrame(animate);
 
     window.setCloudTexture = (type = currentCloudTexture) =>
       applyCloudTexture(type);
@@ -1344,6 +1407,11 @@ document.addEventListener("DOMContentLoaded", function () {
     },
 
     _tick(now) {
+      // on the scene's shared frames (RBV.sceneFrame, core/rbv.js)
+      if (!RBV.sceneFrame(now)) {
+        this.animFrame = requestAnimationFrame(this._tick);
+        return;
+      }
       const dt = (now - this.lastTick) / 1000;
       this.lastTick = now;
 
@@ -1372,7 +1440,10 @@ document.addEventListener("DOMContentLoaded", function () {
           b.frameIndex = (b.frameIndex + 1) % (this.COLS * this.ROWS);
         }
 
-        // Draw current frame
+        // Draw the wing-beat frame only when it changes (the bird itself
+        // moves by transform)
+        if (b.drawnFrame === b.frameIndex) continue;
+        b.drawnFrame = b.frameIndex;
         const col = b.frameIndex % this.COLS;
         const row = Math.floor(b.frameIndex / this.COLS);
         b.ctx.clearRect(0, 0, b.canvas.width, b.canvas.height);
@@ -1400,9 +1471,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const smokeContainer = document.querySelector(".smoke-container");
     smokeContainer.appendChild(canvas);
     const ctx = canvas.getContext("2d");
+    let smokeDpr = 1;
 
     function resizeCanvas() {
       const dpr = window.devicePixelRatio || 1;
+      smokeDpr = dpr;
       // Use layout dimensions so CSS transforms (scene scaling) don't double-scale us
       const computedStyles = getComputedStyle(smokeContainer);
       const rawWidth =
@@ -1434,17 +1507,24 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     const smokeParticles = [];
-    const smokeImage = new Image();
-    smokeImage.src = "/images/animations/smoke/day.png";
+    // The day, dusk and night sprites, all loaded at the start: swapping one
+    // image's src stopped the smoke dead until the new picture had loaded
+    const smokeImages = {};
+    ["day", "ms", "night"].forEach((type) => {
+      smokeImages[type] = new Image();
+      smokeImages[type].src = `/images/animations/smoke/${type}.png`;
+    });
     let currentSmokeTexture = "day";
-
-    smokeImage.onload = () => {};
 
     // Expose a setter so the sky system can swap the smoke sprite at dusk/night
     window.setSmokeTexture = (type = "day") => {
-      if (type === currentSmokeTexture) return;
-      currentSmokeTexture = type;
-      smokeImage.src = `/images/animations/smoke/${type}.png`;
+      if (smokeImages[type]) currentSmokeTexture = type;
+    };
+    const smokeSprite = () => {
+      const img = smokeImages[currentSmokeTexture];
+      if (img.complete && img.naturalWidth) return img;
+      const day = smokeImages.day;
+      return day.complete && day.naturalWidth ? day : null;
     };
 
     // Define the positions of the three funnels as simple percentages since container is now positioned like ship
@@ -1585,9 +1665,13 @@ document.addEventListener("DOMContentLoaded", function () {
         ctx.fill();
       }
 
-      function animatePropellers(frameTime) {
-        ctx.clearRect(0, 0, CONTAINER_W, CONTAINER_H);
+      // Worked out in steps of a 60th of a second whatever the screen's
+      // refresh (as the smoke), drawn on the scene's shared frames
+      const BUBBLE_STEP_MS = 1000 / 60;
+      let bubbleLastTime = null;
+      let bubbleBacklog = 0;
 
+      function stepBubbles(frameTime) {
         const speed = Math.max(0, Number(window.currentSpeed) || 0);
         const speedFactor = Math.min(speed / 22, 1);
 
@@ -1607,14 +1691,26 @@ document.addEventListener("DOMContentLoaded", function () {
         for (let index = bubbles.length - 1; index >= 0; index--) {
           const bubble = bubbles[index];
           bubble.age += 1;
-          drawBubble(bubble);
-
           if (bubble.age >= bubble.life) {
             bubbles.splice(index, 1);
           }
         }
+      }
 
+      function animatePropellers(frameTime) {
         requestAnimationFrame(animatePropellers);
+        if (!RBV.sceneFrame(frameTime)) return;
+        if (bubbleLastTime === null) bubbleLastTime = frameTime;
+        bubbleBacklog += Math.min(250, Math.max(0, frameTime - bubbleLastTime));
+        bubbleLastTime = frameTime;
+        while (bubbleBacklog >= BUBBLE_STEP_MS) {
+          stepBubbles(frameTime);
+          bubbleBacklog -= BUBBLE_STEP_MS;
+        }
+        ctx.clearRect(0, 0, CONTAINER_W, CONTAINER_H);
+        for (let index = bubbles.length - 1; index >= 0; index--) {
+          drawBubble(bubbles[index]);
+        }
       }
 
       requestAnimationFrame(animatePropellers);
@@ -1674,37 +1770,37 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }
 
-    function animateSmoke() {
-      // Full backing-store clear regardless of the dpr transform (see the
-      // cloud animate() note — same smear bug at browser zoom-out)
-      ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.restore();
+    // The smoke is worked out in steps of a 60th of a second, however often
+    // the screen refreshes (stepped once per frame, it rose twice as fast on
+    // a 120 Hz screen and slowed when frames were dropped), and drawn on the
+    // scene's shared frames, about 30 a second (it rises about 13 px a second)
+    const SMOKE_STEP_MS = 1000 / 60;
+    let smokeLastTime = null;
+    let smokeBacklog = 0;
 
-      // Debug rectangle removed; smoke should not be affected by canvas test markers
+    function stepSmoke() {
+      // Update horizontal wind based on current ship speed
+      let horizontalWind = 0;
+      if (typeof window.currentSpeed === "number") {
+        const speed = window.currentSpeed || 0;
+        horizontalWind = -0.05 - speed * 0.04; // Original port-drift curve from historic build
+      }
+      // True wind from the weather engine bends the columns as well:
+      // westerlies push the smoke aft with the apparent wind, easterlies
+      // stand it up or push it forward. Matters most at the dock, where
+      // ship speed is zero but a squall should still flatten the smoke.
+      if (window.sceneWind) {
+        const dirSign =
+          window.sceneWind.dirDeg > 0 && window.sceneWind.dirDeg < 180
+            ? 1
+            : -1;
+        horizontalWind += dirSign * Math.min(window.sceneWind.kn, 30) * 0.008;
+      }
 
-      smokeParticles.forEach((particle, index) => {
-        if (!smokeImage.complete) return; // Skip if image not loaded
-
-        // Update horizontal wind based on current ship speed
-        let horizontalWind = 0;
-        if (typeof window.currentSpeed === "number") {
-          const speed = window.currentSpeed || 0;
-          horizontalWind = -0.05 - speed * 0.04; // Original port-drift curve from historic build
-        }
-        // True wind from the weather engine bends the columns as well:
-        // westerlies push the smoke aft with the apparent wind, easterlies
-        // stand it up or push it forward. Matters most at the dock, where
-        // ship speed is zero but a squall should still flatten the smoke.
-        if (window.sceneWind) {
-          const dirSign =
-            window.sceneWind.dirDeg > 0 && window.sceneWind.dirDeg < 180
-              ? 1
-              : -1;
-          horizontalWind +=
-            dirSign * Math.min(window.sceneWind.kn, 30) * 0.008;
-        }
+      // Backwards, so taking a puff out does not skip the next one (it was
+      // neither moved nor drawn that frame: a flicker in the column)
+      for (let index = smokeParticles.length - 1; index >= 0; index--) {
+        const particle = smokeParticles[index];
         // As the particle ages, blend from initial vertical to horizontal wind
         const bendProgress = Math.min(
           particle.life / (particle.maxLife * 0.6),
@@ -1745,40 +1841,64 @@ document.addEventListener("DOMContentLoaded", function () {
         // Much slower rotation for more realistic effect
         particle.rotation += 0.001;
 
-        // Draw the smoke particle
-        ctx.save();
-        ctx.globalAlpha = particle.opacity;
-        ctx.translate(particle.x, particle.y);
-        ctx.rotate(particle.rotation);
-
-        const scaledWidth = smokeImage.width * particle.scale;
-        const scaledHeight = smokeImage.height * particle.scale;
-
-        ctx.drawImage(
-          smokeImage,
-          -scaledWidth / 2,
-          -scaledHeight / 2,
-          scaledWidth,
-          scaledHeight,
-        );
-        ctx.restore();
-
         // Remove particle if it's too old or faded
         if (particle.life >= particle.maxLife || particle.opacity <= 0) {
           smokeParticles.splice(index, 1);
         }
-      });
+      }
 
       // Spawn new smoke particles at a more realistic rate
       if (Math.random() < 0.2) {
         // Much slower spawn rate (15%) for realistic smoke puffs
         spawnSmokeParticle();
       }
-
-      requestAnimationFrame(animateSmoke);
     }
 
-    animateSmoke();
+    function drawSmoke() {
+      // Full backing-store clear regardless of the dpr transform (see the
+      // cloud animate() note — same smear bug at browser zoom-out)
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const sprite = smokeSprite();
+      if (sprite) {
+        // oldest first, newest on top, as before; each puff placed and
+        // turned by one transform instead of save/translate/rotate/restore
+        const dpr = smokeDpr;
+        for (const particle of smokeParticles) {
+          const cos = Math.cos(particle.rotation) * dpr;
+          const sin = Math.sin(particle.rotation) * dpr;
+          ctx.setTransform(cos, sin, -sin, cos, particle.x * dpr, particle.y * dpr);
+          ctx.globalAlpha = particle.opacity;
+          const scaledWidth = sprite.width * particle.scale;
+          const scaledHeight = sprite.height * particle.scale;
+          ctx.drawImage(
+            sprite,
+            -scaledWidth / 2,
+            -scaledHeight / 2,
+            scaledWidth,
+            scaledHeight,
+          );
+        }
+      }
+      ctx.globalAlpha = 1;
+      ctx.setTransform(smokeDpr, 0, 0, smokeDpr, 0, 0);
+    }
+
+    function animateSmoke(now) {
+      requestAnimationFrame(animateSmoke);
+      if (!RBV.sceneFrame(now)) return;
+      if (smokeLastTime === null) smokeLastTime = now;
+      // a tab in the background gets no frames: that gap is not caught up
+      smokeBacklog += Math.min(250, Math.max(0, now - smokeLastTime));
+      smokeLastTime = now;
+      while (smokeBacklog >= SMOKE_STEP_MS) {
+        stepSmoke();
+        smokeBacklog -= SMOKE_STEP_MS;
+      }
+      drawSmoke();
+    }
+
+    requestAnimationFrame(animateSmoke);
 
     // Initial spawn to populate the funnels with smoke immediately
     for (let i = 0; i < 10; i++) {
@@ -1854,14 +1974,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
         clearInterval(waitForSpawn);
         const elapsedSeconds = getElapsedSeconds();
-        const departed = elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY;
+        // (in the North Atlantic the ship has sailed, whatever the clock says)
+        const departed =
+          v.DEV_NORTH_ATLANTIC || elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY;
 
         // Back to the room the player was in before the reload or the closed
         // window: by id (several rooms share a name), else by name for a
         // room saved before ids were. Once the ship has sailed, a room ashore
         // is no longer there to go back to.
-        const lastRoomId = localStorage.getItem("lastRoomId");
-        const lastRoomName = localStorage.getItem("lastRoom");
+        const saved = savedLastRoom();
+        const lastRoomId = saved && saved.id;
+        const lastRoomName = saved && saved.name;
         if (lastRoomId || lastRoomName) {
           const findLast = (match) => {
             for (const deck in deckRooms) {
@@ -1895,8 +2018,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
           }
           // Nowhere to go back to
-          localStorage.removeItem("lastRoom");
-          localStorage.removeItem("lastRoomId");
+          setLastRoom(null);
         }
 
         // If ship has already departed (past 12 minutes), spawn on ship
@@ -2174,9 +2296,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         // The room to come back to after a reload; by id, since several rooms
-        // share a name (three Grand Staircases)
-        localStorage.setItem("lastRoom", room.name);
-        localStorage.setItem("lastRoomId", room.id || "");
+        // share a name (three Grand Staircases), and for this player only
+        // (a computer may be shared, a browser may play several characters)
+        setLastRoom(room);
 
         const interiorTypes = [
           "grand-staircase",
@@ -2418,24 +2540,69 @@ document.addEventListener("DOMContentLoaded", function () {
     }, transitionDelay);
   }
 
-  // When sending a message
+  // Sending a line. The server answers each one: a line it refused, or one
+  // lost with the connection, is said so in the chat, and the words go back
+  // in the box to send again.
+  const CHAT_NOT_SENT = {
+    "too-fast": "Not sent: you are writing faster than the chat allows. Wait a moment.",
+    "too-long": "Not sent: that message is too long.",
+  };
+  const CHAT_NO_CONNECTION = "Not sent: no connection to the ship. Try again in a moment.";
   function sendMessage() {
     const message = chatInput.value.trim();
     const characterData = JSON.parse(sessionStorage.getItem("character"));
-    const userId = socket.id;
-    const currentColor = document.getElementById("chat-color-picker").value;
+    if (!message || !currentRoom.name || !characterData) return;
 
-    if (message && currentRoom.name && characterData) {
-      const messageData = {
-        room: currentRoom.name,
-        message,
-        timestamp: Date.now(),
-      };
-
-      socket.emit("chat-message", messageData);
-      chatInput.value = "";
+    const room = currentRoom.name;
+    const notSent = (text) => {
+      if (!chatInput.value) chatInput.value = message;
+      addChatMessage({ type: "system", room, timestamp: Date.now(), message: text });
+    };
+    if (!socket.connected) {
+      notSent(CHAT_NO_CONNECTION);
+      return;
     }
+    chatInput.value = "";
+    socket
+      .timeout(10000)
+      .emit("chat-message", { room, message, timestamp: Date.now() }, (err, res) => {
+        if (!err && res && res.ok) return;
+        notSent((!err && res && CHAT_NOT_SENT[res.reason]) || CHAT_NO_CONNECTION);
+      });
   }
+
+  // The chat follows the newest line only for a reader already at the
+  // bottom; one who scrolled up to read stays where they are, and a button
+  // offers the way back down.
+  // (declarations, not constants: a line can arrive before this file has
+  // run down to here)
+  function chatAtBottom(el) {
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  }
+  function setNewChatHint(show) {
+    let hint = chatContainer.querySelector(".chat-new-hint");
+    if (!hint) {
+      if (!show) return;
+      hint = document.createElement("button");
+      hint.type = "button";
+      hint.className = "chat-new-hint";
+      hint.textContent = "New messages";
+      hint.addEventListener("click", () => {
+        const el = document.getElementById("chat-messages");
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+        setNewChatHint(false);
+      });
+      chatContainer.appendChild(hint);
+    }
+    hint.style.display = show ? "block" : "none";
+  }
+  document.getElementById("chat-messages").addEventListener(
+    "scroll",
+    (e) => {
+      if (chatAtBottom(e.currentTarget)) setNewChatHint(false);
+    },
+    { passive: true },
+  );
 
   function updateChatDisplay() {
     const chatMessages = document.getElementById("chat-messages");
@@ -2491,6 +2658,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Only scroll to bottom if explicitly requested (not automatic on mode switch)
     // This prevents jarring scroll behavior when switching between local/global chat
+    setNewChatHint(false);
   }
 
   // Add a toggle for global chat
@@ -2670,14 +2838,26 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Add to chat display
       const chatMessages = document.getElementById("chat-messages");
+      const follow = chatAtBottom(chatMessages);
       chatMessages.appendChild(messageDiv);
       // Prune oldest nodes so the live DOM stays bounded like the history
       // array (200/room). Without this the chat element grows unbounded
       // between room switches (updateChatDisplay is the only other reset).
+      const heightBefore = chatMessages.scrollHeight;
       while (chatMessages.childElementCount > 200) {
         chatMessages.removeChild(chatMessages.firstElementChild);
       }
-      chatMessages.scrollTop = chatMessages.scrollHeight;
+      if (follow) {
+        chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: "instant" });
+        setNewChatHint(false);
+      } else {
+        // lines taken off the top would pull the text being read upwards
+        const removed = heightBefore - chatMessages.scrollHeight;
+        if (removed > 0) {
+          chatMessages.scrollTo({ top: chatMessages.scrollTop - removed, behavior: "instant" });
+        }
+        setNewChatHint(true);
+      }
     }
   }
 
@@ -2980,12 +3160,12 @@ document.addEventListener("DOMContentLoaded", function () {
             const userCount = link.getAttribute("data-user-count") || "0";
             tooltip.textContent = roomCountLabel(room.name, userCount);
             tooltip.style.display = "block";
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mousemove", (e) => {
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mouseleave", () => {
             tooltip.style.display = "none";
@@ -3080,12 +3260,12 @@ document.addEventListener("DOMContentLoaded", function () {
             const userCount = link.getAttribute("data-user-count") || "0";
             tooltip.textContent = roomCountLabel(docksideCafe.name, userCount);
             tooltip.style.display = "block";
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mousemove", (e) => {
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mouseleave", () => {
             tooltip.style.display = "none";
@@ -3130,12 +3310,12 @@ document.addEventListener("DOMContentLoaded", function () {
               userCount,
             );
             tooltip.style.display = "block";
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mousemove", (e) => {
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mouseleave", () => {
             tooltip.style.display = "none";
@@ -3180,12 +3360,12 @@ document.addEventListener("DOMContentLoaded", function () {
               userCount,
             );
             tooltip.style.display = "block";
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mousemove", (e) => {
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mouseleave", () => {
             tooltip.style.display = "none";
@@ -3227,12 +3407,12 @@ document.addEventListener("DOMContentLoaded", function () {
             const userCount = link.getAttribute("data-user-count") || "0";
             tooltip.textContent = roomCountLabel(crewGangway.name, userCount);
             tooltip.style.display = "block";
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mousemove", (e) => {
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mouseleave", () => {
             tooltip.style.display = "none";
@@ -3277,12 +3457,12 @@ document.addEventListener("DOMContentLoaded", function () {
               userCount,
             );
             tooltip.style.display = "block";
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mousemove", (e) => {
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mouseleave", () => {
             tooltip.style.display = "none";
@@ -3324,12 +3504,12 @@ document.addEventListener("DOMContentLoaded", function () {
             const userCount = link.getAttribute("data-user-count") || "0";
             tooltip.textContent = roomCountLabel(berth44Aft.name, userCount);
             tooltip.style.display = "block";
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mousemove", (e) => {
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mouseleave", () => {
             tooltip.style.display = "none";
@@ -3398,12 +3578,12 @@ document.addEventListener("DOMContentLoaded", function () {
               userCount,
             );
             tooltip.style.display = "block";
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mousemove", (e) => {
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mouseleave", () => {
             tooltip.style.display = "none";
@@ -3440,12 +3620,12 @@ document.addEventListener("DOMContentLoaded", function () {
             const userCount = link.getAttribute("data-user-count") || "0";
             tooltip.textContent = roomCountLabel(boardingTower.name, userCount);
             tooltip.style.display = "block";
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mousemove", (e) => {
-            tooltip.style.left = `${e.clientX + 5}px`;
-            tooltip.style.top = `${e.clientY + 5}px`;
+            tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+            tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
           });
           link.addEventListener("mouseleave", () => {
             tooltip.style.display = "none";
@@ -3473,6 +3653,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const rooms = deckRooms[deck];
     if (!viewBox || !Array.isArray(rooms)) return; // no data → image only
 
+    // the room data goes into the markup as attribute text only (escaped),
+    // whatever the room editor ever writes into it
     const shapes = rooms
       .filter((r) => r.coordinates)
       .map((r) => {
@@ -3480,13 +3662,11 @@ document.addEventListener("DOMContentLoaded", function () {
         const typeTok = r.type ? " " + r.type : "";
         return (
           '<a xlink:href="#" class="room-marker ' +
-          cls +
-          "-class" +
-          typeTok +
+          escapeHtml(cls + "-class" + typeTok) +
           '" data-room-id="' +
-          r.id +
+          escapeHtml(r.id) +
           '"><g><polygon class="image-mapper-shape" points="' +
-          r.coordinates +
+          escapeHtml(r.coordinates) +
           '"></polygon></g></a>'
         );
       })
@@ -3498,7 +3678,7 @@ document.addEventListener("DOMContentLoaded", function () {
       '<svg style="width:100%; position:absolute; top:0; left:0;" ' +
       'xmlns="http://www.w3.org/2000/svg" ' +
       'xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="' +
-      viewBox +
+      escapeHtml(viewBox) +
       '">\n' +
       shapes +
       "\n</svg>";
@@ -3525,12 +3705,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const userCount = link.getAttribute("data-user-count") || "0";
         tooltip.textContent = roomCountLabel(room.name, userCount);
         tooltip.style.display = "block";
-        tooltip.style.left = `${e.clientX + 5}px`;
-        tooltip.style.top = `${e.clientY + 5}px`;
+        tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+        tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
       });
       link.addEventListener("mousemove", (e) => {
-        tooltip.style.left = `${e.clientX + 5}px`;
-        tooltip.style.top = `${e.clientY + 5}px`;
+        tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+        tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
       });
       link.addEventListener("mouseleave", () => {
         tooltip.style.display = "none";
@@ -3625,12 +3805,12 @@ document.addEventListener("DOMContentLoaded", function () {
               const userCount = marker.getAttribute("data-user-count") || "0";
               tooltip.textContent = roomCountLabel(room.name, userCount);
               tooltip.style.display = "block";
-              tooltip.style.left = `${e.clientX + 5}px`;
-              tooltip.style.top = `${e.clientY + 5}px`;
+              tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+              tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
             });
             marker.addEventListener("mousemove", (e) => {
-              tooltip.style.left = `${e.clientX + 5}px`;
-              tooltip.style.top = `${e.clientY + 5}px`;
+              tooltip.style.left = `${uiPx(e.clientX + 5)}px`;
+              tooltip.style.top = `${uiPx(e.clientY + 5)}px`;
             });
             marker.addEventListener("mouseleave", () => {
               tooltip.style.display = "none";
@@ -3655,8 +3835,9 @@ document.addEventListener("DOMContentLoaded", function () {
   document.addEventListener("mousemove", (e) => {
     if (!roomTooltip || roomTooltip.style.display !== "block") return;
     const width = roomTooltip.offsetWidth;
-    if (e.clientX + 5 + width > window.innerWidth) {
-      roomTooltip.style.left = `${e.clientX - 5 - width}px`;
+    // (the page may be zoomed to fit a narrow window: lengths in its pixels)
+    if (uiPx(e.clientX + 5) + width > uiPx(window.innerWidth)) {
+      roomTooltip.style.left = `${uiPx(e.clientX - 5) - width}px`;
     }
   });
 
@@ -3745,8 +3926,16 @@ document.addEventListener("DOMContentLoaded", function () {
     renderImage.src = imagePath;
   }
 
-  // Update room count from server
-  socket.on("room-count", ({ roomId, count }) => {
+  // Head counts from the server, several rooms in one message
+  socket.on("room-counts", (counts) => {
+    if (!counts || typeof counts !== "object") return;
+    for (const [roomId, count] of Object.entries(counts)) {
+      applyRoomCount({ roomId, count });
+    }
+  });
+  socket.on("room-count", (data) => data && applyRoomCount(data));
+
+  function applyRoomCount({ roomId, count }) {
     // Cache the count so we can reuse it when the deckplan re-renders
     try {
       roomCountsCache.set(roomId, Number(count));
@@ -3761,7 +3950,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     const markers = document.querySelectorAll(
-      `.room-marker[data-room-id="${roomId}"]`,
+      `.room-marker[data-room-id="${CSS.escape(String(roomId))}"]`,
     );
     markers.forEach((marker) => {
       marker.setAttribute("data-user-count", count);
@@ -3775,7 +3964,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       }
     });
-  });
+  }
 
   const chatColorPicker = document.getElementById("chat-color-picker");
   let chatColorEmitTimeout = null;
@@ -3830,12 +4019,17 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  socket.on("assign-chat-color", (color) => {
+  const onAssignedChatColor = (color) => {
     applyOwnChatColor(color);
     if (chatColorPicker) {
       chatColorPicker.value = color;
     }
-  });
+  };
+  socket.on("assign-chat-color", onAssignedChatColor);
+  // sent as the game connects, possibly before this listened (core/socket.js)
+  if (RBV.socketLatest && RBV.socketLatest["assign-chat-color"]) {
+    onAssignedChatColor(RBV.socketLatest["assign-chat-color"]);
+  }
 
   socket.on("update-chat-color", ({ socketId, userId, color }) => {
     const idToLookup = socketId || userId;
@@ -3850,9 +4044,14 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  socket.on("game-user-count", (count) => {
+  const showGameUserCount = (count) => {
     document.getElementById("people").textContent = `Passengers: ${count}`;
-  });
+  };
+  socket.on("game-user-count", showGameUserCount);
+  // sent as the game connects, possibly before this listened (core/socket.js)
+  if (RBV.socketLatest && typeof RBV.socketLatest["game-user-count"] === "number") {
+    showGameUserCount(RBV.socketLatest["game-user-count"]);
+  }
 
   // Add this inside your DOMContentLoaded event listener
   const rulesBtn = document.getElementById("rules-btn");
@@ -4354,11 +4553,27 @@ document.addEventListener("DOMContentLoaded", function () {
       try {
         if (typeof window.saveStatsToServer === "function") window.saveStatsToServer();
       } catch (e) {}
+      // this tab's character only: others logged in on the browser, in other
+      // tabs, carry on
+      let player = "";
       try {
-        await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
+        player = sessionStorage.getItem("playerId") || "";
       } catch (e) {}
       try {
-        sessionStorage.removeItem("character");
+        await fetch("/api/logout", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ player }),
+        });
+      } catch (e) {}
+      // nothing of this player stays in the tab for whoever uses it next
+      // (the room to come back to is kept, under this player's name)
+      try {
+        ["character", "playerId", "userEmail", "narrativeEventIndex"].forEach((k) =>
+          sessionStorage.removeItem(k),
+        );
+        localStorage.removeItem("rbvrpg:lastStats");
       } catch (e) {}
       window.location.href = "/main/main.html";
     });
@@ -4568,16 +4783,28 @@ document.addEventListener("DOMContentLoaded", function () {
       });
 
       filtered.forEach((item) => {
+        // Built as elements, the menu's own words as text: no item's name or
+        // picture can become markup or script (and no inline handler)
         const card = document.createElement("div");
         card.className = "edm-item-card";
-        card.innerHTML = `
-          <img src="${item.localImage}" alt="${item.name}" onerror="this.onerror=null;this.src='${item.image}'" />
-          <span class="edm-item-name">${item.name}</span>
-        `;
+        const img = document.createElement("img");
+        img.alt = item.name;
+        img.addEventListener(
+          "error",
+          () => {
+            if (item.image) img.src = item.image;
+          },
+          { once: true },
+        );
+        img.src = item.localImage;
+        const label = document.createElement("span");
+        label.className = "edm-item-name";
+        label.textContent = item.name;
+        card.append(img, label);
 
         // Tooltip on hover
         card.addEventListener("mouseenter", (e) => {
-          const desc = item.description.replace(/\n/g, "<br>");
+          const desc = escapeHtml(item.description || "").replace(/\n/g, "<br>");
           let statsHtml = "";
           if (item.hungry)
             statsHtml += `<span class="edm-stat edm-stat-hunger"><span class="material-icons">restaurant</span> ${item.hungry > 0 ? "+" : ""}${item.hungry}</span>`;
@@ -4591,7 +4818,7 @@ document.addEventListener("DOMContentLoaded", function () {
             statsHtml += `<span class="edm-stat edm-stat-price"><span class="material-icons">payments</span> £${Number(item.price).toFixed(2)}</span>`;
 
           tooltip.innerHTML = `
-            <div class="edm-tooltip-title">${item.name}</div>
+            <div class="edm-tooltip-title">${escapeHtml(item.name)}</div>
             <div class="edm-tooltip-desc">${desc}</div>
             ${statsHtml ? `<div class="edm-tooltip-stats">${statsHtml}</div>` : ""}
           `;
@@ -6073,8 +6300,9 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
     };
-    const onFrame = () => {
-      stepDeparture();
+    // on the scene's shared frames (RBV.sceneFrame, core/rbv.js)
+    const onFrame = (now) => {
+      if (RBV.sceneFrame(now)) stepDeparture();
       if (!stopped) frameId = requestAnimationFrame(onFrame);
     };
     hiddenTimer = setInterval(() => {
@@ -6090,13 +6318,15 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!v.voyageStartTime) return; // Wait for server time
 
       const elapsedSeconds = getElapsedSeconds();
+      // In the North Atlantic the ship sailed long ago: no departure to play
+      const atSea = !!v.DEV_NORTH_ATLANTIC;
 
       // If we're past departure time but haven't started yet
-      if (elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY) {
+      if (atSea || elapsedSeconds >= TIMELINE_SECONDS.DEPARTURE_DELAY) {
         clearInterval(checkDepartureTime);
 
         // Check if departure already happened (player joined late or refreshed)
-        if (elapsedSeconds > TIMELINE_SECONDS.DEPARTURE_DELAY + 5) {
+        if (atSea || elapsedSeconds > TIMELINE_SECONDS.DEPARTURE_DELAY + 5) {
           // 5 second grace period after departure
           departureStarted = true; // Mark as started to prevent re-triggering
           // Start animation at current state without playing sounds/music/teleport

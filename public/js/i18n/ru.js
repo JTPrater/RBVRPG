@@ -37,6 +37,7 @@
     },
     countdown: "Регистрация откроется через {0} д {1} ч {2} мин {3} с",
     cabinsFailed: "Не удалось загрузить номера кают: {0} Обновите страницу или обратитесь в поддержку, если ошибка повторится.",
+    tooMany: "Слишком много попыток. Подождите {0} мин. и попробуйте снова.",
   },
   exact: {
     // the game screen
@@ -317,5 +318,13 @@
     "There was a problem changing the view.": "Не удалось сменить вид.",
     "Purchase failed": "Покупка не удалась",
     "Unknown menu item": "Неизвестная позиция меню",
+    // the chat
+    "Not sent: you are writing faster than the chat allows. Wait a moment.": "Не отправлено: вы пишете быстрее, чем позволяет чат. Подождите немного.",
+    "Not sent: that message is too long.": "Не отправлено: сообщение слишком длинное.",
+    "Not sent: no connection to the ship. Try again in a moment.": "Не отправлено: нет связи с кораблём. Попробуйте ещё раз чуть позже.",
+    "New messages": "Новые сообщения",
+    // logging in
+    "Too many login attempts. Please wait a few minutes and try again.": "Слишком много попыток входа. Подождите несколько минут и попробуйте снова.",
+    "The ship could not be reached. Check your connection and try again.": "Не удалось связаться с кораблём. Проверьте подключение и попробуйте снова.",
   },
 };

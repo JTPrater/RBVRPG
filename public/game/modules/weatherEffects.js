@@ -149,6 +149,9 @@
       rainAnim = null;
       return;
     }
+    rainAnim = requestAnimationFrame(rainTick);
+    // on the scene's shared frames (RBV.sceneFrame, core/rbv.js)
+    if (!window.RBV.sceneFrame(now)) return;
     const dt = lastTick ? Math.min(0.05, (now - lastTick) / 1000) : 0.016;
     lastTick = now;
 
@@ -175,7 +178,6 @@
       rainCtx.lineTo(d.x - slantLen, d.y - rainCfg.len);
     }
     rainCtx.stroke();
-    rainAnim = requestAnimationFrame(rainTick);
   }
 
   function setRain(cfg, windKn, windDirDeg) {

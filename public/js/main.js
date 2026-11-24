@@ -1,8 +1,5 @@
 // public/js/main.js
 
-// Initialize Socket.io
-const socket = io();
-
 // Smooth Scrolling
 document.querySelectorAll(".nav-links a").forEach((anchor) => {
   anchor.addEventListener("click", function (e) {
@@ -93,23 +90,41 @@ document.addEventListener("DOMContentLoaded", () => {
   loginForm.addEventListener("submit", handleLogin);
 });
 
+// Every outcome says something: a refused password, too many attempts, a
+// server that did not answer (a reply that was not JSON used to throw here,
+// and "Climb aboard" then did nothing at all)
 async function handleLogin(event) {
   event.preventDefault();
   const email = document.getElementById("email").value;
   const password = document.getElementById("password").value;
+  const button = event.submitter || null;
+  if (button) button.disabled = true;
 
-  const response = await fetch("/api/check-credentials", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  const result = await response.json();
+  let response = null;
+  let result = null;
+  try {
+    response = await fetch("/api/check-credentials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    result = await response.json().catch(() => null);
+  } catch (error) {
+    response = null;
+  } finally {
+    if (button) button.disabled = false;
+  }
 
-  if (result.success) {
+  if (result && result.success) {
+    // this tab plays this character, whoever else is logged in on the browser
     sessionStorage.setItem("character", JSON.stringify(result.character));
-    sessionStorage.setItem("userEmail", email); // Store email for chat color persistence
-    // Redirect to the game or main page
+    if (result.playerId) sessionStorage.setItem("playerId", result.playerId);
+    else sessionStorage.removeItem("playerId");
     window.location.href = "/game";
+  } else if (response && response.status === 429) {
+    alert("Too many login attempts. Please wait a few minutes and try again.");
+  } else if (!response || response.status >= 500 || !result) {
+    alert("The ship could not be reached. Check your connection and try again.");
   } else {
     alert("Login failed. Please check your credentials.");
   }

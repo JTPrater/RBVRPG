@@ -50,9 +50,46 @@ io.use((socket, next) => {
   sessionMiddleware(socket.request, socket.request.res || {}, next);
 });
 
+// A connection is for a logged-in passenger only. Everything sent over one
+// (every room's chat, who stands where) is for the people aboard, and a
+// visitor without an account used to get all of it, unseen. The public
+// passenger list reads /api/passengers instead.
+// Which passenger: the one the tab names, of the characters logged in on its
+// browser (sessionPlayers), every time it connects, so a dropped connection
+// comes back as the same character; a tab that names none (an old page, a
+// test client) gets the browser's latest login. A tab whose character is no
+// longer logged in here is refused, and goes back to the start page.
+io.use((socket, next) => {
+  const session = socket.request.session;
+  const players = sessionPlayers(session);
+  const named = socket.handshake.auth && socket.handshake.auth.player;
+  let playerId = null;
+  if (typeof named === "string" && named) {
+    if (players.includes(named)) playerId = named;
+  } else if (players.length) {
+    playerId = String(session.userId || players[players.length - 1]);
+  }
+  if (playerId) {
+    socket.playerId = playerId;
+    socket.browserKey = session.browserKey || null; // which browser (logInPlayer)
+    return next();
+  }
+  const refused = new Error("not-logged-in");
+  refused.data = { reason: "not-logged-in" };
+  next(refused);
+});
+
 // Global voyage start time (loaded from DB or set on first boot)
 // Begin from Southampton (real-time progression)
 let voyageStartTime = Date.now(); // temporary default, overwritten by DB in startServer()
+
+// Where the voyage is played. "voyage": the timeline (Southampton, the Channel,
+// Cherbourg, where it ends and the ship stays). "north-atlantic": the ship
+// steams in the open North Atlantic the whole time, for every player, on the
+// voyage's own clock (a test that runs for days). Kept in the database
+// (serverstates "voyageStage") and read at start; RBV_VOYAGE_STAGE overrides it.
+const VOYAGE_STAGES = ["voyage", "north-atlantic"];
+let voyageStage = "voyage";
 
 // Narrative events for server-side synchronization (times are seconds)
 const narrativeEvents = [
@@ -131,18 +168,18 @@ const narrativeInterval = setInterval(() => {
   }
 }, 5000);
 
-// Broadcast voyage state on an interval so late joiners get synchronized reliably
+// The voyage's state every 3 s (the client's sky, clock and weather follow it),
+// with the voyage's start in the same message rather than a second one
+function voyageStateMessage() {
+  return { ...getCurrentVoyageState(), startTime: voyageStartTime };
+}
 const voyageStateInterval = setInterval(() => {
   try {
-    const voyageState = getCurrentVoyageState();
-    io.emit("voyage-state", voyageState);
-    // Also periodically refresh start time so clients that reconnect quickly can resync
-    io.emit("voyage-start-time", voyageStartTime);
-    // Throttle logging to avoid noise in production; verbose logs are disabled by default
+    io.emit("voyage-state", voyageStateMessage());
   } catch (err) {
     console.error("Failed to broadcast periodic voyage-state:", err.message);
   }
-}, 3000); // every 3s keeps clients in sync without too much traffic
+}, 3000);
 
 // Environment variable validation
 function validateEnvironment() {
@@ -222,7 +259,11 @@ const upload = multer({
     const looksImage =
       /^image\//i.test(file.mimetype) ||
       /\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(file.originalname || "");
-    if (!looksImage) {
+    // an SVG is a document that can carry script: never an avatar (Cloudinary
+    // refuses it too, by allowed_formats; this says so before the upload)
+    const svg =
+      /svg/i.test(file.mimetype || "") || /\.svgz?$/i.test(file.originalname || "");
+    if (!looksImage || svg) {
       cb(new Error("Invalid file type"), false);
       return;
     }
@@ -350,6 +391,17 @@ app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  // What a page may run: the site's own scripts and DOMPurify's CDN, never a
+  // script or handler written into a page (so a slip that lets a player's
+  // text into the markup cannot run anything); no plugins, no <base> tricks,
+  // no framing by other sites. The admin room editor keeps inline scripts of
+  // its own and is left out.
+  if (!req.path.startsWith("/admin/")) {
+    res.setHeader(
+      "Content-Security-Policy",
+      "script-src 'self' https://cdnjs.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
+    );
+  }
   next();
 });
 
@@ -419,9 +471,78 @@ function regenerateSession(req) {
   );
 }
 
-// Log out: the session ends on the server and its cookie is cleared
+// One browser may have several characters logged in, a tab each (a player
+// with a second character, in a second tab). Its session lists them, and each
+// tab names its own as it connects. The browser's one cookie used to decide
+// alone: after a second login, a tab still showing the first character
+// talked, spent and was counted as the second the moment its connection
+// dropped or the page reloaded, and logging one out logged out all.
+const MAX_PLAYERS_PER_BROWSER = 6;
+function sessionPlayers(session) {
+  if (!session) return [];
+  const list = Array.isArray(session.players) ? session.players.map(String) : [];
+  if (session.userId && !list.includes(String(session.userId))) {
+    list.push(String(session.userId));
+  }
+  return list;
+}
+// Logs a user in on this browser, under a new session id as before; the newest
+// is the session's userId (what a tab that names no character gets). Of the
+// characters already logged in here, those another tab is playing right now
+// stay logged in; the rest are logged out, as every earlier login was before:
+// someone who closed their tab without logging out, on a shared computer,
+// is not left logged in for the next person. A browser is known by a key kept
+// in its session from one login to the next (sockets carry it, see io.use).
+async function logInPlayer(req, userId) {
+  const id = String(userId);
+  const browserKey =
+    (req.session && req.session.browserKey) || crypto.randomBytes(16).toString("hex");
+  const playing = playedOnBrowser(browserKey);
+  const kept = sessionPlayers(req.session).filter((p) => p !== id && playing.has(p));
+  await regenerateSession(req);
+  req.session.browserKey = browserKey;
+  req.session.userId = id;
+  req.session.players = [...kept, id].slice(-MAX_PLAYERS_PER_BROWSER);
+}
+// The characters a browser's tabs are playing right now (their connections)
+function playedOnBrowser(browserKey) {
+  const playing = new Set();
+  if (!browserKey) return playing;
+  for (const s of io.of("/").sockets.values()) {
+    if (s.browserKey === browserKey && s.playerId) playing.add(s.playerId);
+  }
+  return playing;
+}
+
+// Log out. A tab names its character: only that one is logged out, and the
+// other characters' tabs on this browser carry on (with the newest login, which
+// a tab may be on its way to). A character no tab plays any more is logged out
+// with it, as at a login. When none is left (or no character is named), the
+// session ends on the server and its cookie is cleared.
 app.post("/api/logout", (req, res) => {
   if (!req.session) return res.json({ success: true });
+  const named = req.body && typeof req.body.player === "string" ? req.body.player : "";
+  let rest = [];
+  if (named) {
+    const playing = playedOnBrowser(req.session.browserKey);
+    const newest = String(req.session.userId || "");
+    rest = sessionPlayers(req.session).filter(
+      (p) => p !== named && (p === newest || playing.has(p)),
+    );
+  }
+  if (rest.length) {
+    req.session.players = rest;
+    if (!rest.includes(String(req.session.userId))) {
+      req.session.userId = rest[rest.length - 1];
+    }
+    return req.session.save((error) => {
+      if (error) {
+        console.error("Logout error:", error.message);
+        return res.status(500).json({ success: false });
+      }
+      res.json({ success: true });
+    });
+  }
   req.session.destroy((error) => {
     res.clearCookie("connect.sid", {
       path: "/",
@@ -436,11 +557,25 @@ app.post("/api/logout", (req, res) => {
   });
 });
 
-// Rate limiting
+// Rate limiting. The pages read JSON, so a limit answers in JSON too (a plain
+// text answer made the login button do nothing at all), saying how long to wait.
+function limitReached(what) {
+  return (req, res, next, options) => {
+    const resetAt = req.rateLimit && req.rateLimit.resetTime;
+    const waitMs = resetAt ? new Date(resetAt).getTime() - Date.now() : options.windowMs;
+    const minutes = Math.max(1, Math.ceil(waitMs / 60000));
+    res.status(options.statusCode).json({
+      success: false,
+      error: `Too many ${what}. Please wait ${minutes} minute${minutes === 1 ? "" : "s"} and try again.`,
+      retryAfterMinutes: minutes,
+    });
+  };
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 1000, // limit each IP to 1000 requests per windowMs (increased for production load)
-  message: "Too many requests from this IP, please try again later.",
+  handler: limitReached("requests"),
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -448,7 +583,20 @@ const limiter = rateLimit({
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20, // limit each IP to 20 auth attempts per windowMs
-  message: "Too many authentication attempts, please try again later.",
+  handler: limitReached("attempts"),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Logging in: only a wrong password counts. Players behind one address (a
+// school, an office, a family) all count against the same limit, and with
+// every login counted, twenty of them locked the rest out for 15 minutes.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: (req, res) => res.locals.loginSucceeded === true,
+  handler: limitReached("login attempts"),
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -583,8 +731,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
     });
 
     await newUser.save();
-    await regenerateSession(req);
-    req.session.userId = newUser._id;
+    await logInPlayer(req, newUser._id);
     await new Promise((resolve, reject) => {
       req.session.save((sessionError) => {
         if (sessionError) {
@@ -596,13 +743,14 @@ app.post("/api/register", authLimiter, async (req, res) => {
     });
 
     cabins[cabinType][cabinNumber].occupied += 1; // Update occupancy
-    io.emit("new-passenger", newUser.character);
+    passengerListCache = null; // the list page shows the new passenger
     console.info(
       `New user registered: ${req.body.email}, Cabin: ${cabinNumber}`,
     );
     res.json({
       success: true,
       passenger: newUser.character,
+      playerId: String(newUser._id), // the tab's own character, among the browser's
       email: newUser.email,
     });
   } catch (error) {
@@ -620,7 +768,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
   }
 });
 
-app.post("/api/check-credentials", authLimiter, async (req, res) => {
+app.post("/api/check-credentials", loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {};
     // Strings only. An object here ({"$regex": "^a"}) is a Mongo query
@@ -643,12 +791,13 @@ app.post("/api/check-credentials", authLimiter, async (req, res) => {
       return res.json({ success: false });
     }
 
-    await regenerateSession(req);
-    req.session.userId = user._id;
+    await logInPlayer(req, user._id);
     console.info(`User logged in: ${user._id}`);
+    res.locals.loginSucceeded = true; // not counted against the login limit
     res.json({
       success: true,
       character: user.character, // Return the full character object
+      playerId: String(user._id), // the tab's own character, among the browser's
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -892,6 +1041,7 @@ app.post("/api/admin/save-rooms", authLimiter, async (req, res) => {
       0,
     );
     console.info(`deckRooms.js saved by admin — ${total} rooms`);
+    addDeckPlanRooms(); // a new room can be entered at once
     res.json({ success: true, rooms: total });
   } catch (error) {
     console.error("save-rooms error:", error);
@@ -1190,6 +1340,48 @@ try {
   );
 }
 
+// And every room of the deck plans (public/game/data/deckRooms.js, written by
+// the room editor). Rooms added there never reached the list above, so the
+// B- and C-deck rooms took every join and chat line without a word: players
+// could walk in, but nobody could talk there.
+const allowedRoomSet = new Set(allowedRooms);
+function deckPlanRoomIds() {
+  const probe = { RBV: {}, console: { debug() {} } };
+  new Function("window", "console", fsSync.readFileSync(DECK_ROOMS_PATH, "utf8"))(
+    probe,
+    probe.console,
+  );
+  const ids = new Set();
+  for (const rooms of Object.values(probe.deckRooms || {})) {
+    if (!Array.isArray(rooms)) continue;
+    for (const r of rooms) {
+      if (!r) continue;
+      if (typeof r.id === "string" && r.id) ids.add(r.id);
+      const chatRoom = r.location && r.location.chatRoom;
+      if (typeof chatRoom === "string" && chatRoom) ids.add(chatRoom);
+    }
+  }
+  return ids;
+}
+function addDeckPlanRooms() {
+  try {
+    const added = [];
+    for (const id of deckPlanRoomIds()) {
+      if (allowedRoomSet.has(id)) continue;
+      allowedRoomSet.add(id);
+      allowedRooms.push(id);
+      added.push(id);
+    }
+    if (added.length) {
+      console.info(`Rooms from the deck plans: ${added.length} added (${added.join(", ")})`);
+    }
+  } catch (err) {
+    console.error("Could not read the rooms of the deck plans:", err.message);
+  }
+}
+addDeckPlanRooms();
+const isAllowedRoom = (room) => typeof room === "string" && allowedRoomSet.has(room);
+
 // At the top of server.js, add a room message history storage
 const roomMessageHistory = {};
 const MAX_MESSAGES_PER_ROOM = 50;
@@ -1274,12 +1466,31 @@ function emitRoomPlayers(roomId) {
   });
 }
 
-// The room's head count, to every client (the deck plan shows them all)
+// Head counts go to every player (the deck plan shows them all), gathered into
+// one message: a burst of comings and goings is one message, not one per room
+const pendingRoomCounts = new Set();
+let roomCountTimer = null;
 function emitRoomCount(roomId) {
-  io.emit("room-count", {
-    roomId: roomId,
-    count: roomHeadcount(roomId),
-  });
+  pendingRoomCounts.add(roomId);
+  if (roomCountTimer) return;
+  roomCountTimer = setTimeout(() => {
+    roomCountTimer = null;
+    const counts = {};
+    for (const id of pendingRoomCounts) counts[id] = roomHeadcount(id);
+    pendingRoomCounts.clear();
+    io.emit("room-counts", counts);
+  }, 250);
+}
+
+// The counts a player asks for (the deck plan, as it opens): to that player
+// only, in one message. They used to go to everyone, a message per room, so
+// each player opening the plans sent every other player a hundred messages.
+function sendRoomCounts(socket, roomIds) {
+  const counts = {};
+  for (const id of roomIds.slice(0, 500)) {
+    if (isAllowedRoom(id)) counts[id] = roomHeadcount(id);
+  }
+  socket.emit("room-counts", counts);
 }
 
 // Puts the socket's player in the room. True when they were not there before
@@ -1431,6 +1642,65 @@ async function syncCabinOccupancyFromDB() {
   }
 }
 
+// The passenger list page (public, as it always was): what its cards and the
+// passenger's own page show, and nothing else from the account. Built at most
+// every 30 s rather than for every visitor.
+let passengerListCache = null; // { at, body }
+app.get("/api/passengers", async (req, res) => {
+  try {
+    if (!passengerListCache || Date.now() - passengerListCache.at > 30 * 1000) {
+      const users = await User.find({}, "character").lean();
+      const list = users
+        .map((u) => u.character)
+        .filter((c) => c && c.forename)
+        .map((c) => ({
+          forename: c.forename,
+          surname: c.surname,
+          avatar: c.avatar,
+          birthdate: c.birthdate,
+          cabin: c.cabin,
+          cabin_number: c.cabin_number,
+          bio: c.bio,
+        }));
+      passengerListCache = { at: Date.now(), body: JSON.stringify(list) };
+    }
+    res.type("application/json").send(passengerListCache.body);
+  } catch (error) {
+    console.error("Passenger list error:", error.message);
+    res.status(500).json({ error: "Could not load the passenger list" });
+  }
+});
+
+// The voyage's stage (see voyageStage), for the game page before its scripts
+// start: a script, since the page's security policy runs no inline ones
+app.get("/api/stage.js", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res
+    .type("application/javascript")
+    .send(`window.RBV_VOYAGE_STAGE = ${JSON.stringify(voyageStage)};`);
+});
+
+// The logged-in player's own character. A tab keeps it in sessionStorage,
+// which a new tab or a bookmark does not have: the game page then asks here,
+// and gets the browser's latest login (or the one named by ?player=, if it is
+// logged in on this browser), with its id for the tab to name from then on.
+app.get("/api/me", async (req, res) => {
+  const named = typeof req.query.player === "string" ? req.query.player : "";
+  const players = sessionPlayers(req.session);
+  const id = named
+    ? players.includes(named) ? named : null
+    : req.session && req.session.userId ? String(req.session.userId) : null;
+  if (!id) return res.status(401).json({ success: false });
+  try {
+    const user = await User.findById(id).select("character").lean();
+    if (!user || !user.character) return res.status(401).json({ success: false });
+    res.json({ success: true, character: user.character, playerId: id });
+  } catch (error) {
+    console.error("/api/me error:", error.message);
+    res.status(500).json({ success: false });
+  }
+});
+
 app.get("/api/get_available_cabins", (req, res) => {
   const cabinType = req.query.cabin_type;
 
@@ -1468,11 +1738,9 @@ app.get("/api/get_available_cabins", (req, res) => {
 });
 
 async function populateSocketUserEmail(socket, includeCharacter = false) {
-  if (!socket.userEmail && socket.request?.session?.userId) {
+  if (!socket.userEmail && socket.playerId) {
     const selection = includeCharacter ? "email character" : "email";
-    const sessionUser = await User.findById(
-      socket.request.session.userId,
-    ).select(selection);
+    const sessionUser = await User.findById(socket.playerId).select(selection);
 
     if (sessionUser) {
       socket.userEmail = sessionUser.email;
@@ -1634,12 +1902,9 @@ io.on("connection", async (socket) => {
 
   socket.isGameClient = false;
 
-  // Send voyage start time to client for synchronization
+  // The voyage's start and state, for an immediate sync
   socket.emit("voyage-start-time", voyageStartTime);
-
-  // Send current voyage state for immediate sync
-  const currentVoyageState = getCurrentVoyageState();
-  socket.emit("voyage-state", currentVoyageState);
+  socket.emit("voyage-state", voyageStateMessage());
 
   // Who this is, from the session. Looked up alongside the handlers below
   // rather than before them: until a handler is in place its events are lost,
@@ -1649,7 +1914,7 @@ io.on("connection", async (socket) => {
   userChatColors[socket.id] = "#c0932b";
   (async () => {
     let assignedColor = "#c0932b";
-    const sessionUserId = socket.request?.session?.userId;
+    const sessionUserId = socket.playerId; // this tab's character (see io.use)
 
     if (sessionUserId) {
       try {
@@ -1684,27 +1949,16 @@ io.on("connection", async (socket) => {
   })();
   socket.emit("game-user-count", gameClientCount);
 
-  // Send existing passengers to ALL new connections (public feature)
-  User.find({}, "character")
-    .then((users) => {
-      const passengers = users.map((user) => user.character);
-      socket.emit("initial-passengers", passengers);
-      // If there is a last narrative event, tell this client where server is currently
-      if (
-        serverNarrativeIndex > 0 &&
-        narrativeEvents[serverNarrativeIndex - 1]
-      ) {
-        const idx = serverNarrativeIndex - 1;
-        socket.emit("narrative-current", {
-          index: idx,
-          text: narrativeEvents[idx].text,
-          time: narrativeEvents[idx].time,
-        });
-      }
-    })
-    .catch((err) => {
-      console.error("Error fetching passengers:", err);
+  // Where the story stands (the whole passenger list is no longer sent: the
+  // game never used it, and the list page reads /api/passengers)
+  if (serverNarrativeIndex > 0 && narrativeEvents[serverNarrativeIndex - 1]) {
+    const idx = serverNarrativeIndex - 1;
+    socket.emit("narrative-current", {
+      index: idx,
+      text: narrativeEvents[idx].text,
+      time: narrativeEvents[idx].time,
     });
+  }
 
   // Initialize per-socket variables
   let currentRoom = null;
@@ -1749,7 +2003,7 @@ io.on("connection", async (socket) => {
       io.emit("game-user-count", gameClientCount);
       console.info(`Game client count increased: ${gameClientCount}`);
     }
-    if (allowedRooms.includes(room)) {
+    if (isAllowedRoom(room)) {
       // Leave old room if switching rooms
       if (currentRoom && currentRoom !== room) {
         socket.leave(currentRoom);
@@ -1796,24 +2050,23 @@ io.on("connection", async (socket) => {
   });
 
   // Handle 'chat-message' event (corrected)
-  onEvent("chat-message", async (data) => {
-    if (!data || typeof data !== "object") return;
+  // Answered (when the client asks for an answer): { ok: true } once the line
+  // has gone out, or { ok: false, reason } so the sender is told it did not
+  onEvent("chat-message", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    if (!data || typeof data !== "object") return reply({ ok: false, reason: "invalid" });
     const auth = await requireSessionUser(socket);
     if (!auth.ok) {
       socket.emit("auth-error", { message: auth.error });
-      return;
+      return reply({ ok: false, reason: "auth" });
     }
 
     const roomId = data.room;
     const text = typeof data.message === "string" ? data.message.trim() : "";
 
-    if (
-      typeof roomId !== "string" ||
-      !roomId ||
-      !allowedRooms.includes(roomId)
-    ) {
+    if (!isAllowedRoom(roomId)) {
       console.warn("Message sent to invalid or missing room");
-      return;
+      return reply({ ok: false, reason: "room" });
     }
 
     // Every line goes to every player: no more than 6 in 8 seconds from one
@@ -1821,17 +2074,17 @@ io.on("connection", async (socket) => {
     socket.chatTimes = (socket.chatTimes || []).filter(
       (t) => chatNow - t < 8000,
     );
-    if (socket.chatTimes.length >= 6) return;
+    if (socket.chatTimes.length >= 6) return reply({ ok: false, reason: "too-fast" });
     socket.chatTimes.push(chatNow);
 
     if (!text) {
       console.warn("Ignoring empty chat message payload");
-      return;
+      return reply({ ok: false, reason: "empty" });
     }
 
     if (text.length > 500) {
       console.warn(`Chat message too long from ${socket.id}`);
-      return;
+      return reply({ ok: false, reason: "too-long" });
     }
 
     const activeCharacter = socket.character || {};
@@ -1864,7 +2117,7 @@ io.on("connection", async (socket) => {
     // /me expands to the player's name, so cap the result as well as the typed text
     if (processedMessage.length > 1000) {
       console.warn(`Chat message too long after /me expansion from ${socket.id}`);
-      return;
+      return reply({ ok: false, reason: "too-long" });
     }
 
     const outboundMessage = {
@@ -1881,7 +2134,10 @@ io.on("connection", async (socket) => {
     };
 
     addMessageToRoomHistory(roomId, outboundMessage);
+    // to every passenger (the chat's "global" view shows every room); only
+    // logged-in connections exist, so nobody outside the game reads it
     io.emit("chat-message", outboundMessage);
+    reply({ ok: true });
   });
 
   // Handle 'telegraph-set' event: bridge/wheelhouse engine order telegraph.
@@ -1897,7 +2153,7 @@ io.on("connection", async (socket) => {
     }
 
     const { room, position } = data;
-    if (typeof room !== "string" || !room || !allowedRooms.includes(room)) {
+    if (typeof room !== "string" || !room || !isAllowedRoom(room)) {
       console.warn("Telegraph order sent to invalid or missing room");
       return;
     }
@@ -1936,8 +2192,8 @@ io.on("connection", async (socket) => {
         console.warn(`Ignoring invalid chat color from ${socket.id}`);
         return;
       }
-      // Prefer server-side session for authentication — do not accept client-supplied email
-      const sessionUserId = socket.request?.session?.userId;
+      // The connection's own character (see io.use), never one the client names here
+      const sessionUserId = socket.playerId;
       if (!sessionUserId) {
         console.warn("Unauthenticated attempt to change chat color");
         return;
@@ -1974,7 +2230,7 @@ io.on("connection", async (socket) => {
     }
 
     const { room } = data || {};
-    if (allowedRooms.includes(room)) {
+    if (isAllowedRoom(room)) {
       socket.leave(room);
       presenceExit(socket, room);
       if (currentRoom === room) {
@@ -1984,7 +2240,7 @@ io.on("connection", async (socket) => {
   });
 
   onEvent("request-room-users", (roomId) => {
-    if (allowedRooms.includes(roomId)) {
+    if (isAllowedRoom(roomId)) {
       const members = roomPresence.get(roomId);
       const users = members
         ? Array.from(members.values()).map(({ sockets, character }) => ({
@@ -1997,15 +2253,11 @@ io.on("connection", async (socket) => {
   });
 
   onEvent("request-all-room-counts", () => {
-    allowedRooms.forEach((roomId) => {
-      emitRoomCount(roomId);
-    });
+    sendRoomCounts(socket, allowedRooms);
   });
 
   onEvent("request-room-count", (roomId) => {
-    if (allowedRooms.includes(roomId)) {
-      emitRoomCount(roomId);
-    }
+    sendRoomCounts(socket, [roomId]);
   });
 
   onEvent("request-room-counts", (payload) => {
@@ -2014,22 +2266,12 @@ io.on("connection", async (socket) => {
       : Array.isArray(payload?.rooms)
         ? payload.rooms
         : [];
-
-    if (!roomIds.length) {
-      return;
-    }
-
-    roomIds
-      .filter((roomId) => allowedRooms.includes(roomId))
-      .forEach((roomId) => {
-        emitRoomCount(roomId);
-      });
-
+    if (roomIds.length) sendRoomCounts(socket, roomIds);
   });
 
   // Always answered, an empty room included, so the asker never keeps an old list
   onEvent("request-room-players", (roomId) => {
-    if (allowedRooms.includes(roomId)) {
+    if (isAllowedRoom(roomId)) {
       socket.emit("room-players", { roomId, players: roomPlayerList(roomId) });
     }
   });
@@ -2348,6 +2590,11 @@ const startServer = async () => {
       `Voyage start time initialized and saved to DB: ${new Date(voyageStartTime).toISOString()}`,
     );
   }
+
+  const savedStage = await ServerState.findOne({ key: "voyageStage" });
+  const stage = process.env.RBV_VOYAGE_STAGE || (savedStage && savedStage.value);
+  if (VOYAGE_STAGES.includes(stage)) voyageStage = stage;
+  console.info(`Voyage stage: ${voyageStage}`);
 
   // Re-sync narrative index to match persisted elapsed time
   const elapsedSeconds = Math.floor((Date.now() - voyageStartTime) / 1000);

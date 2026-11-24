@@ -32,6 +32,8 @@
   const AZ_RIGHT = 305; // WNW at the right edge
 
   const FRAME_MS = 66; // ~15 fps is plenty for twinkle and shimmer
+  const STILL_FRAME_MS = 1000; // nothing twinkling or shimmering: once a second
+  let lastFrameMoved = true;
   // While timelapsing, render every animation frame (no throttle). A fixed
   // ms throttle skips rAF ticks unevenly on high-refresh displays (e.g. on
   // 144Hz a 16ms gate lands frames 14ms/21ms apart → judder), so match the
@@ -745,20 +747,22 @@ function ensureLayers() {
     }
   }
 
-  // Orchestrates the night-sky passes for the frame.
+  // Orchestrates the night-sky passes for the frame. True when it drew
+  // something that twinkles (and so must be drawn again soon).
   function drawSky(sky, pos, cloud, cloudDim, now, planets) {
     if (!skyReady) initSky(); // data script may have loaded after us
-    if (!skyReady) return;
+    if (!skyReady) return false;
     fSinLat = Math.sin(pos.lat * DEG);
     fCosLat = Math.cos(pos.lat * DEG);
     fLstRad = sky.lst * 15 * DEG;
     const sunAlt = sky.sun.altDeg;
     const darkness = clamp((-sunAlt - 4) / 12, 0, 1);
     const planetDark = clamp((-sunAlt - 2.5) / 6, 0, 1);
-    if (darkness < 0.02 && planetDark < 0.02) return;
+    if (darkness < 0.02 && planetDark < 0.02) return false;
     drawStars(sunAlt, sky.moon, cloud, cloudDim, now);
     drawPlanets(planets, sunAlt, sky.moon, cloud, cloudDim, now);
     drawMeteors(darkness, cloudDim, now);
+    return true;
   }
 
 // ── Water colour grade ───────────────────────────────────────────────────
@@ -848,20 +852,21 @@ function ensureLayers() {
     return true;
   }
 
+  // True when it drew the (shimmering) reflection
   function drawShipLights(now, sunAltDeg) {
     const lw = Math.min(1, Math.max(0, (sunAltDeg + 6) / 10));
     const lightsAmt = 1 - lw * lw * (3 - 2 * lw); // matches window-light ramp
-    if (lightsAmt <= 0.04) return;
-    if (!buildLightsSprites()) return;
+    if (lightsAmt <= 0.04) return false;
+    if (!buildLightsSprites()) return false;
     const ship =
       window.__britCanvas || document.querySelector(".britannic-night");
-    if (!ship || !waterCanvas) return;
+    if (!ship || !waterCanvas) return false;
     // Map the ship into the water canvas's own scene coordinates via client
     // rects — the ship's offset parent is a nested container, so offsetTop
     // would land the mirror far below the real waterline.
     const wRect = waterCanvas.getBoundingClientRect();
     const sRect = ship.getBoundingClientRect();
-    if (!wRect.width || !sRect.width) return;
+    if (!wRect.width || !sRect.width) return false;
     const kx = W / wRect.width;
     const ky = H / wRect.height;
     const left = (sRect.left - wRect.left) * kx;
@@ -878,7 +883,7 @@ function ensureLayers() {
       ((waterY - shipTop) / shipH) * lightsSprite.height,
     );
     const maxDepth = Math.min(H - 150 - waterY, shipH * 0.8);
-    if (maxDepth <= 8 || waterRow <= 0) return;
+    if (maxDepth <= 8 || waterRow <= 0) return false;
     const t = now / 1000;
     const STRETCH = 0.78; // choppy water squashes the mirror image vertically
     waterCtx.save();
@@ -940,15 +945,17 @@ function ensureLayers() {
       );
     }
     waterCtx.restore();
+    return true;
   }
 
+  // True when it drew the (flickering) path of light on the water
   function drawGlitter(body, now, cloudDim) {
-    if (!body) return;
+    if (!body) return false;
     let strength;
     let color;
     if (body.kind === "sun") {
       // Only a low sun lays a path on the water
-      if (body.altDeg > 22) return;
+      if (body.altDeg > 22) return false;
       strength = ((22 - body.altDeg) / 22) * body.a;
       color = lerpRgb([255, 235, 170], [255, 110, 50], body.lowness);
     } else {
@@ -956,7 +963,7 @@ function ensureLayers() {
       color = [205, 218, 235];
     }
     strength *= cloudDim;
-    if (strength <= 0.03) return;
+    if (strength <= 0.03) return false;
 
     // Moonlight lays a tighter, quieter path than the sun
     const spread = body.kind === "moon" ? 0.55 : 1;
@@ -974,6 +981,7 @@ function ensureLayers() {
       waterCtx.fillStyle = rgba(color, a);
       waterCtx.fillRect(x - len / 2, y, len, 2 + d.f * 1.5);
     }
+    return true;
   }
 
   function updateHaze(sunAlt) {
@@ -1015,8 +1023,17 @@ function ensureLayers() {
     requestAnimationFrame(frame);
     // No throttle during timelapse — render on every vsync tick for even
     // pacing; otherwise cap at ~15fps to save power for idle twinkle/shimmer.
+    // And when the last picture had nothing that moves by itself (no stars,
+    // glitter or ship lights: a high sun), the sky changes only as the sun
+    // and the light move, which once a second shows as well: two full-screen
+    // canvases redrawn 15 times a second for a still picture were a large
+    // part of the game's CPU.
+    // Drawn on the scene's shared frames (RBV.sceneFrame, core/rbv.js), so the
+    // sky changes in the same frames as everything else.
     if (!document.body.classList.contains("dev-timelapse")) {
-      if (now - lastFrame < FRAME_MS) return;
+      if (!RBV.sceneFrame(now)) return;
+      // (a few ms short of 66: shared frames come every ~33 ms)
+      if (now - lastFrame < (lastFrameMoved ? FRAME_MS - 6 : STILL_FRAME_MS)) return;
     }
     lastFrame = now;
     if (!window.VoyageAstro) return;
@@ -1087,12 +1104,17 @@ function ensureLayers() {
             window.VoyageAstro.julianFromElapsed(astroElapsed),
           )
         : null;
-      drawSky(sky, pos, cloud, starDim, now, planets);
+      const starsShown = drawSky(sky, pos, cloud, starDim, now, planets);
       const sun = drawSun(sky.sun, dim);
       const moon = drawMoon(sky.moon, dim, nf, sky.sun, pos.lat);
       drawWaterGrade(sky, nf, cloud);
-      drawGlitter(sun && sun.altDeg <= 22 ? sun : moon, now, Math.max(0.05, dim));
-      drawShipLights(now, sky.sun.altDeg);
+      const glitterShown = drawGlitter(
+        sun && sun.altDeg <= 22 ? sun : moon,
+        now,
+        Math.max(0.05, dim),
+      );
+      const lightsShown = drawShipLights(now, sky.sun.altDeg);
+      lastFrameMoved = starsShown || glitterShown || lightsShown;
       updateHaze(sky.sun.altDeg);
     } catch (err) {
       if (!window.__celestialErrLogged) {

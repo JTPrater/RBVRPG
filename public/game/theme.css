@@ -172,7 +172,7 @@ body,
 #dev-na-show {
   background-color: var(--wood);
   background-image: var(--wood-tex);
-  background-size: 100vw 100%;
+  background-size: var(--vw, 100vw) 100%;
   background-repeat: no-repeat;
   background-position: 0 50%;
 }
@@ -215,16 +215,16 @@ body,
 }
 .top-bar::after {
   bottom: 0;
-  height: calc(100vw * 2 / 1920);
+  height: calc(var(--vw, 100vw) * 2 / 1920);
   background: #1b120c;
 }
 .top-bar::before {
-  bottom: calc(100vw * 2 / 1920);
+  bottom: calc(var(--vw, 100vw) * 2 / 1920);
   height: 1px;
   background: var(--brass);
 }
 .info-bar {
-  top: calc(50% - 100vw / 1920);
+  top: calc(50% - var(--vw, 100vw) / 1920);
   width: auto;
   justify-content: center;
   border: 0;
@@ -249,7 +249,7 @@ body,
 }
 /* the chart globe: centred on the board now that there is no gilt band */
 #route-globe-btn {
-  top: calc(50% - 100vw / 1920);
+  top: calc(50% - var(--vw, 100vw) / 1920);
   color: var(--on-wood-2);
 }
 #route-globe-btn:hover {
@@ -340,6 +340,30 @@ body,
   font-size: var(--t-chat);
   scrollbar-width: thin;
   scrollbar-color: var(--ink-3) transparent;
+  /* the game keeps the reader's place itself as old lines go (game.js) */
+  overflow-anchor: none;
+}
+/* "New messages": a slip at the foot of the log while one reads back */
+.chat-new-hint {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(clamp(40px, 2.86vw, 55px) + clamp(12px, 0.94vw, 18px) + 6px);
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 2px 12px;
+  background: var(--paper-field);
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--t-chat);
+  font-style: italic;
+  cursor: pointer;
+}
+.chat-new-hint:hover {
+  color: var(--red);
+  border-color: var(--red);
 }
 .chat-message {
   font-size: var(--t-chat);
@@ -1299,7 +1323,7 @@ body,
   .status-bars {
     left: 276px;
     width: calc(
-      100vw - var(--location-panel-width) - clamp(16px, 1.667vw, 32px) -
+      var(--vw, 100vw) - var(--location-panel-width) - clamp(16px, 1.667vw, 32px) -
         clamp(150px, 11.46vw, 220px) - 12px - 276px
     );
     padding: 8px 10px;
@@ -1348,12 +1372,12 @@ body,
   grid-template-rows: repeat(2, clamp(28px, 2.08vw, 40px));
 }
 .panel2-buttons {
-  left: calc(100vw - var(--location-panel-width) - clamp(16px, 1.667vw, 32px) - clamp(150px, 11.46vw, 220px));
+  left: calc(var(--vw, 100vw) - var(--location-panel-width) - clamp(16px, 1.667vw, 32px) - clamp(150px, 11.46vw, 220px));
   width: clamp(150px, 11.46vw, 220px);
   grid-template-columns: repeat(2, 1fr);
 }
 .panel1-buttons {
-  left: calc(100vw - var(--location-panel-width) + clamp(16px, 1.667vw, 32px));
+  left: calc(var(--vw, 100vw) - var(--location-panel-width) + clamp(16px, 1.667vw, 32px));
   width: calc(var(--location-panel-width) - 2 * clamp(16px, 1.667vw, 32px));
   grid-template-columns: repeat(3, 1fr);
 }

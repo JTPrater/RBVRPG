@@ -30,6 +30,7 @@
     age: "Edad durante el viaje: {0} años",
     countdown: "El registro abre en {0} d {1} h {2} min {3} s",
     cabinsFailed: "No se pudieron cargar los números de camarote: {0} Recarga la página o contacta con el soporte si el problema continúa.",
+    tooMany: "Demasiados intentos. Espera {0} min y vuelve a intentarlo.",
   },
   exact: {
     // the game screen
@@ -307,5 +308,13 @@
     "There was a problem changing the view.": "Hubo un problema al cambiar la vista.",
     "Purchase failed": "No se pudo completar la compra",
     "Unknown menu item": "Artículo desconocido",
+    // the chat
+    "Not sent: you are writing faster than the chat allows. Wait a moment.": "No enviado: escribes más rápido de lo que permite el chat. Espera un momento.",
+    "Not sent: that message is too long.": "No enviado: el mensaje es demasiado largo.",
+    "Not sent: no connection to the ship. Try again in a moment.": "No enviado: no hay conexión con el barco. Inténtalo de nuevo en un momento.",
+    "New messages": "Mensajes nuevos",
+    // logging in
+    "Too many login attempts. Please wait a few minutes and try again.": "Demasiados intentos de inicio de sesión. Espera unos minutos y vuelve a intentarlo.",
+    "The ship could not be reached. Check your connection and try again.": "No se pudo contactar con el barco. Comprueba tu conexión y vuelve a intentarlo.",
   },
 };

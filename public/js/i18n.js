@@ -113,6 +113,8 @@
     [/^Age during voyage: (\d+) years$/, (m, t) => t.age && fill(plural(t.age, m[1]), m[1])],
     [/^Registration will open in (\d+)d (\d+)h (\d+)m (\d+)s$/, (m, t) => t.countdown && fill(t.countdown, m[1], m[2], m[3], m[4])],
     [/^Failed to load cabin numbers: ([\s\S]+?)\s*Please try refreshing the page or contact support if the issue persists\.$/, (m, t) => t.cabinsFailed && fill(t.cabinsFailed, m[1])],
+    // the server's rate limits (server.js limitReached)
+    [/^Too many (?:attempts|login attempts|requests)\. Please wait (\d+) minutes? and try again\.$/, (m, t) => t.tooMany && fill(t.tooMany, m[1])],
   ];
   window.RBV_I18N_PATTERNS = PATTERNS; // (for the checks in scripts/i18n)
 

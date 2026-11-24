@@ -211,11 +211,10 @@ document.addEventListener("DOMContentLoaded", function () {
       });
       const result = await response.json();
       if (result.success) {
+        // this tab plays the new character, whoever else is logged in on the browser
         sessionStorage.setItem("character", JSON.stringify(result.passenger));
-        sessionStorage.setItem(
-          "userEmail",
-          result.email || formData.get("email"),
-        );
+        if (result.playerId) sessionStorage.setItem("playerId", result.playerId);
+        else sessionStorage.removeItem("playerId");
         window.location.href = "/main/list.html";
       } else {
         alert(result.error || "Registration failed");
