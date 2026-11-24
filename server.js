@@ -1200,8 +1200,11 @@ app.post("/api/report", reportLimiter, async (req, res) => {
 });
 
 // Page Routes
+// The front address is the home page: Climb Aboard (log in) and Register
+// Now. The game sends a player with no session here, so it has to be the
+// page that can log them in (it used to be the registration form).
 app.get("/", (req, res) => {
-  sendPage(res, "public/main/registration.html");
+  sendPage(res, "public/main/main.html");
 });
 
 app.get("/game", (req, res) => {

@@ -31,6 +31,7 @@
     countdown: "El registro abre en {0} d {1} h {2} min {3} s",
     cabinsFailed: "No se pudieron cargar los números de camarote: {0} Recarga la página o contacta con el soporte si el problema continúa.",
     tooMany: "Demasiados intentos. Espera {0} min y vuelve a intentarlo.",
+    fieldTooLong: "{0}: {1} caracteres como máximo",
   },
   exact: {
     // the game screen
@@ -301,6 +302,24 @@
     "Register": "Registrarse",
     "Birth date must be between January 1st, 1819 and July 9th, 1919": "La fecha de nacimiento debe estar entre el 1 de enero de 1819 y el 9 de julio de 1919",
     "Registration failed. Please try again.": "No se pudo completar el registro. Inténtalo de nuevo.",
+    "Choose a picture": "Elegir una imagen",
+    "Southampton, July 9th 1919, 9:30 AM": "Southampton, 9 de julio de 1919, 9:30",
+    "Bio": "Biografía",
+    // the server's refusals of a registration (server.js /api/register)
+    "No avatar file uploaded": "No has elegido una imagen para el avatar",
+    "Please enter a valid email address": "Introduce un correo electrónico válido",
+    "Password must be 6 to 72 characters": "La contraseña debe tener entre 6 y 72 caracteres",
+    "Email already registered": "Ese correo electrónico ya está registrado",
+    "Invalid cabin selected": "Ese camarote no existe. Elige otro.",
+    "Selected cabin is fully booked": "El camarote elegido está completo",
+    "Avatar image must be 5MB or smaller": "La imagen del avatar debe pesar 5 MB como máximo",
+    "One of the fields is too long": "Uno de los campos es demasiado largo",
+    "That image couldn't be used. Please upload a JPG, PNG, GIF, WebP, BMP, or AVIF image.": "No se pudo usar esa imagen. Sube una imagen JPG, PNG, GIF, WebP, BMP o AVIF.",
+    "Please upload an image file (JPG, PNG, GIF, WebP, BMP, or AVIF).": "Sube un archivo de imagen (JPG, PNG, GIF, WebP, BMP o AVIF).",
+    "Avatar upload failed": "No se pudo subir el avatar",
+    // the boards and cards of the pages before the game
+    "Pages": "Páginas",
+    "Close": "Cerrar",
     // the passenger list
     "Passenger List": "Lista de pasajeros",
     "Return to Main": "Volver al inicio",

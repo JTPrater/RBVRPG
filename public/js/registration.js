@@ -1,4 +1,4 @@
-// registration.js - Enhanced with 1910s UX
+// registration.js: the registration form
 document.addEventListener("DOMContentLoaded", function () {
   const birthdateInput = document.getElementById("birthdate");
   const ageDisplay = document.getElementById("age-display");
@@ -8,6 +8,18 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const cabinSelect = document.getElementById("cabin");
   const cabinNumberSelect = document.getElementById("cabin_number");
+  const formError = document.getElementById("form-error");
+  const submitButton = form.querySelector('button[type="submit"]');
+
+  // What went wrong, on the form itself beside the Register button (in the
+  // page's language: i18n.js watches the page)
+  function showFormError(message) {
+    formError.textContent = message || "";
+    formError.hidden = !message;
+    if (message) formError.scrollIntoView({ block: "nearest" });
+  }
+  // a refusal goes away as soon as the form is changed
+  form.addEventListener("input", () => showFormError(""));
 
   // Set birthdate constraints
   const minDate = new Date("1819-01-01");
@@ -33,9 +45,7 @@ document.addEventListener("DOMContentLoaded", function () {
       })();
 
     errorMsg.style.display = show ? "block" : "none";
-    birthdateInput.style.borderColor = show
-      ? "#c41e3a"
-      : "var(--secondary-color)";
+    birthdateInput.classList.toggle("invalid", show);
   }
 
   // Calculate age as of July 9th, 1919
@@ -71,10 +81,12 @@ document.addEventListener("DOMContentLoaded", function () {
       const reader = new FileReader();
       reader.onload = function (e) {
         avatarPreview.style.backgroundImage = `url(${e.target.result})`;
-        avatarPreview.style.backgroundSize = "cover";
-        avatarPreview.style.backgroundPosition = "center";
+        avatarPreview.classList.add("has-picture");
       };
       reader.readAsDataURL(file);
+    } else {
+      avatarPreview.style.backgroundImage = "";
+      avatarPreview.classList.remove("has-picture");
     }
   });
 
@@ -175,13 +187,13 @@ document.addEventListener("DOMContentLoaded", function () {
       if (availableCabins.length === 0) {
         cabinNumberSelect.innerHTML =
           '<option value="">-- No cabins available --</option>';
-        alert("No cabins are currently available for this cabin type.");
+        showFormError("No cabins are currently available for this cabin type.");
       }
     } catch (error) {
       console.error("Error fetching available cabins:", error);
       cabinNumberSelect.innerHTML =
         '<option value="">-- Error loading cabins --</option>';
-      alert(
+      showFormError(
         `Failed to load cabin numbers: ${error.message}\n\nPlease try refreshing the page or contact support if the issue persists.`,
       );
     } finally {
@@ -204,6 +216,9 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     const formData = new FormData(this);
+    showFormError("");
+    // one registration a press: the button waits for the answer
+    submitButton.disabled = true;
     try {
       const response = await fetch("/api/register", {
         method: "POST",
@@ -216,12 +231,13 @@ document.addEventListener("DOMContentLoaded", function () {
         if (result.playerId) sessionStorage.setItem("playerId", result.playerId);
         else sessionStorage.removeItem("playerId");
         window.location.href = "/main/list.html";
-      } else {
-        alert(result.error || "Registration failed");
+        return;
       }
+      showFormError(result.error || "Registration failed. Please try again.");
     } catch (error) {
       console.error("Registration error:", error);
-      alert("Registration failed. Please try again.");
+      showFormError("Registration failed. Please try again.");
     }
+    submitButton.disabled = false;
   });
 });

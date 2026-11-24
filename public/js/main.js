@@ -1,94 +1,82 @@
-// public/js/main.js
+// public/js/main.js: the home page
 
-// Smooth Scrolling
-document.querySelectorAll(".nav-links a").forEach((anchor) => {
-  anchor.addEventListener("click", function (e) {
-    e.preventDefault();
-
-    document.querySelector(this.getAttribute("href")).scrollIntoView({
-      behavior: "smooth",
-    });
-  });
-});
-
-// Responsive Navigation Menu
-const burger = document.querySelector(".burger");
-const navLinks = document.querySelector(".nav-links");
-
-burger.addEventListener("click", () => {
-  navLinks.classList.toggle("nav-active");
-});
-
-// Fade-in Animations
-window.addEventListener("load", () => {
-  const heroElements = document.querySelectorAll(".hero > *");
-  heroElements.forEach((element, index) => {
-    setTimeout(() => {
-      element.classList.add("fade-in");
-    }, index * 300); // Reduced delay
-  });
-});
-
-// Countdown Timer
-const countdownElement = document.getElementById("countdown");
-const registerButton = document.getElementById("register-btn");
-
-// Set the date and time for registration to open
-const registrationOpenDate = new Date("2024-01-01T19:00:00"); // Example date
-
-function updateCountdown() {
-  const now = new Date();
-  const timeDifference = registrationOpenDate - now;
-
-  if (timeDifference <= 0) {
-    countdownElement.style.display = "none";
-    registerButton.style.display = "inline-block";
-    clearInterval(countdownInterval);
-    return;
-  }
-
-  const days = Math.floor(timeDifference / (1000 * 60 * 60 * 24));
-  const hours = Math.floor(
-    (timeDifference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
-  );
-  const minutes = Math.floor((timeDifference % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((timeDifference % (1000 * 60)) / 1000);
-
-  countdownElement.textContent = `Registration will open in ${days}d ${hours}h ${minutes}m ${seconds}s`;
-}
-
-// Update the countdown every second
-const countdownInterval = setInterval(updateCountdown, 1000);
+// Registration opens at this moment. While it lies ahead, the page counts
+// down to it and Register Now is put away; it is long past, so the button
+// shows.
+const registrationOpenDate = new Date("2024-01-01T19:00:00");
 
 document.addEventListener("DOMContentLoaded", () => {
+  const countdownElement = document.getElementById("countdown");
+  const registerButton = document.getElementById("register-btn");
   const climbAboardBtn = document.getElementById("climb-aboard-btn");
   const loginPopup = document.getElementById("login-popup");
-  const closeBtn = document.querySelector(".close-btn");
+  const closeBtn = loginPopup.querySelector(".close-btn");
   const loginForm = document.getElementById("login-form");
 
-  // Show the "Climb Aboard" button
-  climbAboardBtn.style.display = "inline-block"; // Matches CSS
-
-  // Open the login popup
-  climbAboardBtn.addEventListener("click", () => {
-    loginPopup.style.display = "flex";
-  });
-
-  // Close the login popup
-  closeBtn.addEventListener("click", () => {
-    loginPopup.style.display = "none";
-  });
-
-  // Close popup on outside click
-  loginPopup.addEventListener("click", (e) => {
-    if (e.target === loginPopup) {
-      loginPopup.style.display = "none";
+  // Countdown Timer
+  let countdownInterval = null;
+  function updateCountdown() {
+    const timeDifference = registrationOpenDate - new Date();
+    if (timeDifference <= 0) {
+      countdownElement.textContent = "";
+      registerButton.style.display = "";
+      clearInterval(countdownInterval);
+      return;
     }
-  });
+    const days = Math.floor(timeDifference / (1000 * 60 * 60 * 24));
+    const hours = Math.floor(
+      (timeDifference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
+    );
+    const minutes = Math.floor(
+      (timeDifference % (1000 * 60 * 60)) / (1000 * 60),
+    );
+    const seconds = Math.floor((timeDifference % (1000 * 60)) / 1000);
+    registerButton.style.display = "none";
+    countdownElement.textContent = `Registration will open in ${days}d ${hours}h ${minutes}m ${seconds}s`;
+  }
+  if (registrationOpenDate - new Date() > 0) {
+    countdownInterval = setInterval(updateCountdown, 1000);
+    updateCountdown();
+  }
 
-  // Handle login form submission
+  // The login card
+  let openedFrom = null;
+  function openLogin() {
+    openedFrom = document.activeElement;
+    showLoginError("");
+    loginPopup.style.display = "flex";
+    document.getElementById("email").focus();
+  }
+  function closeLogin() {
+    loginPopup.style.display = "none";
+    if (openedFrom && openedFrom.focus) openedFrom.focus();
+  }
+  climbAboardBtn.addEventListener("click", openLogin);
+  closeBtn.addEventListener("click", closeLogin);
+  // a click on the page behind the card
+  loginPopup.addEventListener("mousedown", (e) => {
+    if (e.target === loginPopup) closeLogin();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && loginPopup.style.display !== "none") closeLogin();
+  });
   loginForm.addEventListener("submit", handleLogin);
+  // a refusal goes away as soon as the form is changed
+  loginForm.addEventListener("input", () => showLoginError(""));
+  // the other pages' Climb Aboard comes here to log in
+  if (location.hash === "#login") openLogin();
+  window.addEventListener("hashchange", () => {
+    if (location.hash === "#login") openLogin();
+  });
 });
+
+// What went wrong, on the card itself (in the page's language: i18n.js
+// watches the page)
+function showLoginError(message) {
+  const line = document.getElementById("login-error");
+  line.textContent = message || "";
+  line.hidden = !message;
+}
 
 // Every outcome says something: a refused password, too many attempts, a
 // server that did not answer (a reply that was not JSON used to throw here,
@@ -97,8 +85,10 @@ async function handleLogin(event) {
   event.preventDefault();
   const email = document.getElementById("email").value;
   const password = document.getElementById("password").value;
-  const button = event.submitter || null;
+  const button =
+    event.submitter || event.target.querySelector('button[type="submit"]');
   if (button) button.disabled = true;
+  showLoginError("");
 
   let response = null;
   let result = null;
@@ -122,10 +112,19 @@ async function handleLogin(event) {
     else sessionStorage.removeItem("playerId");
     window.location.href = "/game";
   } else if (response && response.status === 429) {
-    alert("Too many login attempts. Please wait a few minutes and try again.");
+    // the server says how long to wait
+    showLoginError(
+      (result && result.error) ||
+        "Too many login attempts. Please wait a few minutes and try again.",
+    );
   } else if (!response || response.status >= 500 || !result) {
-    alert("The ship could not be reached. Check your connection and try again.");
+    showLoginError(
+      "The ship could not be reached. Check your connection and try again.",
+    );
   } else {
-    alert("Login failed. Please check your credentials.");
+    showLoginError("Login failed. Please check your credentials.");
+    const passwordBox = document.getElementById("password");
+    passwordBox.focus();
+    passwordBox.select();
   }
 }

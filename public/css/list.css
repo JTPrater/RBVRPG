@@ -1,540 +1,149 @@
-/* list.css - 1910s Aesthetic */
+/* The passenger list: a printed list, as the line gave its saloon
+   passengers. Names in ruled columns, each with its portrait and cabin; a
+   name opens that passenger's card. (front.css has the shared look.) */
 
-:root {
-  /* Base Colors - Sepia & Edwardian Era */
-  --primary-color: #2b1810;
-  --secondary-color: #d4af37;
-  --accent-color: #f5f5dc;
-  --text-color: #3d2817;
-  --color-bronze: #8b6914;
-  --color-ivory: #fffef0;
-  --color-copper: #b87333;
-  --color-slate: #5a4a42;
-
-  /* Typography */
-  --font-primary: "Playfair Display", serif;
-  --font-secondary: "Raleway", sans-serif;
-
-  /* Effects */
-  --transition-speed: 0.4s;
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 6px 12px rgba(0, 0, 0, 0.25);
-  --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.3);
-
-  /* Gradients */
-  --gradient-deco: linear-gradient(
-    135deg,
-    #d4af37 0%,
-    #b8860b 50%,
-    #8b6914 100%
-  );
+.list .sheet {
+  padding: clamp(20px, 3.4vw, 44px) clamp(14px, 3vw, 40px) clamp(28px, 4vw, 56px);
 }
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  margin: 0;
-  font-family: var(--font-secondary);
-  background: #2a2a2a;
-  color: var(--text-color);
-  min-height: 100vh;
-}
-
 .container {
-  max-width: 1200px;
-  margin: 40px auto;
-  padding: 20px;
-  position: relative;
+  max-width: 1180px;
+  margin: 0 auto;
 }
 
-/* Back Link */
-.back-link {
-  display: inline-block;
-  margin-bottom: 1.5rem;
-  padding: 0.7rem 1.5rem;
-  background: linear-gradient(
-    135deg,
-    rgba(212, 175, 55, 0.15),
-    rgba(212, 175, 55, 0.08)
-  );
-  border: 2px solid var(--secondary-color);
-  border-radius: 2px;
-  color: var(--secondary-color);
-  text-decoration: none;
-  font-family: var(--font-secondary);
-  font-size: 0.95rem;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  transition: all var(--transition-speed) ease;
-  box-shadow: var(--shadow-sm);
+.list-head {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 14px;
 }
-
-.back-link i {
-  margin-right: 8px;
-  transition: transform var(--transition-speed) ease;
+.list-head h1 {
+  font-size: clamp(26px, 3.4vw, 34px);
+  line-height: 1.15;
 }
-
-.back-link:hover {
-  background: linear-gradient(
-    135deg,
-    rgba(212, 175, 55, 0.25),
-    rgba(212, 175, 55, 0.15)
-  );
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  color: var(--color-bronze);
-  border-color: var(--color-bronze);
+.list-head .count {
+  flex: 1 1 auto;
+  padding-bottom: 5px;
+  color: var(--ink-2);
+  font-size: 16px;
+  font-style: italic;
 }
-
-.back-link:hover i {
-  transform: translateX(-3px);
-}
-
-.back-link:active {
-  transform: translateY(0);
-}
-
-h1 {
-  font-family: var(--font-primary);
-  text-align: center;
-  color: var(--secondary-color);
-  margin-bottom: 40px;
-  position: relative;
-  padding-bottom: 20px;
-  letter-spacing: 2px;
-  font-size: 2.5rem;
-}
-
-h1::before {
-  content: "✦ ✦ ✦";
-  display: block;
-  font-size: 1.2rem;
-  letter-spacing: 12px;
-  margin-bottom: 12px;
-  opacity: 0.7;
-}
-
-h1::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 150px;
-  height: 2px;
-  background: linear-gradient(
-    to right,
-    transparent,
-    var(--secondary-color),
-    transparent
-  );
+.list-head .btn {
+  flex: 0 0 auto;
+  padding: 8px 30px 9px;
+  font-size: 17px;
 }
 
 .passenger-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 24px;
-  margin-top: 2rem;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  column-gap: clamp(22px, 3vw, 44px);
 }
 
 .passenger-card {
-  background: linear-gradient(
-    135deg,
-    rgba(245, 245, 220, 0.95),
-    rgba(245, 245, 220, 0.93)
-  );
-  padding: 20px 20px 40px 20px;
-  border: 2px solid var(--secondary-color);
-  border-radius: 0;
-  box-shadow: var(--shadow-md);
-  color: var(--text-color);
-  animation: fadeIn 0.5s ease-out;
-  transition: all var(--transition-speed) ease;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  border-bottom: 1px solid var(--rule);
+  padding: 13px 0;
   cursor: pointer;
-  position: relative;
-  overflow: hidden;
-  min-height: 240px;
 }
-
-.passenger-card::before {
-  content: "";
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
-  border: 1px dashed var(--secondary-color);
-  opacity: 0.2;
-  pointer-events: none;
+.passenger-card .avatar {
+  flex: 0 0 auto;
 }
-
-.passenger-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
-  border-color: var(--color-bronze);
-}
-
-.passenger-card:active {
-  transform: translateY(-2px);
-}
-
-.passenger-card:focus {
-  outline: 2px solid var(--secondary-color);
-  outline-offset: 4px;
-}
-
-.avatar {
-  position: relative;
-  z-index: 1;
-  text-align: center;
-  margin-bottom: 12px;
-}
-
-.avatar img {
-  width: 110px;
-  height: 110px;
+.passenger-card .avatar img {
+  display: block;
+  width: 60px;
+  height: 72px;
+  border: 1px solid var(--ink-2);
+  background: var(--paper-deep);
   object-fit: cover;
-  border: 2px solid var(--secondary-color);
-  border-radius: 2px;
-  box-shadow: var(--shadow-sm);
-  transition: transform var(--transition-speed) ease;
 }
-
-.passenger-card:hover .avatar img {
-  transform: scale(1.05);
+.passenger-card .info {
+  min-width: 0;
 }
-
-.info {
-  position: relative;
-  z-index: 1;
-  text-align: center;
+.passenger-card h2 {
+  font-size: 19px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
-
-.info h2 {
-  font-family: var(--font-primary);
-  color: var(--text-color);
-  margin: 12px 0 8px 0;
-  font-size: 1.3rem;
-  letter-spacing: 0.5px;
-}
-
-.info p {
-  margin-bottom: 6px;
-  font-size: 0.95rem;
-  letter-spacing: 0.3px;
-}
-
-.dob,
-.cabin {
-  margin: 6px 0;
-  font-size: 0.9rem;
-  color: var(--color-slate);
-}
-
-.dob i,
-.cabin i {
-  color: var(--secondary-color);
-  margin-right: 6px;
-  font-size: 0.85rem;
-}
-
-/* Bio is hidden by default on cards - only shown in modal */
-.passenger-card .bio {
-  display: none;
-}
-
-/* Click indicator */
-.passenger-card::after {
-  content: "◆ Click for Details ◆";
-  position: absolute;
-  bottom: 12px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 0.7rem;
-  color: var(--secondary-color);
+.passenger-card p {
+  color: var(--ink-2);
+  font-size: 15px;
   font-style: italic;
-  opacity: 0;
-  transition: opacity var(--transition-speed) ease;
-  letter-spacing: 0.5px;
-  z-index: 2;
+  line-height: 1.35;
+}
+.passenger-card:hover h2 {
+  color: var(--red);
+}
+.passenger-card:focus-visible {
+  outline: 1px solid var(--ink);
+  outline-offset: -1px;
 }
 
-.passenger-card:hover::after {
-  opacity: 0.9;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (max-width: 768px) {
-  .container {
-    padding: 10px;
-    margin: 20px auto;
-  }
-
-  .back-link {
-    font-size: 0.85rem;
-    padding: 0.6rem 1.2rem;
-    margin-bottom: 1rem;
-  }
-
-  h1 {
-    font-size: 1.8rem;
-  }
-
-  h1::before {
-    font-size: 0.9rem;
-    letter-spacing: 8px;
-    margin-bottom: 8px;
-  }
-
-  .passenger-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 16px;
-  }
-
-  .passenger-card {
-    padding: 16px 16px 36px 16px;
-    min-height: 220px;
-  }
-
-  .avatar img {
-    width: 90px;
-    height: 90px;
-  }
-
-  .info h2 {
-    font-size: 1.1rem;
-  }
-
-  .passenger-card::after {
-    font-size: 0.65rem;
-    bottom: 10px;
-  }
-}
-
-/* Modal Styles */
-.modal {
-  display: none;
-  position: fixed;
-  z-index: 1000;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.7);
-  overflow-y: auto;
-  overflow-x: hidden;
-  backdrop-filter: blur(3px);
-  animation: fadeIn 0.3s ease;
-  padding: 20px 0;
-}
-
+/* ---------- A passenger's card ---------- */
 .modal-content {
-  background: linear-gradient(
-    135deg,
-    rgba(245, 245, 220, 0.97),
-    rgba(245, 245, 220, 0.95)
-  );
-  color: var(--text-color);
-  margin: 40px auto;
-  padding: 2.5rem;
-  border: 2px solid var(--secondary-color);
-  border-radius: 0;
-  width: 90%;
-  max-width: 650px;
-  position: relative;
-  box-shadow: var(--shadow-lg);
-  animation: modalAppear 0.4s ease;
+  max-width: 640px;
+  padding: 32px 36px 34px;
 }
-
-@keyframes modalAppear {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+  border-bottom: 1px solid var(--ink);
+  padding: 0 34px 18px 0;
 }
-
-.modal-content::before {
-  content: "";
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  border: 1px dashed var(--secondary-color);
-  opacity: 0.15;
-  pointer-events: none;
-}
-
-.close-btn {
-  color: var(--secondary-color);
-  float: right;
-  font-size: 32px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: color var(--transition-speed) ease;
-  line-height: 1;
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 10;
-}
-
-.close-btn:hover,
-.close-btn:focus {
-  color: var(--text-color);
-  outline: none;
-}
-
-.modal-avatar {
-  text-align: center;
-  margin-bottom: 1.5rem;
-  margin-top: 1rem;
-  position: relative;
-  z-index: 1;
-}
-
 .modal-avatar img {
-  width: 150px;
-  height: 150px;
+  display: block;
+  width: 110px;
+  height: 132px;
+  border: 1px solid var(--ink-2);
+  background: var(--paper-deep);
   object-fit: cover;
-  border: 2px solid var(--secondary-color);
-  border-radius: 2px;
-  box-shadow: var(--shadow-md);
 }
-
 .modal-info {
-  text-align: center;
-  position: relative;
-  z-index: 1;
+  min-width: 0;
 }
-
 .modal-info h2 {
-  font-family: var(--font-primary);
-  color: var(--text-color);
-  margin: 12px 0 6px 0;
-  font-size: 1.6rem;
-  letter-spacing: 1px;
+  border: 0;
+  padding: 0 0 6px;
+  overflow-wrap: anywhere;
 }
-
 .modal-info .dob,
 .modal-info .cabin {
-  margin: 8px 0;
-  font-size: 1rem;
-  color: var(--color-slate);
+  color: var(--ink-2);
+  font-size: 16px;
+  font-style: italic;
 }
-
-.modal-info .dob i,
-.modal-info .cabin i {
-  color: var(--secondary-color);
-  margin-right: 8px;
+.modal-content .label {
+  margin-top: 18px;
 }
-
-.modal-info .bio {
-  display: block;
-  max-height: 300px;
+.modal-content .bio {
+  max-height: min(46vh, 420px);
   overflow-y: auto;
-  text-align: left;
-  margin-top: 1.5rem;
-  padding: 1.5rem;
-  background: rgba(212, 175, 55, 0.05);
-  border: 1px solid var(--secondary-color);
-  border-radius: 2px;
-  line-height: 1.7;
-  font-size: 0.95rem;
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
-
-.modal-info .bio::before {
-  content: "Biography";
-  display: block;
-  font-family: var(--font-primary);
-  font-size: 1.1rem;
-  color: var(--secondary-color);
-  margin-bottom: 0.8rem;
-  letter-spacing: 0.5px;
-  text-align: center;
-}
-
-.modal-info .bio p {
+.modal-content .bio p {
   margin: 0;
-  color: var(--text-color);
 }
 
-/* Scrollbar styling for bio */
-.modal-info .bio::-webkit-scrollbar {
-  width: 8px;
-}
-
-.modal-info .bio::-webkit-scrollbar-track {
-  background: rgba(212, 175, 55, 0.05);
-}
-
-.modal-info .bio::-webkit-scrollbar-thumb {
-  background: var(--secondary-color);
-  border-radius: 4px;
-}
-
-.modal-info .bio::-webkit-scrollbar-thumb:hover {
-  background: var(--color-bronze);
-}
-
-/* Mobile Modal Improvements */
-@media (max-width: 768px) {
-  .modal {
-    padding: 10px 0;
-  }
-
+@media (max-width: 560px) {
   .modal-content {
-    width: 95%;
-    margin: 20px auto;
-    padding: 2rem 1.5rem;
+    padding: 26px 22px 28px;
   }
-
-  .close-btn {
-    font-size: 28px;
-    top: 12px;
-    right: 12px;
+  .modal-head {
+    gap: 16px;
   }
-
   .modal-avatar img {
-    width: 120px;
-    height: 120px;
+    width: 84px;
+    height: 101px;
   }
-
-  .modal-info h2 {
-    font-size: 1.4rem;
+  .list-head .count {
+    flex-basis: 100%;
+    order: 3;
   }
-
-  .modal-info .bio {
-    max-height: 200px;
-    padding: 1rem;
-    font-size: 0.9rem;
-  }
-}
-
-/* the language picker, top right */
-.list-lang {
-  float: right;
-  padding: 0.3rem 0.5rem;
-  font: inherit;
-  font-size: 0.95rem;
-  cursor: pointer;
 }

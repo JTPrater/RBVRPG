@@ -1,7 +1,19 @@
 document.addEventListener("DOMContentLoaded", function () {
   const passengerGrid = document.getElementById("passengerGrid");
+  const passengerCount = document.getElementById("passengerCount");
   const modal = document.getElementById("passengerModal");
   const closeBtn = document.querySelector(".close-btn");
+  let openedFrom = null;
+
+  // A passenger who has just registered, or is logged in on this tab, goes
+  // straight aboard; anyone else is asked to log in first
+  try {
+    if (sessionStorage.getItem("character")) {
+      document.getElementById("aboard-link").href = "/game";
+    }
+  } catch (e) {
+    /* no storage: the link asks for a login */
+  }
 
   // Function to open modal
   // A passenger's own text goes into the page as text, not as markup
@@ -15,8 +27,20 @@ document.addEventListener("DOMContentLoaded", function () {
     );
   }
 
+  // "17 May 1890": the day as it was entered, whatever the reader's time
+  // zone (a date alone is midnight UTC, which is the evening before in the
+  // Americas), and in words, for i18n.js to put into the page's language
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  function birthText(value) {
+    const parts = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ""));
+    if (parts) return `${Number(parts[3])} ${MONTHS[Number(parts[2]) - 1]} ${parts[1]}`;
+    const date = new Date(value);
+    if (isNaN(date)) return "";
+    return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+  }
+
   function openModal(passenger) {
-    const birthDate = new Date(passenger.birthdate).toLocaleDateString();
+    const birthDate = birthText(passenger.birthdate);
 
     // Populate the modal with all available information
     document.getElementById("modalAvatar").src = passenger.avatar;
@@ -26,14 +50,12 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById(
       "modalName"
     ).textContent = `${passenger.forename} ${passenger.surname}`;
-    document.getElementById("modalDob").innerHTML = DOMPurify.sanitize(
-      `<i class="fas fa-calendar-alt"></i> Born: ${birthDate}`
-    );
-    document.getElementById("modalCabin").innerHTML = DOMPurify.sanitize(
-      `<i class="fas fa-key"></i> Cabin: ${escapeHtml(
-        passenger.cabin_number || passenger.cabin
-      )}`
-    );
+    document.getElementById("modalDob").textContent = birthDate
+      ? `Born: ${birthDate}`
+      : "";
+    document.getElementById("modalCabin").textContent = `Cabin: ${
+      passenger.cabin_number || passenger.cabin
+    }`;
     document.getElementById("modalBio").innerHTML = DOMPurify.sanitize(
       `<p>${escapeHtml(passenger.bio || "No biography provided.").replace(
         /\r?\n/g,
@@ -42,7 +64,8 @@ document.addEventListener("DOMContentLoaded", function () {
     );
 
     // Show the modal and disable background scrolling
-    modal.style.display = "block";
+    openedFrom = document.activeElement;
+    modal.style.display = "flex";
     document.body.style.overflow = "hidden";
 
     // Focus the close button for accessibility
@@ -52,7 +75,8 @@ document.addEventListener("DOMContentLoaded", function () {
   // Function to close modal
   function closeModal() {
     modal.style.display = "none";
-    document.body.style.overflow = "auto";
+    document.body.style.overflow = "";
+    if (openedFrom && openedFrom.focus) openedFrom.focus();
   }
 
   // Create passenger card
@@ -70,7 +94,7 @@ document.addEventListener("DOMContentLoaded", function () {
     card.dataset.passenger = JSON.stringify(passenger);
 
     // Format the birthdate
-    const birthDate = new Date(passenger.birthdate).toLocaleDateString();
+    const birthDate = birthText(passenger.birthdate);
 
     card.innerHTML = DOMPurify.sanitize(`
       <div class="avatar">
@@ -80,10 +104,10 @@ document.addEventListener("DOMContentLoaded", function () {
       </div>
       <div class="info">
         <h2>${escapeHtml(passenger.forename)} ${escapeHtml(passenger.surname)}</h2>
-        <p class="dob"><i class="fas fa-calendar-alt"></i> Born: ${escapeHtml(birthDate)}</p>
-        <p class="cabin"><i class="fas fa-key"></i> Cabin: ${escapeHtml(
+        <p class="cabin">Cabin: ${escapeHtml(
           passenger.cabin_number || passenger.cabin
         )}</p>
+        ${birthDate ? `<p class="dob">Born: ${escapeHtml(birthDate)}</p>` : ""}
       </div>
     `);
 
@@ -111,13 +135,17 @@ document.addEventListener("DOMContentLoaded", function () {
     .then((response) => (response.ok ? response.json() : []))
     .then((passengers) => {
       passengerGrid.innerHTML = "";
+      let shown = 0;
       if (Array.isArray(passengers)) {
         passengers.forEach((passenger) => {
           if (passenger) {
             passengerGrid.appendChild(createPassengerCard(passenger));
+            shown += 1;
           }
         });
       }
+      passengerCount.textContent =
+        shown === 1 ? "1 passenger" : `${shown} passengers`;
     })
     .catch((error) => console.error("Passenger list:", error));
 
@@ -133,7 +161,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Close modal when pressing the Escape key
   window.addEventListener("keydown", function (event) {
-    if (event.key === "Escape" && modal.style.display === "block") {
+    if (event.key === "Escape" && modal.style.display !== "none") {
       closeModal();
     }
   });

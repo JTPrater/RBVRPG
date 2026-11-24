@@ -4,75 +4,94 @@
     <meta charset="UTF-8" />
     <title>Britannic Voyage - Home</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- External CSS -->
-    <link rel="stylesheet" href="../css/main.css" />
-    <!-- Google Fonts for Art Deco Style -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Raleway:wght@400;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&display=swap"
       rel="stylesheet"
     />
+    <link rel="stylesheet" href="/css/front.css" />
+    <link rel="stylesheet" href="/css/main.css" />
     <script src="/js/i18n.js"></script>
   </head>
-  <body>
-    <header>
-      <nav class="navbar">
-        <ul class="nav-links">
-          <li><a href="/">Home</a></li>
-          <li><a href="/about">About</a></li>
-        </ul>
-        <select class="lang-select nav-lang" aria-label="Language"></select>
-        <div class="burger">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
+  <body class="home">
+    <header class="board">
+      <nav class="board-links" aria-label="Pages">
+        <a href="/main/list.html">Passenger List</a>
       </nav>
+      <select class="lang-select" aria-label="Language"></select>
     </header>
 
-    <main>
-      <section class="hero">
-        <h1>Britannic Voyage</h1>
-        <div class="logo">
+    <main class="sheet">
+      <div class="home-card">
+        <h1 class="visually-hidden">Britannic Voyage</h1>
+        <img
+          class="logo"
+          src="/images/ui/logo-ink.png"
+          alt="Britannic Voyage Logo"
+          width="490"
+          height="276"
+        />
+        <figure class="plate">
           <img
-            src="../images/RMSBRITANNICPRIDEOFTHESEALOGO.png"
-            alt="Britannic Voyage Logo"
+            src="/images/ui/britannic-plate.jpg"
+            alt=""
+            width="1600"
+            height="795"
           />
-        </div>
+          <figcaption>
+            Southampton · Cherbourg · Queenstown · New York
+          </figcaption>
+        </figure>
         <div id="countdown"></div>
         <div class="button-group">
-          <a
-            href="../main/registration.html"
-            class="btn"
-            id="register-btn"
-            style="display: none"
-            >Register Now</a
-          >
-          <button class="btn" id="climb-aboard-btn" style="display: none">
+          <button type="button" class="btn" id="climb-aboard-btn">
             Climb Aboard
           </button>
+          <a href="/main/registration.html" class="btn" id="register-btn"
+            >Register Now</a
+          >
         </div>
-      </section>
+      </div>
+      <footer class="colophon">
+        <p>&copy; 2025 RMS Britannic Voyage. All rights reserved.</p>
+      </footer>
     </main>
 
-    <div id="login-popup" class="login-popup" style="display: none">
-      <div class="login-popup-content">
-        <span class="close-btn">&times;</span>
-        <h2>Login</h2>
+    <div id="login-popup" class="veil" style="display: none">
+      <div
+        class="card login-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="login-title"
+      >
+        <button type="button" class="close-btn" aria-label="Close">
+          &times;
+        </button>
+        <h2 id="login-title">Login</h2>
         <form id="login-form">
           <label for="email">Email:</label>
-          <input type="email" id="email" name="email" required />
+          <input
+            type="email"
+            id="email"
+            name="email"
+            autocomplete="email"
+            required
+          />
           <label for="password">Password:</label>
-          <input type="password" id="password" name="password" required />
+          <input
+            type="password"
+            id="password"
+            name="password"
+            autocomplete="current-password"
+            required
+          />
+          <p id="login-error" class="form-error" role="alert" hidden></p>
           <button type="submit" class="btn">Login</button>
         </form>
       </div>
     </div>
 
-    <footer>
-      <p>&copy; 2025 RMS Britannic Voyage. All rights reserved.</p>
-    </footer>
-
-    <!-- External JavaScript -->
-    <script src="../js/main.js"></script>
+    <script src="/js/main.js"></script>
   </body>
 </html>

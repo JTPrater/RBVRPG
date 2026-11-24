@@ -1,0 +1,383 @@
+/* =====================================================================
+   The pages before the game (home, registration, passenger list), in the
+   game's own look (public/game/theme.css): White Star printed paper.
+   Caslon, hairline rules, one red ink; what you press is a block of the
+   same ink, red under the pointer. The only wood is the board along the
+   top, the same strip as the game's top bar: stretched over a button or
+   a footer its grain looks wrong. No gold, no gradients, no glows, no
+   ornaments, no motion.
+   Each page adds its own layout: main.css, registration.css, list.css.
+   ===================================================================== */
+
+:root {
+  --paper: #f2ebdc;
+  --paper-deep: #e6dcc6;
+  --paper-field: #faf6ec;
+  --ink: #211a13;
+  --ink-2: #574a3b;
+  --ink-3: #85776a;
+  --rule: rgba(33, 26, 19, 0.26);
+  --red: #a1261c;
+
+  --paper-tex: url("../images/ui/paper.jpg");
+  /* the top board: the same strip of mahogany as the game's top bar */
+  --wood: #43241a;
+  --wood-tex: url("../images/ui/wood-top.jpg");
+  --on-wood: #ece2cd;
+  --on-wood-2: #bfb197;
+  --brass: #a3824a;
+  --brass-light: #c6a86a;
+  --brass-ink: #8a6a2f;
+
+  /* the White Star burgee, as on the passenger's ticket in the game */
+  --burgee: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 36'%3E%3Cpath d='M0 0H60L44 18L60 36H0Z' fill='%23b0201d'/%3E%3Cpolygon points='22,9 24.12,15.09 30.56,15.22 25.42,19.11 27.29,25.28 22,21.6 16.71,25.28 18.58,19.11 13.44,15.22 19.88,15.09' fill='%23fbf7ee'/%3E%3C/svg%3E");
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23574a3b' stroke-width='1.4'/%3E%3C/svg%3E");
+  --chevron-on-wood: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23bfb197' stroke-width='1.4'/%3E%3C/svg%3E");
+  /* a printed card lying over the page */
+  --card-shadow: 0 0 0 1px rgba(33, 26, 19, 0.3), 0 2px 5px rgba(8, 4, 2, 0.3), 0 12px 28px rgba(8, 4, 2, 0.4);
+
+  /* Old Standard TT carries the Cyrillic (Libre Caslon has none) */
+  --f-text: "Libre Caslon Text", "Old Standard TT", Georgia, serif;
+  --board-h: 38px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-synthesis: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--paper);
+  background-image: var(--paper-tex);
+  background-size: 512px 512px;
+  color: var(--ink);
+  font-family: var(--f-text);
+  font-size: 17px;
+  /* Old Standard's letters are smaller than Caslon's at the same size:
+     the Cyrillic is set to Caslon's height, so Russian reads as large as
+     English */
+  font-size-adjust: from-font;
+  line-height: 1.45;
+  font-variant-numeric: lining-nums;
+}
+
+h1,
+h2,
+h3,
+p,
+figure {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 400;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+::selection {
+  background: rgba(161, 38, 28, 0.18);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  white-space: nowrap;
+}
+
+/* ---------- The mahogany board along the top (the game's top bar) ---------- */
+.board {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: var(--board-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 22px;
+  padding: 0 clamp(14px, 1.6vw, 28px);
+  background-color: var(--wood);
+  background-image: var(--wood-tex);
+  background-size: 100% 100%;
+  color: var(--on-wood-2);
+  font-size: 15px;
+  line-height: 1.2;
+}
+/* the board's edge toward the page: a brass strip let in, then its shadow */
+.board::before,
+.board::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.board::after {
+  bottom: 0;
+  height: 2px;
+  background: #1b120c;
+}
+.board::before {
+  bottom: 2px;
+  height: 1px;
+  background: var(--brass);
+}
+.board-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 26px;
+  padding-bottom: 3px;
+}
+.board a {
+  color: var(--on-wood-2);
+  text-decoration: none;
+}
+.board a:hover {
+  color: var(--on-wood);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+.board a:focus-visible,
+.board select:focus-visible {
+  outline: 1px solid var(--brass-light);
+  outline-offset: 3px;
+}
+.board a {
+  white-space: nowrap;
+}
+.board .lang-select {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  margin-bottom: 3px;
+  padding: 2px 20px 2px 2px;
+  background: var(--chevron-on-wood) right 3px center / 10px auto no-repeat;
+  color: var(--on-wood-2);
+  font-size: 15px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.board .lang-select:hover {
+  color: var(--on-wood);
+}
+.board .lang-select option {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* ---------- The printed page between the boards ---------- */
+.sheet {
+  position: relative;
+  flex: 1 0 auto;
+}
+
+a {
+  color: var(--ink);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+a:hover {
+  color: var(--red);
+}
+
+/* ---------- What you press: a block of ink, the lettering left in paper.
+   Red under the pointer, the page's one accent ---------- */
+.btn {
+  display: inline-block;
+  border: 0;
+  border-radius: 0;
+  padding: 11px 40px 12px;
+  background-color: var(--ink);
+  color: var(--paper-field);
+  font-size: 18px;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn:hover {
+  background-color: var(--red);
+  color: #fffaf0;
+}
+.btn:active {
+  background-color: #7c1b13;
+}
+.btn:focus-visible {
+  outline: 1px solid var(--paper-field);
+  outline-offset: -4px;
+}
+.btn:disabled {
+  background-color: var(--ink-3);
+  color: var(--paper);
+  cursor: default;
+}
+
+/* ---------- The line at the foot of a page ---------- */
+.colophon {
+  flex: 0 0 auto;
+  text-wrap: balance;
+  margin-top: clamp(18px, 2.6vw, 30px);
+  padding: 0 20px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-style: italic;
+  text-align: center;
+}
+
+/* ---------- What you fill in ---------- */
+label,
+.label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ink-2);
+  font-size: 15px;
+  font-style: italic;
+}
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+select,
+textarea {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  padding: 8px 10px;
+  background-color: var(--paper-field);
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.3;
+}
+/* the same height for boxes, lists and dates */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+select {
+  height: 42px;
+}
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image: var(--chevron);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px auto;
+  cursor: pointer;
+}
+textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--ink);
+  outline: 1px solid var(--ink);
+  outline-offset: -2px;
+}
+::placeholder {
+  color: var(--ink-3);
+  font-style: italic;
+}
+/* a saved address or password stays on the form's own stock (the browser
+   paints such boxes pale blue) */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  box-shadow: inset 0 0 0 100px var(--paper-field);
+  caret-color: var(--ink);
+}
+/* a refusal, in the page's one red ink */
+.form-error {
+  color: var(--red);
+  font-size: 15px;
+  font-style: italic;
+}
+
+/* ---------- A printed card over the page ---------- */
+.veil {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 12vh 16px 24px;
+  background-color: rgba(20, 15, 10, 0.55);
+}
+.card {
+  position: relative;
+  width: 100%;
+  background-color: var(--paper);
+  background-image: var(--paper-tex);
+  background-size: 512px 512px;
+  box-shadow: var(--card-shadow);
+  outline: 1px solid rgba(33, 26, 19, 0.45);
+  outline-offset: -7px;
+}
+.card h2 {
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 10px;
+  font-size: 25px;
+  line-height: 1.15;
+}
+.close-btn {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  border: 0;
+  padding: 0 6px;
+  background: none;
+  color: var(--ink-2);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.close-btn:hover {
+  color: var(--red);
+}
+.close-btn:focus-visible {
+  outline: 2px solid var(--brass-ink);
+  outline-offset: 1px;
+}
+
+@media print {
+  .board,
+  .btn {
+    display: none;
+  }
+}
