@@ -356,12 +356,11 @@ roomImages.wheelhouse_bd = {
 };
 
 roomImages.starboard_engineers_promenade_bd = {
+  // (views 3 to 5, starb engineers prom3 to prom5, were never added: cycling
+  // to them said that there was a problem changing the view)
   images: [
     "starb engineers prom1.png",
     "starb engineers prom2.png",
-    "starb engineers prom3.jpg",
-    "starb engineers prom4.jpg",
-    "starb engineers prom5.jpg",
   ],
   currentIndex: 0,
 };

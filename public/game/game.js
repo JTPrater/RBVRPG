@@ -1629,6 +1629,33 @@ document.addEventListener("DOMContentLoaded", function () {
         });
       }
 
+      // One bubble (its halo, body and glint) drawn once, then stamped for
+      // every bubble with drawImage at the bubble's size and alpha. Three
+      // path fills and three colour strings per bubble, for some 160 bubbles
+      // on every frame, were nearly half of the page's script time; the
+      // bubbles are only a pixel or two across, so the stamp looks the same.
+      const BUBBLE_R = 4; // the stamp's body radius, in its own pixels
+      const bubbleStamp = document.createElement("canvas");
+      const BUBBLE_STAMP = Math.ceil(BUBBLE_R * 1.1) * 2 + 2;
+      bubbleStamp.width = BUBBLE_STAMP;
+      bubbleStamp.height = BUBBLE_STAMP;
+      (() => {
+        const s = bubbleStamp.getContext("2d");
+        const c = BUBBLE_STAMP / 2;
+        s.fillStyle = "rgba(170, 220, 255, 0.3)";
+        s.beginPath();
+        s.arc(c, c, BUBBLE_R * 1.1, 0, Math.PI * 2);
+        s.fill();
+        s.fillStyle = "rgb(210, 236, 255)";
+        s.beginPath();
+        s.arc(c, c, BUBBLE_R, 0, Math.PI * 2);
+        s.fill();
+        s.fillStyle = "rgba(255, 255, 255, 0.85)";
+        s.beginPath();
+        s.arc(c - BUBBLE_R * 0.2, c - BUBBLE_R * 0.2, BUBBLE_R * 0.18, 0, Math.PI * 2);
+        s.fill();
+      })();
+
       function drawBubble(bubble) {
         const orbitAngle = bubble.phase + bubble.age * bubble.swirl * 0.12;
         const lifeRatio = bubble.age / bubble.life;
@@ -1648,21 +1675,12 @@ document.addEventListener("DOMContentLoaded", function () {
             spiralScale;
         const alpha = bubble.alpha * Math.max(0, 1 - lifeRatio * 0.95);
         const size = bubble.radius * (0.82 + lifeRatio * 0.35);
+        if (alpha <= 0.004) return;
 
-        ctx.beginPath();
-        ctx.fillStyle = `rgba(170, 220, 255, ${alpha * 0.3})`;
-        ctx.arc(x, y, size * 1.1, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.fillStyle = `rgba(210, 236, 255, ${alpha})`;
-        ctx.arc(x, y, size, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.85})`;
-        ctx.arc(x - size * 0.2, y - size * 0.2, size * 0.18, 0, Math.PI * 2);
-        ctx.fill();
+        // the stamp scaled so its body is the bubble's size
+        const d = (BUBBLE_STAMP * size) / BUBBLE_R;
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(bubbleStamp, x - d / 2, y - d / 2, d, d);
       }
 
       // Worked out in steps of a 60th of a second whatever the screen's
@@ -1707,11 +1725,16 @@ document.addEventListener("DOMContentLoaded", function () {
           stepBubbles(frameTime);
           bubbleBacklog -= BUBBLE_STEP_MS;
         }
+        // nothing to clear or draw while there is no wash (the ship at rest)
+        if (!bubbles.length && !washShown) return;
         ctx.clearRect(0, 0, CONTAINER_W, CONTAINER_H);
         for (let index = bubbles.length - 1; index >= 0; index--) {
           drawBubble(bubbles[index]);
         }
+        ctx.globalAlpha = 1;
+        washShown = bubbles.length > 0;
       }
+      let washShown = false;
 
       requestAnimationFrame(animatePropellers);
     }
@@ -3905,6 +3928,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const { onLoad, onError } = callbacks;
     const renderImage = new Image();
+    // the picture's WebP copy where it has one; the original if that fails
+    const lighter = lighterPicture(imagePath);
     renderImage.onload = () => {
       const { width, height } = canvas;
       ctx.clearRect(0, 0, width, height);
@@ -3919,6 +3944,11 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     };
     renderImage.onerror = (err) => {
+      if (renderImage.src && lighter !== imagePath && !renderImage.dataset.original) {
+        renderImage.dataset.original = "1";
+        renderImage.src = imagePath;
+        return;
+      }
       console.error("Failed to draw location image", imagePath, err);
       renderImage.onload = null;
       renderImage.onerror = null;
@@ -3926,7 +3956,14 @@ document.addEventListener("DOMContentLoaded", function () {
         onError(err);
       }
     };
-    renderImage.src = imagePath;
+    renderImage.src = lighter;
+  }
+
+  // A room's day picture as its WebP copy (data/dayImages.js), a tenth of the
+  // size of the PNG or JPEG; any other picture as it is
+  function lighterPicture(imagePath) {
+    const day = window.RBV && window.RBV.data && window.RBV.data.dayImages;
+    return day ? day.lighter(imagePath) : imagePath;
   }
 
   // Head counts from the server, several rooms in one message
@@ -4177,7 +4214,8 @@ document.addEventListener("DOMContentLoaded", function () {
         img.onload = img.onerror = null;
         this.pendingPreloads.delete(img);
       };
-      img.src = src;
+      // the same file drawLocationImage will ask for (a day picture's WebP copy)
+      img.src = lighterPicture(src);
     },
 
     preloadRoomImages(roomName) {

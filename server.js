@@ -365,11 +365,20 @@ async function postJson(urlString, payload) {
 // Trust proxy - required for Render and other reverse proxies
 app.set("trust proxy", 1);
 
-// Disable caching for ALL files to ensure users get latest updates
+// Disable caching for ALL files to ensure users get latest updates. Pictures
+// and sounds are kept by the browser but checked with the server each time
+// (no-cache: an unchanged file is a 304 answer of a few bytes, a changed one
+// comes at once): with no-store a room's pictures, megabytes, were downloaded
+// again on every visit.
+const MEDIA_PATH = /^\/(images|sounds)\//;
 app.use((req, res, next) => {
-  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
+  if (MEDIA_PATH.test(req.path)) {
+    res.setHeader("Cache-Control", "no-cache");
+  } else {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+  }
   next();
 });
 
