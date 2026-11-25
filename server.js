@@ -451,16 +451,27 @@ app.use((req, res, next) => {
   next();
 });
 
+// An address as the file server reads it: decoded, its doubled slashes and
+// "." and ".." steps resolved. A check on the address as sent can be stepped
+// round ("/game/%74ools/...", "/js/../game/tools/..." reach the same file).
+// null: it does not decode (and no file is served for it).
+function servedPath(req) {
+  let p;
+  try {
+    p = decodeURIComponent(req.path);
+  } catch (e) {
+    return null;
+  }
+  return path.posix.normalize(p.replace(/\/{2,}/g, "/"));
+}
+
 // Not for the public: the room editor's backups of the deck data, and the
 // editor's own page (it is served through /admin/room-editor, which checks
-// the admin flag; the static copy skipped that check); likewise the
-// moderation panel's page, served through /moderation to moderators only
+// the owner; the static copy skipped that check). The moderation panel's
+// files are kept by the gate below (MOD_FILES).
 app.use((req, res, next) => {
-  if (
-    /\.bak$/i.test(req.path) ||
-    /^\/game\/tools\//i.test(req.path) ||
-    /^\/moderation-panel\//i.test(req.path)
-  ) {
+  const p = servedPath(req);
+  if (p && (/\.bak$/i.test(p) || /^\/game\/tools\//i.test(p))) {
     return res.sendStatus(404);
   }
   next();
@@ -481,6 +492,34 @@ const assetsReady =
         })
         .catch((error) => console.error("Minifying failed; files sent as written:", error.message));
 const sendPage = pageSender(minifiedAssets, __dirname);
+
+// The moderation panel's own files (its page, script, stylesheet and words)
+// go to moderators only, never stored on the way (sendPage: no-store). To
+// anyone else they are not there at all: not found, like any address that
+// does not exist (the panel's address too: /moderation, below). Checked here,
+// ahead of the site's public files, with the browser's login read for these
+// addresses alone.
+const MOD_FILES = new Map([
+  ["/moderation-panel/moderation.html", "public/moderation-panel/moderation.html"],
+  ["/moderation-panel/moderation.js", "public/moderation-panel/moderation.js"],
+  ["/moderation-panel/moderation.css", "public/moderation-panel/moderation.css"],
+  ["/js/i18n/ru-mod.js", "public/js/i18n/ru-mod.js"],
+  ["/js/i18n/es-mod.js", "public/js/i18n/es-mod.js"],
+]);
+const MOD_ONLY = /^\/(moderation-panel\/|js\/i18n\/[a-z]+-mod\.js$)/i;
+app.use((req, res, next) => {
+  const p = servedPath(req);
+  if (!p || !MOD_ONLY.test(p)) return next();
+  sessionMiddleware(req, res, async () => {
+    try {
+      const file = MOD_FILES.get(p);
+      if (file && (await moderatorOf(req))) return sendPage(res, file);
+    } catch (error) {
+      console.error("Could not check a moderation file's reader:", error.message);
+    }
+    res.sendStatus(404);
+  });
+});
 
 // Of lib/, the browser loads only these; the rest is the server's own code
 const BROWSER_LIB = new Set(["/astro.js", "/voyageState.js", "/weather.js"]);
@@ -1342,9 +1381,12 @@ async function requireModerator(req, res, next) {
   }
 }
 
+// The panel's page, for moderators; anyone else finds no such page (the
+// same "not found" as any address that does not exist)
 app.get("/moderation", async (req, res, next) => {
   try {
-    if (!(await moderatorOf(req))) return res.redirect("/");
+    if (!(await moderatorOf(req))) return next();
+    res.setHeader("X-Robots-Tag", "noindex");
     sendPage(res, "public/moderation-panel/moderation.html");
   } catch (error) {
     next(error);

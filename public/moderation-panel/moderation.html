@@ -12,7 +12,8 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/css/front.css" />
-    <link rel="stylesheet" href="/css/moderation.css" />
+    <!-- the panel's own files are served to moderators only (server.js MOD_FILES) -->
+    <link rel="stylesheet" href="/moderation-panel/moderation.css" />
     <!-- the page in the moderator's language; the rooms' names come with the game's part -->
     <script src="/js/i18n.js" data-parts="game mod"></script>
   </head>
@@ -80,6 +81,6 @@
     <!-- the room names of the deck plans (an id -> its name) -->
     <script src="/game/core/rbv.js"></script>
     <script src="/game/data/deckRooms.js"></script>
-    <script src="/js/moderation.js"></script>
+    <script src="/moderation-panel/moderation.js"></script>
   </body>
 </html>
