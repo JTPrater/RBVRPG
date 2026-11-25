@@ -1,8 +1,10 @@
 // Money (2026-11-25): the Money card (game.html #money-popup, the bottom
 // bar's Money button) and the server's word on money sent and received.
 // The server keeps every purse and checks every send (server.js
-// "money-overview", "money-people", "money-send"; the rules in lib/money.js);
-// this only shows them and asks.
+// "money-overview", "passengers", "money-send"; the rules in lib/money.js);
+// this only shows them and asks. The passenger is chosen by typing their
+// name (modules/picker.js); the number on the button counts money received
+// since the card was last opened (modules/badges.js).
 (function (RBV) {
   const socket = RBV.socket;
   const $ = (id) => document.getElementById(id);
@@ -39,17 +41,7 @@
   }
 
   // A date and time in the page's language
-  function when(iso) {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "";
-    const lang = (window.RBV_I18N && window.RBV_I18N.lang) || "en";
-    const options = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" };
-    try {
-      return d.toLocaleString(lang === "en" ? "en-GB" : lang, options);
-    } catch (e) {
-      return d.toLocaleString();
-    }
-  }
+  const when = (iso) => RBV.cards.when(iso);
 
   // The server's answer to a question, or null (no connection, no answer)
   function ask(event, data) {
@@ -81,29 +73,13 @@
   }
 
   // ------------------------------------------------------------ the card
-  let people = [];
-  const personText = (p) => (p.cabin ? `${p.name} (${p.cabin})` : p.name);
+  let picker = null; // the passenger the money goes to, chosen by typing
 
   async function loadPeople() {
-    const res = await ask("money-people", {});
-    if (!res || !res.ok) return;
-    people = res.people;
-    const select = $("money-to");
-    const chosen = select.value;
-    select.textContent = "";
-    select.append(el("option", { value: "" }, "Choose a passenger"));
-    const aboard = people.filter((p) => p.aboard);
-    const others = people.filter((p) => !p.aboard);
-    if (aboard.length) {
-      select.append(el("option", { value: "", disabled: true }, "Aboard now"));
-      aboard.forEach((p) => select.append(el("option", { value: p.id, own: true }, personText(p))));
-    }
-    if (others.length) {
-      select.append(el("option", { value: "", disabled: true }, "Everyone else"));
-      others.forEach((p) => select.append(el("option", { value: p.id, own: true }, personText(p))));
-    }
-    if (chosen && people.some((p) => p.id === chosen)) select.value = chosen;
+    const people = await RBV.picker.people();
+    if (picker) picker.setItems(people.map(RBV.picker.personItem));
   }
+  const personText = (p) => (p.cabin ? `${p.name} (${p.cabin})` : p.name);
 
   async function loadOverview() {
     const res = await ask("money-overview", {});
@@ -155,14 +131,14 @@
   let sending = false;
   async function send() {
     if (sending) return;
-    const to = $("money-to").value;
+    const person = picker && picker.item;
     const amountText = $("money-amount").value.trim();
     const note = $("money-note").value.trim();
-    if (!to) return status(REFUSED["no-one"], true);
+    if (!person) return status(REFUSED["no-one"], true);
     const amount = Number(amountText);
     if (!amountText || !Number.isFinite(amount) || amount < 0.01) return status(REFUSED.amount, true);
-    const person = people.find((p) => p.id === to);
-    if (!window.confirm(`Send ${pounds(amount)} to ${person ? person.name : "this passenger"}?`)) return;
+    if (!window.confirm(`Send ${pounds(amount)} to ${person.label}?`)) return;
+    const to = person.id;
     sending = true;
     $("money-send-btn").disabled = true;
     status("");
@@ -183,12 +159,10 @@
 
   const cardOpen = () => $("money-popup").style.display === "block";
   function openCard() {
-    ["settings-popup", "rules-popup", "deckplans-popup"].forEach((id) => {
-      const card = $(id);
-      if (card) card.style.display = "none";
-    });
+    RBV.cards.only("money-popup");
     $("money-popup").style.display = "block";
     status("");
+    RBV.badges.seen("money");
     loadPeople();
     loadOverview();
   }
@@ -207,7 +181,10 @@
         ? `${d.from} sent you ${pounds(d.amount)} with a note: ${d.note}`
         : `${d.from} sent you ${pounds(d.amount)}.`,
     );
-    if (cardOpen()) setTimeout(loadOverview, 1100);
+    if (cardOpen()) {
+      RBV.badges.seen("money");
+      setTimeout(loadOverview, 1100);
+    }
   });
   socket.on("money-balance", (d) => {
     if (d && typeof d === "object") setPurse(d.balance);
@@ -222,6 +199,14 @@
     close.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") closeCard();
     });
+    picker = RBV.picker.create($("money-to"), {
+      own: true,
+      none: "No passenger by that name.",
+      onPick: () => {
+        status("");
+        $("money-amount").focus();
+      },
+    });
     $("money-send-btn").addEventListener("click", send);
     ["money-amount", "money-note"].forEach((id) =>
       $(id).addEventListener("keydown", (e) => {
@@ -229,10 +214,8 @@
       }),
     );
     // another card opened puts this one away
-    ["settings-btn", "rules-btn", "deckplans-btn"].forEach((id) => {
-      const other = $(id);
-      if (other) other.addEventListener("click", closeCard);
-    });
+    RBV.cards.closeOnOthers("money-popup", closeCard);
+    RBV.badges.watch("money", cardOpen);
     // the dates are written in the page's language: again when it changes
     document.addEventListener("rbv:language", () => {
       if (cardOpen()) loadOverview();

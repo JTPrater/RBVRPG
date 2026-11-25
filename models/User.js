@@ -69,6 +69,12 @@ const userSchema = new mongoose.Schema({
       { _id: false },
     ),
   ],
+  // When the passenger last opened the Money and Events cards: the numbers on
+  // those buttons count what came after (server.js badgesOf)
+  cardsSeen: {
+    money: Date,
+    events: Date,
+  },
   character: {
     forename: String,
     surname: String,

@@ -1726,7 +1726,9 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
   max-height: 86vh;
   overflow-y: auto;
 }
-body:has(#money-popup[style*="display: block"]) #money-btn {
+body:has(#money-popup[style*="display: block"]) #money-btn,
+body:has(#inbox-popup[style*="display: block"]) #inbox-btn,
+body:has(#events-popup[style*="display: block"]) #events-btn {
   background-color: var(--brass-plate-down);
   box-shadow: 0 0 0 1px var(--brass-rim), inset 0 1px 3px rgba(30, 18, 4, 0.5);
 }
@@ -1908,6 +1910,545 @@ body:has(#money-popup[style*="display: block"]) #money-btn {
   color: var(--ink-3);
   font-style: italic;
   border-bottom: 0 !important;
+}
+
+/* ============ The number on a bottom-bar button (modules/badges.js) ========
+   A phone's red count in the plate's corner: messages unread, money and
+   events since the card was last opened */
+.panel2-buttons .panel-btn .btn-badge {
+  position: absolute;
+  top: -7px;
+  right: -6px;
+  z-index: 2;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 0 0 1.5px var(--paper-field), 0 1px 2px rgba(0, 0, 0, 0.45);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: lining-nums tabular-nums;
+  line-height: 19px;
+  text-align: center;
+  text-shadow: none;
+  pointer-events: none;
+}
+
+/* ============ Typing to choose (modules/picker.js) ============ */
+.pick {
+  position: relative;
+}
+.pick-list {
+  position: absolute;
+  top: calc(100% + 1px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 264px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--ink-2);
+  background: var(--paper-field);
+  box-shadow: 0 4px 10px rgba(33, 26, 19, 0.25);
+}
+.pick-list[hidden] {
+  display: none;
+}
+.pick-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+  font-size: 15px;
+  cursor: pointer;
+}
+.pick-list li:last-child {
+  border-bottom: 0;
+}
+.pick-list li:hover,
+.pick-list li.active {
+  background: var(--ink);
+  color: var(--paper-field);
+}
+.pick-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pick-sub {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.pick-tag {
+  margin-left: auto;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-style: italic;
+}
+.pick-list li:hover .pick-sub,
+.pick-list li:hover .pick-tag,
+.pick-list li.active .pick-sub,
+.pick-list li.active .pick-tag {
+  color: inherit;
+  opacity: 0.8;
+}
+.pick-list li.pick-none {
+  color: var(--ink-3);
+  font-style: italic;
+  cursor: default;
+}
+.pick-list li.pick-none:hover {
+  background: none;
+  color: var(--ink-3);
+}
+
+/* ============ Inbox and Events (modules/inbox.js, events.js) ============ */
+/* the Money card's stock: wide cards, ruled headings, ink-block buttons */
+.card-popup {
+  width: clamp(min(380px, 94vw), 58vw, 880px);
+  max-height: 86vh;
+  overflow-y: auto;
+}
+.close-card {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.close-card:hover {
+  color: var(--red);
+}
+.card-popup h3 {
+  margin: 0 0 6px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 3px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 400;
+  font-style: italic;
+}
+.card-popup label {
+  margin-top: 4px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-style: italic;
+}
+.card-popup input[type="text"],
+.card-popup select,
+.card-popup textarea {
+  width: 100%;
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  padding: 0 8px;
+  background: var(--paper-field);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 15px;
+}
+.card-popup input[type="text"],
+.card-popup select {
+  height: 30px;
+}
+.card-popup textarea {
+  padding: 5px 8px;
+  line-height: 1.35;
+  resize: vertical;
+}
+.card-popup input:focus,
+.card-popup select:focus,
+.card-popup textarea:focus {
+  outline: 1px solid var(--ink);
+  outline-offset: -2px;
+}
+.ink-btn {
+  border: 0;
+  border-radius: 0;
+  padding: 6px 18px 7px;
+  background: var(--ink);
+  color: var(--paper-field);
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.ink-btn:hover {
+  background: var(--red);
+}
+.ink-btn:disabled {
+  background: var(--ink-3);
+  cursor: default;
+}
+.card-status {
+  min-height: 1.3em;
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-size: 14px;
+}
+.card-status.bad {
+  color: var(--red);
+  font-style: italic;
+}
+.inbox-empty,
+.events-empty {
+  color: var(--ink-3);
+  font-style: italic;
+  font-size: 14px;
+  list-style: none;
+  padding: 4px 0;
+}
+
+/* Inbox: the passengers written with, and the thread with one of them */
+.inbox-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.6fr);
+  gap: 14px 22px;
+  margin-top: 10px;
+  height: clamp(320px, 62vh, 600px);
+}
+.inbox-side,
+.inbox-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.inbox-new-btn {
+  align-self: flex-start;
+  margin-bottom: 8px;
+}
+.inbox-threads {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+.inbox-threads li {
+  border-bottom: 1px solid var(--rule);
+}
+.inbox-thread-btn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 8px;
+  width: 100%;
+  border: 0;
+  padding: 6px 6px 7px;
+  background: none;
+  color: var(--ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.inbox-thread-btn:hover {
+  background: rgba(33, 26, 19, 0.06);
+}
+.inbox-thread-btn[aria-current="true"] {
+  background: rgba(33, 26, 19, 0.11);
+}
+.inbox-thread-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 15px;
+}
+.inbox-thread-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-threads li.unread .inbox-thread-name {
+  font-weight: 600;
+}
+.inbox-unread {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--red);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+.inbox-thread-when {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--ink-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.inbox-thread-last {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-style: italic;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-to-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.inbox-to-row[hidden],
+.inbox-head[hidden],
+.inbox-write[hidden],
+.inbox-aboard[hidden] {
+  display: none;
+}
+.inbox-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 4px;
+}
+.inbox-head h3 {
+  margin: 0;
+  border: 0;
+  padding-bottom: 3px;
+  font-style: normal;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.inbox-aboard {
+  color: var(--ink-2);
+  font-size: 13px;
+  font-style: italic;
+}
+.inbox-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 2px 2px 6px;
+  list-style: none;
+}
+.inbox-msg {
+  display: flex;
+  flex-direction: column;
+  width: fit-content;
+  max-width: 82%;
+  margin: 8px 0 0;
+  border: 1px solid var(--rule);
+  padding: 5px 10px 7px;
+  background: var(--paper-field);
+  color: var(--ink);
+  font-size: 15px;
+}
+.inbox-msg.out {
+  margin-left: auto;
+  background: #ece3d0;
+}
+.inbox-msg-when {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-style: italic;
+}
+.inbox-msg-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.inbox-msg-read {
+  align-self: flex-end;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-style: italic;
+}
+.inbox-write {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.inbox-write textarea {
+  min-height: 56px;
+  max-height: 180px;
+}
+@media (max-width: 900px) {
+  .inbox-columns {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+  .inbox-threads {
+    max-height: 160px;
+  }
+  .inbox-thread {
+    min-height: 120px;
+    max-height: 42vh;
+  }
+}
+
+/* Events: on now and coming, and the form to hold one */
+.events-clock {
+  margin: 0 0 4px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-style: italic;
+}
+.events-clock-time {
+  color: var(--ink);
+  font-style: normal;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.events-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 14px 24px;
+  margin-top: 8px;
+}
+@media (max-width: 900px) {
+  .events-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.events-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.events-item {
+  padding: 8px 0 9px;
+  border-bottom: 1px solid var(--rule);
+}
+.events-when {
+  color: var(--ink-2);
+  font-size: 13px;
+  font-style: italic;
+}
+.events-time {
+  font-style: normal;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.events-on {
+  color: var(--red);
+  font-style: normal;
+  font-weight: 600;
+}
+.events-title {
+  margin: 1px 0 2px;
+  color: var(--ink);
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.events-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  font-size: 14px;
+}
+.events-room {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.events-room:hover {
+  color: var(--red);
+}
+.events-host {
+  color: var(--ink-2);
+  font-style: italic;
+}
+.events-details {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.events-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+}
+.events-going,
+.events-cancel {
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  padding: 2px 10px 3px;
+  background: none;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.events-going[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper-field);
+}
+.events-going:hover,
+.events-cancel:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+.events-going[aria-pressed="true"]:hover {
+  background: var(--red);
+  color: var(--paper-field);
+}
+.events-count {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.events-cancel {
+  margin-left: auto;
+}
+.events-hold {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.events-time-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.events-time-row select {
+  width: auto;
+  min-width: 0;
+  padding: 0 4px;
+}
+.events-time-row #events-day {
+  flex: 1;
+}
+.events-colon {
+  color: var(--ink-2);
+}
+.events-hold .ink-btn {
+  align-self: flex-start;
+  margin-top: 10px;
 }
 
 /* A moderator's tools: a ruled row like the language's, its buttons blocks
