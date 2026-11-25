@@ -90,6 +90,46 @@ const musicPlayer = window.musicPlayer;
 const deckRooms = window.deckRooms;
 const roomImages = window.roomImages;
 
+// ── Moderation (the rules: lib/moderation.js on the server) ──────────────────
+// Two rooms on no deck plan. A moderator locks a player in one, and only a
+// moderator lets them out: the server holds them to it (every room asked for,
+// line of chat, deal and purchase is checked there, whatever this page does);
+// this page shows them the room and keeps its doors shut.
+const MODERATION_ROOMS = {
+  padded_room: {
+    id: "padded_room",
+    name: "Padded Room",
+    type: "padded-room",
+    location: {
+      chatRoom: "padded_room",
+      imagePath: "/images/animations/locations/moderation/padded room.webp",
+    },
+  },
+  hell: {
+    id: "hell",
+    name: "Hell",
+    type: "hell",
+    location: {
+      chatRoom: "hell",
+      imagePath: "/images/animations/locations/moderation/hell.webp",
+    },
+  },
+};
+// The padded room's fare (the server serves nothing else there)
+const PADDED_ROOM_MENU = ["Helping rice", "Water"];
+// The player's standing, as the server last told it ("moderation-status"):
+// role ("owner", "admin" or null), mute ({ until, reason } or null) and
+// confinement ({ place, reason } or null); ready once the first word has come
+const moderationState = (RBV.moderation = {
+  ready: false,
+  role: null,
+  mute: null,
+  confinement: null,
+});
+// Lines for the chat once the room being entered is shown (entering a room
+// clears the chat, so a word said as the player is moved waits for it)
+const roomNotes = [];
+
 
 
 // Single DOMContentLoaded event listener
@@ -1992,10 +2032,18 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // Smart spawn logic based on voyage progress
       // Wait a moment for v.voyageStartTime to be received from server
+      const spawnAskedAt = Date.now();
       const waitForSpawn = setInterval(() => {
         if (!v.voyageStartTime) return; // Wait for server time
+        // and for the moderators' word (a player locked in starts in their
+        // room), for a few seconds at most: the server holds them to it anyway
+        if (!moderationState.ready && Date.now() - spawnAskedAt < 5000) return;
 
         clearInterval(waitForSpawn);
+        if (moderationState.confinement) {
+          enterRoom(MODERATION_ROOMS[moderationState.confinement.place]);
+          return;
+        }
         const elapsedSeconds = getElapsedSeconds();
         // (in the North Atlantic the ship has sailed, whatever the clock says)
         const departed =
@@ -2096,6 +2144,21 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   function enterRoom(room) {
+    // Locked in by a moderator: no door opens but into their own room (the
+    // deck plans, the cabin's name, a room saved for later, anything)
+    const locked = moderationState.confinement;
+    if (locked && room && room.id !== locked.place) {
+      addChatMessage({
+        type: "system",
+        message:
+          locked.place === "hell"
+            ? "There is no way out of hell."
+            : "The door is locked. Only a moderator can let you out.",
+        room: currentRoom.name,
+        timestamp: Date.now(),
+      });
+      return;
+    }
 
     const characterData = JSON.parse(sessionStorage.getItem("character"));
     if (!characterData) {
@@ -2224,6 +2287,8 @@ document.addEventListener("DOMContentLoaded", function () {
         first_class_reception_d: "First Class Reception Room",
         first_class_dining_room_d: "First Class Dining Room",
         "5741544e4559": "Mars",
+        padded_room: "Padded Room",
+        hell: "Hell",
       };
       // Every cabin is labelled with its number: cabin_a10 -> "A-10", cabin_b49 -> "B-49".
       const cabinNumber = /^cabin_([a-z])(\d+)$/.exec(currentRoom.name);
@@ -2258,7 +2323,11 @@ document.addEventListener("DOMContentLoaded", function () {
         );
       };
 
-      if (chatRoom === "5741544e4559") {
+      if (room.location.imagePath) {
+        // a room with a picture of its own, the same at any hour (the padded
+        // room, hell)
+        imageSrc = room.location.imagePath;
+      } else if (chatRoom === "5741544e4559") {
         imageSrc = "/images/Mars.jpg";
       } else if (roomImages[chatRoom]) {
         const roomData = roomImages[chatRoom];
@@ -2299,6 +2368,16 @@ document.addEventListener("DOMContentLoaded", function () {
           timestamp: Date.now(),
         };
         addChatMessage(systemMessage);
+        // what the moderators had to say as the player was moved (said here,
+        // in the new room: the move clears the chat)
+        for (const note of roomNotes.splice(0)) {
+          addChatMessage({
+            type: "system",
+            message: note,
+            room: currentRoom.name,
+            timestamp: Date.now(),
+          });
+        }
 
         // Remove slide-in class after the fixed slide animation completes
         setTimeout(() => {
@@ -2306,12 +2385,17 @@ document.addEventListener("DOMContentLoaded", function () {
           locationDisplay.classList.remove("slide-in");
         }, 800);
 
-        // The card table is in the first class smoking room and lounge
+        const isPaddedRoom = room.id === "padded_room";
+        const isHell = room.id === "hell";
+
+        // The card table is in the first class smoking room and lounge (and
+        // the padded room has a pack of cards)
         const gamesToggleBtn = document.getElementById("games-toggle-btn");
         if (gamesToggleBtn) {
           const hasGames =
             room.id === "first_class_lounge_a" ||
-            room.id === "first_class_smoking_room_a";
+            room.id === "first_class_smoking_room_a" ||
+            isPaddedRoom;
           gamesToggleBtn.style.display = hasGames ? "block" : "none";
           // a games list left open in the last room goes with it
           closeGamesMenu();
@@ -2320,8 +2404,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // The room to come back to after a reload; by id, since several rooms
         // share a name (three Grand Staircases), and for this player only
-        // (a computer may be shared, a browser may play several characters)
-        setLastRoom(room);
+        // (a computer may be shared, a browser may play several characters).
+        // Never the padded room or hell: the server says who belongs there.
+        if (!MODERATION_ROOMS[room.id]) setLastRoom(room);
 
         const interiorTypes = [
           "grand-staircase",
@@ -2335,6 +2420,7 @@ document.addEventListener("DOMContentLoaded", function () {
           "cabin",
           "corridor",
           "reading-writing-room",
+          "padded-room",
         ];
 
         const eatDrinkBtn = document.getElementById("eat-drink-btn");
@@ -2374,13 +2460,19 @@ document.addEventListener("DOMContentLoaded", function () {
             !isLoungeRoom &&
             room.type &&
             !interiorTypes.includes(room.type);
-          const menuMode = isDiningRoom
-            ? "full"
-            : isLoungeRoom
-              ? "drinks"
-              : isOutdoorRoom
-                ? "tobacco"
-                : "";
+          //   the padded room   a helping of rice and water, nothing else;
+          //   hell              nothing at all
+          const menuMode = isPaddedRoom
+            ? "padded"
+            : isHell
+              ? ""
+              : isDiningRoom
+                ? "full"
+                : isLoungeRoom
+                  ? "drinks"
+                  : isOutdoorRoom
+                    ? "tobacco"
+                    : "";
 
           eatDrinkBtn.dataset.menuMode = menuMode;
           eatDrinkBtn.dataset.tobaccoOnly =
@@ -2406,7 +2498,11 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         }
 
-        if (interiorTypes.includes(room.type)) {
+        if (isHell) {
+          // no sea and no ship down there
+          interiorSound.pause();
+          exteriorSound.pause();
+        } else if (interiorTypes.includes(room.type)) {
           if (interiorSound.paused) {
             interiorSound
               .play()
@@ -2446,15 +2542,21 @@ document.addEventListener("DOMContentLoaded", function () {
       const prevCabinActions = document.getElementById("cabin-action-buttons");
       if (prevCabinActions) prevCabinActions.remove();
 
-      // Add shower, toilet, and sleep buttons for all cabin types
-      if (room.type === "cabin") {
+      // Add shower, toilet, and sleep buttons for all cabin types (and the
+      // padded room, which has the same three)
+      if (room.type === "cabin" || room.id === "padded_room") {
         const locationDisplay = document.querySelector(".location-display");
+        // in the row of the room's own buttons, after them (the padded room
+        // has Eat & Drink and Games too: laid over the picture's corner, the
+        // three covered them)
+        const roomActions = document.getElementById("room-actions");
         const actionDiv = document.createElement("div");
         actionDiv.id = "cabin-action-buttons";
-        actionDiv.style.position = "absolute";
+        actionDiv.style.position = roomActions ? "static" : "absolute";
         actionDiv.style.top = "18px";
         actionDiv.style.right = "18px";
         actionDiv.style.display = "flex";
+        actionDiv.style.flex = "none";
         actionDiv.style.gap = "8px";
         actionDiv.style.zIndex = "20";
 
@@ -2515,7 +2617,7 @@ document.addEventListener("DOMContentLoaded", function () {
         actionDiv.appendChild(showerBtn);
         actionDiv.appendChild(toiletBtn);
         actionDiv.appendChild(sleepBtn);
-        locationDisplay.appendChild(actionDiv);
+        (roomActions || locationDisplay).appendChild(actionDiv);
       }
 
       // Remove any existing Enter Britannic button
@@ -2569,6 +2671,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const CHAT_NOT_SENT = {
     "too-fast": "Not sent: you are writing faster than the chat allows. Wait a moment.",
     "too-long": "Not sent: that message is too long.",
+    room: "Not sent: nobody can hear you there.",
   };
   const CHAT_NO_CONNECTION = "Not sent: no connection to the ship. Try again in a moment.";
   function sendMessage() {
@@ -2590,6 +2693,19 @@ document.addEventListener("DOMContentLoaded", function () {
       .timeout(10000)
       .emit("chat-message", { room, message, timestamp: Date.now() }, (err, res) => {
         if (!err && res && res.ok) return;
+        if (!err && res && res.reason === "muted") {
+          // (the server's word on it: the page may not have heard of the mute)
+          if (!moderationState.mute) {
+            moderationState.mute = { until: res.until || null, reason: "" };
+            showModerationControls();
+          }
+          notSent(
+            res.until
+              ? `Not sent: you are muted until ${moderationDate(res.until)}.`
+              : "Not sent: you are muted.",
+          );
+          return;
+        }
         notSent((!err && res && CHAT_NOT_SENT[res.reason]) || CHAT_NO_CONNECTION);
       });
   }
@@ -3032,6 +3148,165 @@ document.addEventListener("DOMContentLoaded", function () {
     if (event.target === deckplansPopup) {
       deckplansPopup.style.display = "none";
     }
+  });
+
+  // ── The moderators' word ("moderation-status"; server.js applyStatus) ─────
+  // A mute's end, in the page's language
+  function moderationDate(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const lang = (window.RBV_I18N && window.RBV_I18N.lang) || "en";
+    const options = { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" };
+    try {
+      return d.toLocaleString(lang === "en" ? "en-GB" : lang, options);
+    } catch (e) {
+      return d.toLocaleString();
+    }
+  }
+  function sayNow(text) {
+    addChatMessage({ type: "system", message: text, room: currentRoom.name, timestamp: Date.now() });
+  }
+  function mutedNow() {
+    const m = moderationState.mute;
+    return !!m && (!m.until || Date.parse(m.until) > Date.now());
+  }
+  // Where a player let out goes: their cabin, or else the promenade
+  function freeRoom() {
+    const cabin = typeof findPlayerCabin === "function" ? findPlayerCabin() : null;
+    return (
+      cabin ||
+      (deckRooms.boat || deckRooms.bd || deckRooms["boat_deck"])?.find?.(
+        (r) => r.id === "port_promenade_bd",
+      ) ||
+      null
+    );
+  }
+
+  // What the standing changes on the page: a player locked in has no deck
+  // plans; a muted one is told so where they write; a moderator has their
+  // tools in the settings
+  let muteEndTimer = null;
+  function showModerationControls() {
+    const locked = moderationState.confinement;
+    deckplansBtn.style.display = locked ? "none" : "";
+    if (locked) deckplansPopup.style.display = "none";
+    // (a moderator locked in moderates nobody: the server says so too)
+    const tools = document.getElementById("moderation-tools");
+    if (tools) tools.hidden = !moderationState.role || !!locked;
+    chatInput.placeholder = mutedNow() ? "You are muted." : "Type a message...";
+    clearTimeout(muteEndTimer);
+    const until = moderationState.mute && Date.parse(moderationState.mute.until);
+    const wait = until ? until - Date.now() + 500 : 0;
+    // (a mute longer than a timer can wait ends at the next word or reload)
+    if (wait > 0 && wait < 2 ** 31 - 1) {
+      muteEndTimer = setTimeout(() => {
+        moderationState.mute = null;
+        showModerationControls();
+        sayNow("You can speak again.");
+      }, wait);
+    }
+  }
+
+  // The standing last told the player, so a reconnection does not tell it again
+  let standingTold = "";
+  function applyModerationStatus(status, { replay = false } = {}) {
+    if (!status || typeof status !== "object") return;
+    const wasLocked = moderationState.confinement;
+    moderationState.ready = true;
+    moderationState.role =
+      status.role === "owner" || status.role === "admin" ? status.role : null;
+    moderationState.mute = status.mute && typeof status.mute === "object" ? status.mute : null;
+    moderationState.confinement =
+      status.confinement && MODERATION_ROOMS[status.confinement.place]
+        ? status.confinement
+        : null;
+    const locked = moderationState.confinement;
+    const mute = mutedNow() ? moderationState.mute : null;
+    const event = replay ? null : status.event;
+    showModerationControls();
+
+    // a room is shown (the Start button has been pressed); before that, the
+    // Start button's spawn takes a locked-in player to their room
+    const started = !!currentRoom.name;
+    const standing = JSON.stringify([locked && locked.place, mute && mute.until]);
+    const fresh = standing !== standingTold;
+    standingTold = standing;
+
+    if (event === "muted" || (!event && fresh && mute)) {
+      const by = event === "muted" ? "A moderator has muted you" : "You are muted";
+      sayOrKeep(mute && mute.until ? `${by} until ${moderationDate(mute.until)}.` : `${by}.`);
+      if (mute && mute.reason) sayOrKeep(`Reason: ${mute.reason}`);
+    } else if (event === "unmuted") {
+      sayOrKeep("You can speak again.");
+    }
+
+    if (locked) {
+      if (event === "confined" || (!event && fresh)) {
+        const hell = locked.place === "hell";
+        roomNotes.push(
+          event === "confined"
+            ? hell
+              ? "A moderator has sent you to hell."
+              : "A moderator has sent you to the padded room."
+            : hell
+              ? "You are in hell."
+              : "You are locked in the padded room.",
+        );
+        if (locked.reason) roomNotes.push(`Reason: ${locked.reason}`);
+      }
+      if (started && currentRoom.name !== locked.place) {
+        enterRoom(MODERATION_ROOMS[locked.place]);
+      } else if (started) {
+        flushRoomNotes();
+      }
+    } else if (
+      wasLocked ||
+      event === "released" ||
+      (started && MODERATION_ROOMS[currentRoom.name] && !moderationState.role)
+    ) {
+      // let out (or found let out, after a reconnection): back aboard
+      if (wasLocked || event === "released") roomNotes.push("A moderator has let you out.");
+      const to = started && MODERATION_ROOMS[currentRoom.name] ? freeRoom() : null;
+      if (to) enterRoom(to);
+      else if (started) flushRoomNotes();
+    }
+  }
+  // said now in the room shown, or kept for the first room the player enters
+  function sayOrKeep(text) {
+    if (currentRoom.name) sayNow(text);
+    else roomNotes.push(text);
+  }
+  function flushRoomNotes() {
+    for (const note of roomNotes.splice(0)) sayNow(note);
+  }
+
+  socket.on("moderation-status", (status) => applyModerationStatus(status));
+  // the word that came as the page connected, before this was listening
+  if (RBV.socketLatest && RBV.socketLatest["moderation-status"]) {
+    applyModerationStatus(RBV.socketLatest["moderation-status"], { replay: true });
+  }
+  socket.emit("request-moderation-status");
+
+  // A moderator's tools (Settings): the panel, in a tab of its own, and the
+  // two rooms on no deck plan, to visit (and to leave by the deck plans)
+  const openModerationPanel = document.getElementById("open-moderation-panel");
+  if (openModerationPanel) {
+    openModerationPanel.addEventListener("click", () => {
+      window.open("/moderation", "_blank", "noopener");
+    });
+  }
+  [
+    ["visit-padded-room", "padded_room"],
+    ["visit-hell", "hell"],
+  ].forEach(([id, place]) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      if (!moderationState.role) return;
+      const settings = document.getElementById("settings-popup");
+      if (settings) settings.style.display = "none";
+      enterRoom(MODERATION_ROOMS[place]);
+    });
   });
 
   // Deck plan functionality
@@ -4786,10 +5061,38 @@ document.addEventListener("DOMContentLoaded", function () {
           </div>
     `;
 
+    // The padded room: a helping of rice and a cup of water, nothing more
+    const paddedSidebar = `
+          <div class="edm-category" data-category="food">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▼</span> Food
+            </div>
+            <div class="edm-subcategories" style="display:flex">
+              <div class="edm-subcat-btn active" data-top="food" data-sub="all">All</div>
+            </div>
+          </div>
+          <div class="edm-category" data-category="soft_beverages">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▶</span> Soft Beverages
+            </div>
+            <div class="edm-subcategories">
+              <div class="edm-subcat-btn active" data-top="soft_beverages" data-sub="all">All</div>
+            </div>
+          </div>
+    `;
+
     popup.innerHTML = `
       <div class="edm-body">
         <div class="edm-sidebar">
-          ${onlyTobacco ? tobaccoOnlySidebar : mode === "drinks" ? drinksSidebar : fullSidebar}
+          ${
+            onlyTobacco
+              ? tobaccoOnlySidebar
+              : mode === "drinks"
+                ? drinksSidebar
+                : mode === "padded"
+                  ? paddedSidebar
+                  : fullSidebar
+          }
         </div>
         <div class="edm-content">
           <div class="edm-items-grid"></div>
@@ -4826,6 +5129,7 @@ document.addEventListener("DOMContentLoaded", function () {
           !lightFare.includes(item.subCategory)
         )
           return false;
+        if (mode === "padded" && !PADDED_ROOM_MENU.includes(item.name)) return false;
         return true;
       });
 

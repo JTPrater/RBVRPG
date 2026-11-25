@@ -1718,6 +1718,43 @@ body:has(#report-modal[style*="display: block"]) #report-btn {
   border-radius: 0;
 }
 
+/* A moderator's tools: a ruled row like the language's, its buttons blocks
+   of the same ink as the menus' */
+.moderation-tools {
+  margin-top: 12px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--rule);
+}
+.moderation-tools[hidden] {
+  display: none;
+}
+.moderation-tools h3 {
+  margin: 0 0 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 400;
+  font-style: italic;
+}
+.moderation-tools-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.moderation-tools-buttons button {
+  border: 0;
+  border-radius: 0;
+  padding: 5px 10px 6px;
+  background: var(--ink);
+  color: var(--paper-field);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.moderation-tools-buttons button:hover {
+  background: var(--red);
+}
+
 /* Rules card */
 .rules-content {
   margin-top: 4px;

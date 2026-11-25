@@ -130,6 +130,14 @@
     }],
     // a registration field over its length (server.js REGISTRATION_FIELD_LIMITS)
     [/^(Forename|Surname|Bio) must be (\d+) characters or fewer$/, (m, t) => t.fieldTooLong && fill(t.fieldTooLong, tr(m[1]), m[2])],
+    // the moderators' word (game.js applyModerationStatus, main.js banLines):
+    // the date is written in the page's language already, the reason is the
+    // moderator's own
+    [/^A moderator has muted you until (.+)\.$/, (m, t) => t.modMutedUntil && fill(t.modMutedUntil, m[1])],
+    [/^You are muted until (.+)\.$/, (m, t) => t.mutedUntil && fill(t.mutedUntil, m[1])],
+    [/^Not sent: you are muted until (.+)\.$/, (m, t) => t.notSentMutedUntil && fill(t.notSentMutedUntil, m[1])],
+    [/^This passenger has been banned until (.+)\.$/, (m, t) => t.bannedUntil && fill(t.bannedUntil, m[1])],
+    [/^Reason: (.+)$/, (m, t) => t.reason && fill(t.reason, m[1])],
   ];
   window.RBV_I18N_PATTERNS = PATTERNS; // (for the checks in scripts/i18n)
 
