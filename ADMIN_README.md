@@ -66,11 +66,25 @@ Passengers send each other money from the Money card in the game (the bottom
 bar's Money button), with a short note if they like, and see the ten richest
 aboard and their own place. Every first-class passenger starts with £1,000, so a
 player can make extra accounts and send their money to one character to climb the
-list. Each passenger's card on the panel shows their purse and their money sent and
+list. Each passenger's card on the panel shows their money and their money sent and
 received, with the other passenger and the note: money arriving from several new
 accounts, or from linked ones (see above), is the sign. Banned passengers are left
 out of the list and cannot be sent money; a passenger locked in cannot send any,
 and a muted one cannot add a note.
+
+## Messages and events
+
+Passengers write to each other from the Inbox (the bottom bar's Inbox button),
+and post events from the Events card: a title, a room of the ship, a time of the
+ship's day (today or tomorrow) and a description. Every chat is told as an event
+starts. A muted passenger can neither write nor post, a locked-in one neither,
+and nobody can write to a banned passenger. Messages are private: the panel does
+not show them.
+
+A moderator sees **Remove** on every event in the Events card. A removal goes in
+the panel's log ("Event removed", with the event's title and room), and those who
+meant to go are told it is off. A ban takes the banned passenger's coming events
+off as well.
 
 ## How the rooms hold
 

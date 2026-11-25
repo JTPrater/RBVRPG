@@ -87,6 +87,7 @@ Object.assign((window.RBV_I18N_DICT = window.RBV_I18N_DICT || {}).es.exact, {
   "Unmuted": "Silencio levantado",
   "Unbanned": "Entrada permitida",
   "Sent to the padded room": "Enviado a la celda acolchada",
+  "Event removed": "Evento retirado",
   "Sent to hell": "Enviado al infierno",
   "Released": "Liberado",
   "Made an admin": "Nombrado administrador",
@@ -103,7 +104,6 @@ Object.assign((window.RBV_I18N_DICT = window.RBV_I18N_DICT || {}).es.exact, {
   "A shared network can be a family, a school or a café.":
     "Una misma red puede ser la de una familia, una escuela o un café.",
   // money (the passenger's card)
-  "Purse": "Monedero",
   "Money sent and received": "Dinero enviado y recibido",
   "Sent or received": "Enviado o recibido",
   "Amount": "Cantidad",

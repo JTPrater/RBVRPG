@@ -365,16 +365,16 @@
             <div class="money-columns">
               <div class="money-column">
                 <div class="money-purse">
-                  <span class="money-label">Your purse</span>
+                  <span class="money-label">You have</span>
                   <span id="money-balance" class="money-balance">£0.00</span>
                   <span id="money-place" class="money-place"></span>
                 </div>
                 <section class="money-send" aria-labelledby="money-send-title">
                   <h3 id="money-send-title">Send money</h3>
                   <label for="money-to">To</label>
-                  <select id="money-to">
-                    <option value="">Choose a passenger</option>
-                  </select>
+                  <div class="pick">
+                    <input type="text" id="money-to" maxlength="60" placeholder="Type a name" />
+                  </div>
                   <label for="money-amount">Amount (£)</label>
                   <input type="number" id="money-amount" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" />
                   <label for="money-note">Note (optional)</label>
@@ -393,6 +393,78 @@
                   <ul id="money-recent" class="money-recent"></ul>
                 </section>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inbox (modules/inbox.js): messages between passengers, a thread
+             for each passenger written with, newest first -->
+        <div id="inbox-popup" class="settings-popup card-popup inbox-popup">
+          <div class="settings-content">
+            <span class="close-card close-inbox" role="button" tabindex="0" aria-label="Close">&times;</span>
+            <h2>Inbox</h2>
+            <div class="inbox-columns">
+              <div class="inbox-side">
+                <button type="button" id="inbox-new-btn" class="ink-btn inbox-new-btn">New message</button>
+                <ul id="inbox-threads" class="inbox-threads"></ul>
+              </div>
+              <div class="inbox-main">
+                <div id="inbox-to-row" class="inbox-to-row" hidden>
+                  <label for="inbox-to">To</label>
+                  <div class="pick">
+                    <input type="text" id="inbox-to" maxlength="60" placeholder="Type a name" />
+                  </div>
+                </div>
+                <div id="inbox-head" class="inbox-head" hidden>
+                  <h3 id="inbox-with" class="inbox-with" data-no-i18n></h3>
+                  <span id="inbox-aboard" class="inbox-aboard" hidden>Aboard now</span>
+                </div>
+                <ol id="inbox-thread" class="inbox-thread"></ol>
+                <div id="inbox-write" class="inbox-write" hidden>
+                  <textarea id="inbox-text" maxlength="1000" rows="3" placeholder="Write a message" aria-label="Message"></textarea>
+                  <button type="button" id="inbox-send-btn" class="ink-btn">Send</button>
+                </div>
+                <p id="inbox-status" class="card-status" role="status"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Events (modules/events.js): events passengers hold aboard, on now
+             and coming, and the form to hold one -->
+        <div id="events-popup" class="settings-popup card-popup events-popup">
+          <div class="settings-content">
+            <span class="close-card close-events" role="button" tabindex="0" aria-label="Close">&times;</span>
+            <h2>Events</h2>
+            <p class="events-clock"><span>Ship's time</span> <span id="events-clock" class="events-clock-time"></span></p>
+            <div class="events-columns">
+              <section aria-labelledby="events-coming-title">
+                <h3 id="events-coming-title">Coming up</h3>
+                <ol id="events-list" class="events-list"></ol>
+              </section>
+              <section class="events-hold" aria-labelledby="events-hold-title">
+                <h3 id="events-hold-title">Hold an event</h3>
+                <label for="events-title">Title</label>
+                <input type="text" id="events-title" maxlength="60" autocomplete="off" />
+                <label for="events-room">Room</label>
+                <div class="pick">
+                  <input type="text" id="events-room" maxlength="80" placeholder="Type a room" />
+                </div>
+                <label for="events-day">When</label>
+                <div class="events-time-row">
+                  <select id="events-day">
+                    <option value="0">Today</option>
+                    <option value="1">Tomorrow</option>
+                  </select>
+                  <select id="events-hour" aria-label="Hour"></select>
+                  <span class="events-colon">:</span>
+                  <select id="events-minute" aria-label="Minute"></select>
+                </div>
+                <label for="events-details">Description</label>
+                <textarea id="events-details" maxlength="400" rows="4"></textarea>
+                <button type="button" id="events-post-btn" class="ink-btn">Post event</button>
+                <p id="events-status" class="card-status" role="status"></p>
+              </section>
             </div>
           </div>
         </div>
@@ -638,7 +710,11 @@
     <script src="../game/modules/routeMap.js"></script>
     <script src="../game/modules/musicPlayer.js"></script>
     <script src="../game/modules/stats.js"></script>
+    <script src="../game/modules/picker.js"></script>
+    <script src="../game/modules/badges.js"></script>
     <script src="../game/modules/money.js"></script>
+    <script src="../game/modules/inbox.js"></script>
+    <script src="../game/modules/events.js"></script>
     <script src="../game/menuData.js?v=1"></script>
     <script src="../game/data/deckRooms.js"></script>
     <script src="../game/data/roomImages.js"></script>

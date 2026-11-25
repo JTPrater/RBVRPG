@@ -3168,6 +3168,15 @@ document.addEventListener("DOMContentLoaded", function () {
   }
   // (and for the other modules: money sent and received, modules/money.js)
   RBV.sayInChat = sayNow;
+  // A room of the deck plans entered by its id (an event's room,
+  // modules/events.js), through the same door as the plans: false if there
+  // is no such room
+  RBV.goToRoom = (id) => {
+    const room = findRoomById(id);
+    if (!room) return false;
+    enterRoom(room);
+    return true;
+  };
   function mutedNow() {
     const m = moderationState.mute;
     return !!m && (!m.until || Date.parse(m.until) > Date.now());

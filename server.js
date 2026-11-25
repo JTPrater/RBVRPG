@@ -27,6 +27,9 @@ const { lookupMenuItem } = require("./lib/menuCatalog");
 const { createSocketGameAuth } = require("./lib/socketGameAuth");
 const moderation = require("./lib/moderation");
 const money = require("./lib/money");
+const inbox = require("./lib/inbox");
+const shipEvents = require("./lib/shipEvents");
+const { pace } = require("./lib/pace");
 
 // Initialize Express and Server
 const app = express();
@@ -276,6 +279,8 @@ const User = require("./models/User");
 const ServerState = require("./models/ServerState");
 const ModerationLog = require("./models/ModerationLog");
 const MoneyTransfer = require("./models/MoneyTransfer");
+const InboxMessage = require("./models/InboxMessage");
+const ShipEvent = require("./models/ShipEvent");
 const { requireSessionUser } = createSocketGameAuth(User);
 
 // Multer Configuration with Cloudinary
@@ -1575,6 +1580,10 @@ app.post("/api/mod/action", modLimiter, requireModerator, async (req, res, next)
     // off the other rooms' lists at once, connected or not
     if (status.ban) dropLingering(fresh._id, null);
     else if (status.confinement) dropLingering(fresh._id, status.confinement.place);
+    // a banned passenger's coming events go with them
+    if (action === "ban" && status.ban) {
+      cancelEventsOf(fresh._id, actor).catch((err) => console.error("Events:", err.message));
+    }
 
     res.json({
       ok: true,
@@ -1711,14 +1720,17 @@ try {
 // B- and C-deck rooms took every join and chat line without a word: players
 // could walk in, but nobody could talk there.
 const allowedRoomSet = new Set(allowedRooms);
-function deckPlanRoomIds() {
+function deckPlanDecks() {
   const probe = { RBV: {}, console: { debug() {} } };
   new Function("window", "console", fsSync.readFileSync(DECK_ROOMS_PATH, "utf8"))(
     probe,
     probe.console,
   );
+  return probe.deckRooms || {};
+}
+function deckPlanRoomIds(decks = deckPlanDecks()) {
   const ids = new Set();
-  for (const rooms of Object.values(probe.deckRooms || {})) {
+  for (const rooms of Object.values(decks)) {
     if (!Array.isArray(rooms)) continue;
     for (const r of rooms) {
       if (!r) continue;
@@ -1729,10 +1741,15 @@ function deckPlanRoomIds() {
   }
   return ids;
 }
+// The rooms events can be held in (lib/shipEvents.js): the ship's, as the
+// deck plans list them (not the docks at Southampton, nor the moderators'
+// rooms, nor any room kept off the plans)
+let eventRoomSet = new Set();
 function addDeckPlanRooms() {
   try {
+    const decks = deckPlanDecks();
     const added = [];
-    for (const id of deckPlanRoomIds()) {
+    for (const id of deckPlanRoomIds(decks)) {
       if (allowedRoomSet.has(id)) continue;
       allowedRoomSet.add(id);
       allowedRooms.push(id);
@@ -1741,6 +1758,12 @@ function addDeckPlanRooms() {
     if (added.length) {
       console.info(`Rooms from the deck plans: ${added.length} added (${added.join(", ")})`);
     }
+    const shipDecks = Object.fromEntries(
+      Object.entries(decks).filter(([deck]) => deck !== "southampton"),
+    );
+    eventRoomSet = new Set(
+      [...deckPlanRoomIds(shipDecks)].filter((id) => !moderation.isPlace(id)),
+    );
   } catch (err) {
     console.error("Could not read the rooms of the deck plans:", err.message);
   }
@@ -2191,6 +2214,255 @@ async function moneyOverview(userId) {
       };
     }),
   };
+}
+
+// ── Messages between passengers (lib/inbox.js; the game's Inbox card) ──────
+const messageTimes = new Map(); // player -> their recent messages' times (pace)
+const oid = (id) => new mongoose.Types.ObjectId(String(id));
+// (the database's "unread": no readAt, or null)
+const UNREAD = { readAt: null };
+
+// Whether a passenger can be written to: one with a character, not banned
+const canReceive = (u) =>
+  !!(u && u.character && u.character.forename && !moderation.statusOf(u).ban);
+
+// The passengers one has written to or heard from, the latest first: the
+// last message each way, and how many of theirs are unread
+async function inboxList(userId) {
+  const me = oid(userId);
+  const fromMe = { $eq: ["$from.id", me] };
+  const rows = await InboxMessage.aggregate([
+    { $match: { $or: [{ "from.id": me }, { "to.id": me }] } },
+    { $sort: { at: -1 } },
+    {
+      $group: {
+        _id: { $cond: [fromMe, "$to.id", "$from.id"] },
+        name: { $first: { $cond: [fromMe, "$to.name", "$from.name"] } },
+        text: { $first: "$text" },
+        at: { $first: "$at" },
+        out: { $first: fromMe },
+        unread: {
+          $sum: {
+            $cond: [
+              { $and: [{ $eq: ["$to.id", me] }, { $eq: [{ $ifNull: ["$readAt", null] }, null] }] },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+    { $sort: { at: -1 } },
+    { $limit: inbox.LIST_LIMIT },
+  ]);
+  const aboard = playersAboard();
+  return rows.map((r) => ({
+    id: String(r._id),
+    name: r.name || "",
+    text: (r.text || "").slice(0, 140),
+    at: r.at,
+    out: !!r.out,
+    unread: r.unread,
+    aboard: aboard.has(String(r._id)),
+  }));
+}
+
+// The latest messages between two passengers, oldest first; those to the
+// reader are marked read as they are shown
+async function inboxThread(userId, otherId) {
+  const me = oid(userId);
+  const other = oid(otherId);
+  const [person, latest] = await Promise.all([
+    User.findById(other).select("character moderation").lean(),
+    InboxMessage.find({
+      $or: [
+        { "from.id": me, "to.id": other },
+        { "from.id": other, "to.id": me },
+      ],
+    })
+      .sort({ at: -1 })
+      .limit(inbox.THREAD_LIMIT)
+      .lean(),
+  ]);
+  if (!person && !latest.length) return { ok: false, reason: "no-one" };
+  const marked = await InboxMessage.updateMany(
+    { "from.id": other, "to.id": me, ...UNREAD },
+    { $set: { readAt: new Date() } },
+  );
+  const last = latest[0];
+  const name = person
+    ? moderation.nameOf(person)
+    : (last && (String(last.from.id) === String(me) ? last.to.name : last.from.name)) || "";
+  return {
+    ok: true,
+    with: {
+      id: String(other),
+      name,
+      aboard: playersAboard().has(String(other)),
+      canWrite: canReceive(person),
+    },
+    messages: latest.reverse().map((m) => ({
+      id: String(m._id),
+      at: m.at,
+      out: String(m.from.id) === String(me),
+      text: m.text,
+      read: !!m.readAt,
+    })),
+    marked: marked.modifiedCount || 0,
+  };
+}
+
+// A message written, if the other passenger can take it
+async function sendMessage(fromId, toId, text) {
+  const [from, target] = await Promise.all([
+    User.findById(fromId).select("character").lean(),
+    User.findById(toId).select("character moderation").lean(),
+  ]);
+  if (!canReceive(target)) return { ok: false, reason: "no-one" };
+  const message = await InboxMessage.create({
+    from: { id: fromId, name: moderation.nameOf(from) },
+    to: { id: target._id, name: moderation.nameOf(target) },
+    text,
+  });
+  return {
+    ok: true,
+    fromName: message.from.name,
+    toName: message.to.name,
+    message: { id: String(message._id), at: message.at, text: message.text },
+  };
+}
+
+// ── Events aboard (lib/shipEvents.js; the game's Events card) ──────────────
+const eventTimes = new Map(); // player -> their recent events' times (pace)
+const isEventRoom = (room) => typeof room === "string" && eventRoomSet.has(room);
+
+// An event as the card shows it to one passenger
+function eventFor(e, viewerId, canModerate, now = Date.now()) {
+  const viewer = String(viewerId);
+  const start = shipEvents.shipClock(voyageStartTime, e.at.getTime());
+  const today = shipEvents.shipClock(voyageStartTime, now).day;
+  const mine = String(e.host && e.host.id) === viewer;
+  const going = (e.going || []).map(String);
+  return {
+    id: String(e._id),
+    room: e.room,
+    title: e.title,
+    details: e.details || "",
+    at: e.at,
+    day: start.day - today, // -1 yesterday, 0 today, 1 tomorrow
+    time: shipEvents.clockText(start.minute),
+    on: e.at.getTime() <= now,
+    host: (e.host && e.host.name) || "",
+    mine,
+    going: going.length,
+    imGoing: going.includes(viewer),
+    canCancel: mine || canModerate,
+  };
+}
+
+// Events on now and coming, the soonest first
+function eventsShown(now = Date.now()) {
+  return ShipEvent.find({ cancelled: false, at: { $gt: new Date(now - shipEvents.LASTS_MS) } })
+    .sort({ at: 1, _id: 1 })
+    .limit(shipEvents.LIST_LIMIT)
+    .lean();
+}
+
+// Every chat is told when an event starts (once: the flag is taken in one
+// update, so no two servers say it twice); a start missed while the server
+// was away is not announced late
+async function announceEvents() {
+  const now = Date.now();
+  const due = await ShipEvent.find({
+    cancelled: false,
+    announced: false,
+    at: { $lte: new Date(now) },
+  })
+    .select("at room title host")
+    .lean();
+  for (const e of due) {
+    const taken = await ShipEvent.updateOne(
+      { _id: e._id, announced: false },
+      { $set: { announced: true } },
+    );
+    if (!taken.modifiedCount || now - e.at.getTime() > shipEvents.ANNOUNCE_LATE_MS) continue;
+    io.emit("event-starting", {
+      id: String(e._id),
+      room: e.room,
+      title: e.title,
+      host: (e.host && e.host.name) || "",
+    });
+  }
+}
+
+// An event taken off: by its host, a moderator, or a ban of its host. Those
+// who meant to go are told; every open Events card looks again.
+async function cancelEvent(e, by) {
+  const done = await ShipEvent.updateOne(
+    { _id: e._id, cancelled: false },
+    { $set: { cancelled: true, cancelledBy: by } },
+  );
+  if (!done.modifiedCount) return false;
+  if (e.at.getTime() + shipEvents.LASTS_MS > Date.now()) {
+    for (const id of e.going || []) {
+      if (String(id) === String(by.id)) continue;
+      for (const s of socketsOfPlayer(id)) {
+        s.emit("event-cancelled", { id: String(e._id), title: e.title, room: e.room });
+      }
+    }
+  }
+  io.emit("events-changed", { kind: "cancelled", id: String(e._id) });
+  return true;
+}
+
+// A banned passenger's coming events go with them
+async function cancelEventsOf(userId, actor) {
+  const theirs = await ShipEvent.find({
+    "host.id": oid(userId),
+    cancelled: false,
+    at: { $gt: new Date(Date.now() - shipEvents.LASTS_MS) },
+  }).lean();
+  for (const e of theirs) {
+    await cancelEvent(e, { id: actor._id, name: moderation.nameOf(actor), moderator: true });
+  }
+}
+
+// ── The numbers on the bottom bar's buttons (modules/badges.js) ───────────
+// Inbox: messages unread. Money: money received since the Money card was
+// last opened. Events: events posted by others since the Events card was
+// last opened, and not over or cancelled.
+async function badgesOf(userId, only) {
+  const me = oid(userId);
+  const want = (card) => !only || only === card;
+  const user = await User.findById(me).select("cardsSeen").lean();
+  const seen = (user && user.cardsSeen) || {};
+  const after = (date) => (date ? { $gt: date } : { $exists: true });
+  const [inboxCount, moneyCount, eventsCount] = await Promise.all([
+    want("inbox") ? InboxMessage.countDocuments({ "to.id": me, ...UNREAD }) : null,
+    want("money")
+      ? MoneyTransfer.countDocuments({ "to.id": me, at: after(seen.money) })
+      : null,
+    want("events")
+      ? ShipEvent.countDocuments({
+          cancelled: false,
+          "host.id": { $ne: me },
+          createdAt: after(seen.events),
+          at: { $gt: new Date(Date.now() - shipEvents.LASTS_MS) },
+        })
+      : null,
+  ]);
+  const counts = { ok: true };
+  if (inboxCount !== null) counts.inbox = inboxCount;
+  if (moneyCount !== null) counts.money = moneyCount;
+  if (eventsCount !== null) counts.events = eventsCount;
+  return counts;
+}
+// the counts told to every open page of a passenger
+async function pushBadges(userId, only) {
+  const pages = socketsOfPlayer(userId);
+  if (!pages.length) return;
+  const counts = await badgesOf(userId, only);
+  for (const s of pages) s.emit("badges", counts);
 }
 
 // The connections of one player (a tab each)
@@ -3286,9 +3558,10 @@ io.on("connection", async (socket) => {
     reply(await moneyOverview(socket.sessionUserId));
   });
 
-  // Whom money can go to: every passenger but oneself and the banned, those
-  // aboard now first
-  onEvent("money-people", async (data, ack) => {
+  // Whom money and messages can go to: every passenger but oneself and the
+  // banned, those aboard now first ("money-people": the pages from before
+  // the Inbox ask by that name)
+  const passengers = async (data, ack) => {
     const reply = typeof ack === "function" ? ack : () => {};
     const users = await User.find({ ...money.aboardFilter(), _id: { $ne: socket.sessionUserId } })
       .select("character.forename character.surname character.cabin_number")
@@ -3303,7 +3576,9 @@ io.on("connection", async (socket) => {
       }))
       .sort((a, b) => Number(b.aboard) - Number(a.aboard) || a.name.localeCompare(b.name));
     reply({ ok: true, people });
-  });
+  };
+  onEvent("passengers", passengers);
+  onEvent("money-people", passengers);
 
   // Money sent to another passenger. Answered { ok, balance, to, amount } or
   // { ok: false, reason }; the other's open pages are told at once.
@@ -3342,6 +3617,220 @@ io.on("connection", async (socket) => {
     }
     console.info(`Money: ${sent.fromName} sent £${asked.amount.toFixed(2)} to ${sent.toName}`);
     reply({ ok: true, balance: sent.fromBalance, to: sent.toName, amount: asked.amount });
+    // (the number on the other's Money button)
+    pushBadges(sent.toId, "money").catch((err) => console.error("Badges:", err.message));
+  });
+
+  // ─── Messages between passengers (lib/inbox.js; the game's Inbox card) ───
+  // The list and the threads come from the database: a page asks no more
+  // than ten times in ten seconds
+  let inboxAsks = [];
+  const inboxAskTooSoon = () => {
+    const now = Date.now();
+    inboxAsks = inboxAsks.filter((t) => now - t < 10000);
+    if (inboxAsks.length >= 10) return true;
+    inboxAsks.push(now);
+    return false;
+  };
+
+  // The passengers written with, the latest first
+  onEvent("inbox-list", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    if (inboxAskTooSoon()) return reply({ ok: false, reason: "too-fast" });
+    reply({ ok: true, threads: await inboxList(socket.sessionUserId) });
+  });
+
+  // One thread, its messages to the reader marked read. The reader's other
+  // pages are told the new count, the writer's open thread that it was read.
+  onEvent("inbox-thread", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    const other = data && typeof data === "object" ? data.with : null;
+    if (!inbox.isId(other) || other.toLowerCase() === String(socket.sessionUserId)) {
+      return reply({ ok: false, reason: "no-one" });
+    }
+    if (inboxAskTooSoon()) return reply({ ok: false, reason: "too-fast" });
+    const thread = await inboxThread(socket.sessionUserId, other);
+    reply(thread);
+    if (thread.ok && thread.marked) {
+      pushBadges(socket.sessionUserId, "inbox").catch((err) => console.error("Badges:", err.message));
+      for (const s of socketsOfPlayer(thread.with.id)) {
+        s.emit("inbox-read", { by: String(socket.sessionUserId) });
+      }
+    }
+  });
+
+  // A message to another passenger. Answered { ok, to, message } or
+  // { ok: false, reason }; the other's open pages are told at once.
+  onEvent("inbox-send", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    const asked = inbox.cleanMessage(data);
+    if (asked.error) return reply({ ok: false, reason: asked.error });
+    // the moderators' measures: muted or locked in, nothing is sent
+    const mute = moderation.muteNow(socket.mod);
+    if (mute) return reply({ ok: false, reason: "muted", until: mute.until || null });
+    if (socket.mod && socket.mod.confinement) return reply({ ok: false, reason: "confined" });
+    const senderId = String(socket.sessionUserId);
+    if (asked.to === senderId) return reply({ ok: false, reason: "self" });
+    const times = messageTimes.get(senderId) || [];
+    messageTimes.set(senderId, times);
+    const paced = pace(times, inbox.PACE);
+    if (paced.error) return reply({ ok: false, reason: paced.error });
+
+    const sent = await sendMessage(senderId, asked.to, asked.text);
+    if (!sent.ok) {
+      times.pop(); // a message that did not go does not count against the pace
+      return reply(sent);
+    }
+    for (const s of socketsOfPlayer(asked.to)) {
+      s.emit("inbox-message", {
+        from: { id: senderId, name: sent.fromName },
+        message: { ...sent.message, out: false, read: false },
+      });
+    }
+    pushBadges(asked.to, "inbox").catch((err) => console.error("Badges:", err.message));
+    // (the sender's other pages show it in the thread too)
+    for (const s of socketsOfPlayer(senderId)) {
+      if (s !== socket) {
+        s.emit("inbox-sent", {
+          to: { id: asked.to, name: sent.toName },
+          message: { ...sent.message, out: true, read: false },
+        });
+      }
+    }
+    reply({ ok: true, to: sent.toName, message: { ...sent.message, out: true, read: false } });
+  });
+
+  // ─── Events aboard (lib/shipEvents.js; the game's Events card) ───────────
+  const canModerate = () => !!(socket.mod && socket.mod.role && !socket.mod.confinement);
+  let eventsAskedAt = 0;
+
+  // Events on now and coming, and the ship's time now (the card's clock)
+  onEvent("events-list", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    const now = Date.now();
+    if (now - eventsAskedAt < 1000) return reply({ ok: false, reason: "too-fast" });
+    eventsAskedAt = now;
+    const events = await eventsShown(now);
+    const moderator = canModerate();
+    reply({
+      ok: true,
+      clock: shipEvents.shipClock(voyageStartTime, now).minute,
+      events: events.map((e) => eventFor(e, socket.sessionUserId, moderator, now)),
+    });
+  });
+
+  // An event posted. Answered { ok, event } or { ok: false, reason }; every
+  // open page is told there is a new one.
+  onEvent("events-create", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    // the moderators' measures: a muted passenger posts no words for all to
+    // read, a locked-in one holds nothing anywhere
+    const mute = moderation.muteNow(socket.mod);
+    if (mute) return reply({ ok: false, reason: "muted", until: mute.until || null });
+    if (socket.mod && socket.mod.confinement) return reply({ ok: false, reason: "confined" });
+    const now = Date.now();
+    const asked = shipEvents.cleanEvent(data, {
+      voyageStart: voyageStartTime,
+      now,
+      isRoom: isEventRoom,
+    });
+    if (asked.error) return reply({ ok: false, reason: asked.error });
+    const hostId = String(socket.sessionUserId);
+    const start = asked.at.getTime();
+    const [hosting, clash, host] = await Promise.all([
+      ShipEvent.countDocuments({
+        "host.id": oid(hostId),
+        cancelled: false,
+        at: { $gt: new Date(now) },
+      }),
+      // one event at a time in a room: none within its hour either side
+      ShipEvent.exists({
+        room: asked.room,
+        cancelled: false,
+        at: {
+          $gt: new Date(start - shipEvents.LASTS_MS),
+          $lt: new Date(start + shipEvents.LASTS_MS),
+        },
+      }),
+      User.findById(hostId).select("character").lean(),
+    ]);
+    if (hosting >= shipEvents.HOSTED_AT_ONCE) return reply({ ok: false, reason: "hosting" });
+    if (clash) return reply({ ok: false, reason: "taken" });
+    const times = eventTimes.get(hostId) || [];
+    eventTimes.set(hostId, times);
+    const paced = pace(times, shipEvents.PACE, now);
+    if (paced.error) return reply({ ok: false, reason: paced.error });
+
+    const made = await ShipEvent.create({
+      ...asked,
+      host: { id: hostId, name: moderation.nameOf(host) },
+      going: [hostId],
+    });
+    console.info(`Event: ${made.host.name} holds "${made.title}" in ${made.room} at ${made.at.toISOString()}`);
+    io.emit("events-changed", { kind: "new", id: String(made._id), host: hostId });
+    reply({ ok: true, event: eventFor(made.toObject(), hostId, false, now) });
+  });
+
+  // "I'll be there", or not. Answered { ok, going, imGoing }.
+  onEvent("events-going", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    const id = data && typeof data === "object" ? data.id : null;
+    if (!inbox.isId(id)) return reply({ ok: false, reason: "gone" });
+    const me = oid(socket.sessionUserId);
+    const going = !!data.going;
+    const e = await ShipEvent.findOneAndUpdate(
+      { _id: oid(id), cancelled: false, at: { $gt: new Date(Date.now() - shipEvents.LASTS_MS) } },
+      going ? { $addToSet: { going: me } } : { $pull: { going: me } },
+      { new: true, projection: { going: 1 } },
+    ).lean();
+    if (!e) return reply({ ok: false, reason: "gone" });
+    reply({ ok: true, going: (e.going || []).length, imGoing: going });
+  });
+
+  // An event taken off by its host, or by a moderator (logged for the panel)
+  onEvent("events-cancel", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    const id = data && typeof data === "object" ? data.id : null;
+    if (!inbox.isId(id)) return reply({ ok: false, reason: "gone" });
+    const e = await ShipEvent.findOne({ _id: oid(id), cancelled: false }).lean();
+    if (!e) return reply({ ok: false, reason: "gone" });
+    const meId = String(socket.sessionUserId);
+    const mine = String(e.host && e.host.id) === meId;
+    if (!mine && !canModerate()) return reply({ ok: false, reason: "not-yours" });
+    const me = await User.findById(meId).select("character").lean();
+    const by = { id: oid(meId), name: moderation.nameOf(me), moderator: !mine };
+    if (!(await cancelEvent(e, by))) return reply({ ok: false, reason: "gone" });
+    if (!mine) {
+      await ModerationLog.create({
+        action: "remove-event",
+        actor: { id: by.id, name: by.name, role: socket.mod.role },
+        target: { id: e.host.id, name: e.host.name },
+        reason: e.title,
+        place: e.room,
+      });
+      console.info(`Moderation: ${by.name} removed the event "${e.title}" by ${e.host.name}`);
+    }
+    reply({ ok: true });
+  });
+
+  // ─── The numbers on the bottom bar's buttons (modules/badges.js) ─────────
+  let badgesAskedAt = 0;
+  onEvent("badges", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    const now = Date.now();
+    if (now - badgesAskedAt < 1000) return reply({ ok: false, reason: "too-fast" });
+    badgesAskedAt = now;
+    reply(await badgesOf(socket.sessionUserId));
+  });
+  // A card looked at: its number starts again from nothing (on every page)
+  onEvent("card-seen", async (data) => {
+    const card = data && typeof data === "object" ? data.card : null;
+    if (card !== "money" && card !== "events") return;
+    await User.updateOne(
+      { _id: socket.sessionUserId },
+      { $set: { [`cardsSeen.${card}`]: new Date() } },
+    );
+    await pushBadges(socket.sessionUserId, card);
   });
 
   onEvent("disconnect", () => {
@@ -3431,6 +3920,11 @@ const startServer = async () => {
   server.listen(PORT, () => {
     console.info(`Server running on port ${PORT}`);
   });
+
+  // Every chat is told as an event starts (lib/shipEvents.js)
+  setInterval(() => {
+    announceEvents().catch((err) => console.error("Events:", err.message));
+  }, 15 * 1000).unref();
 };
 
 // A malformed request body, or anything a route lets slip: a plain answer,

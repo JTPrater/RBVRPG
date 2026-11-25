@@ -88,6 +88,7 @@ Object.assign((window.RBV_I18N_DICT = window.RBV_I18N_DICT || {}).ru.exact, {
   "Unmuted": "Запрет на чат снят",
   "Unbanned": "Вход открыт",
   "Sent to the padded room": "Отправка в мягкую палату",
+  "Event removed": "Событие снято",
   "Sent to hell": "Отправка в ад",
   "Released": "Освобождение",
   "Made an admin": "Назначение администратором",
@@ -104,7 +105,6 @@ Object.assign((window.RBV_I18N_DICT = window.RBV_I18N_DICT || {}).ru.exact, {
   "A shared network can be a family, a school or a café.":
     "Одной сетью может пользоваться семья, школа или кафе.",
   // money (the passenger's card)
-  "Purse": "Кошелёк",
   "Money sent and received": "Деньги: отправлено и получено",
   "Sent or received": "Отправлено или получено",
   "Amount": "Сумма",

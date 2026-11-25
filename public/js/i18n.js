@@ -145,6 +145,14 @@
     [/^(.+) sent you (£\d+\.\d{2}) with a note: (.+)$/, (m, t) => t.moneyInNote && fill(t.moneyInNote, m[1], m[2], m[3])],
     [/^(.+) sent you (£\d+\.\d{2})\.$/, (m, t) => t.moneyIn && fill(t.moneyIn, m[1], m[2])],
     [/^Send (£\d+\.\d{2}) to (.+)\?$/, (m, t) => t.moneyAsk && fill(t.moneyAsk, m[1], m[2])],
+    // the Inbox and the Events card (modules/inbox.js, events.js): the names
+    // and titles are the passengers' own, the rooms the game's
+    [/^New message from (.+)\.$/, (m, t) => t.inboxNew && fill(t.inboxNew, m[1])],
+    [/^Hosted by (.+)$/, (m, t) => t.hostedBy && fill(t.hostedBy, m[1])],
+    [/^(\d+) going$/, (m, t) => t.goingCount && fill(t.goingCount, m[1])],
+    [/^Starting now in (.+?): (.+)$/, (m, t) => t.eventStarting && fill(t.eventStarting, tr(m[1]), m[2])],
+    [/^The event "(.+)" has been cancelled\.$/, (m, t) => t.eventCancelled && fill(t.eventCancelled, m[1])],
+    [/^Not posted: you are muted until (.+)\.$/, (m, t) => t.notPostedMutedUntil && fill(t.notPostedMutedUntil, m[1])],
   ];
   window.RBV_I18N_PATTERNS = PATTERNS; // (for the checks in scripts/i18n)
 

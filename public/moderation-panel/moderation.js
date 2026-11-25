@@ -63,6 +63,8 @@
     "make-admin": "Made an admin",
     "remove-admin": "No longer an admin",
     "reset-password": "Given a new password",
+    // (an event the passenger posted, taken off: the title is in "reason")
+    "remove-event": "Event removed",
   };
   const NEEDS_REASON = new Set(["ban", "padded", "hell"]);
   const TIMED = new Set(["mute", "ban"]);
@@ -389,7 +391,7 @@
           el("h2", { own: true }, p.name),
           el("p", { class: "mod-line" }, p.cabin ? `Cabin ${p.cabin}` : ""),
           typeof p.money === "number"
-            ? el("p", { class: "mod-line" }, el("span", null, "Purse"), " ", el("span", { class: "mod-money" }, `£${p.money.toFixed(2)}`))
+            ? el("p", { class: "mod-line" }, el("span", null, "Money"), " ", el("span", { class: "mod-money" }, `£${p.money.toFixed(2)}`))
             : null,
           p.email ? el("p", { class: "mod-line", own: true }, p.email) : null,
           el(
