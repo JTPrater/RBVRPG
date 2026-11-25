@@ -60,6 +60,13 @@ it and of the network (never the address), the first two and the latest four of
 each per account, and links accounts that share one. A player who clears their
 browser's data and changes network is not caught.
 
+The network is the player's own internet address, read past the machines a
+request passes through on its way in (Cloudflare's and Render's;
+`lib/clientAddress.js`). Those machines' addresses, and private ones, never
+count as a network. Until 25 November 2026 the server took Cloudflare's address
+for the player's, so strangers far apart were linked; the marks made that way
+were removed.
+
 ## Money
 
 Passengers send each other money from the Money card in the game (the bottom
