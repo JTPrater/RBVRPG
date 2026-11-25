@@ -15,6 +15,7 @@
     query: "",
     log: [],
     playerLog: [],
+    playerMoney: [], // the passenger's money sent and received
     busy: false,
     note: null, // { text, error } under the actions
     newPassword: null, // { id, password }: shown once
@@ -137,17 +138,23 @@
     if (f === "banned" && !p.ban) return false;
     if (f === "locked" && !p.confinement) return false;
     if (f === "staff" && !p.role) return false;
+    if (f === "flagged" && !p.flag) return false;
     const q = lower(state.query).trim();
     if (!q) return true;
     return [p.name, p.cabin, p.email].some((v) => lower(v).includes(q));
   }
 
-  function tagsOf(p) {
+  // a passenger's standing as tags; withFlag: and whether they may be a
+  // second account (by the same browser, in red; by the network only, in grey)
+  function tagsOf(p, withFlag = true) {
     const tags = [];
     if (p.role) tags.push([ROLE[p.role], "role"]);
     if (p.confinement) tags.push([PLACE[p.confinement.place], p.confinement.place]);
     if (p.ban) tags.push(["Banned", "ban"]);
     if (p.mute) tags.push(["Muted", "mute"]);
+    if (withFlag && p.flag) {
+      tags.push(["Possible second account", p.flag.kind === "browser" ? "flag" : "flag weak"]);
+    }
     return tags;
   }
 
@@ -193,6 +200,8 @@
     if (state.selected !== id) {
       state.note = null;
       state.newPassword = null;
+      state.playerLog = [];
+      state.playerMoney = [];
     }
     state.selected = id;
     renderList();
@@ -278,6 +287,7 @@
     const plog = card.querySelector(".mod-plog");
     plog.textContent = "";
     plog.append(el("h3", { class: "mod-sub" }, "This passenger's log"), logTable(state.playerLog, false));
+    plog.append(el("h3", { class: "mod-sub" }, "Money sent and received"), moneyTable(state.playerMoney));
   }
 
   // the reason box, the time list, and a place for the buttons
@@ -378,6 +388,9 @@
           null,
           el("h2", { own: true }, p.name),
           el("p", { class: "mod-line" }, p.cabin ? `Cabin ${p.cabin}` : ""),
+          typeof p.money === "number"
+            ? el("p", { class: "mod-line" }, el("span", null, "Purse"), " ", el("span", { class: "mod-money" }, `£${p.money.toFixed(2)}`))
+            : null,
           p.email ? el("p", { class: "mod-line", own: true }, p.email) : null,
           el(
             "p",
@@ -420,6 +433,55 @@
       );
     }
     if (blocks.length) box.append(el("div", { class: "mod-standings" }, ...blocks));
+    const linked = linkedBlock(p);
+    if (linked) box.append(linked);
+  }
+
+  // The accounts seen with this one's browser or network (server.js
+  // recordSeen), each with its own standing, and whether that flags this one
+  function linkedBlock(p) {
+    const links = p.links || { browser: [], network: [] };
+    if (!links.browser.length && !links.network.length) return null;
+    const names = (ids) =>
+      el(
+        "dd",
+        null,
+        ...ids
+          .map((id) => state.players.find((x) => x.id === id))
+          .filter(Boolean)
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((other) => {
+            const link = el("button", { type: "button", class: "mod-link", own: true }, other.name);
+            link.addEventListener("click", () => select(other.id));
+            return el(
+              "span",
+              { class: "mod-linked" },
+              link,
+              ...tagsOf(other, false).map(([text, kind]) => el("span", { class: `mod-tag ${kind}` }, text)),
+            );
+          }),
+      );
+    return el(
+      "div",
+      { class: `mod-links${p.flag ? ` flagged ${p.flag.kind}` : ""}` },
+      el("h3", null, "Linked accounts"),
+      p.flag
+        ? el(
+            "p",
+            { class: "mod-flag-note" },
+            "Possibly a second account of a passenger who is banned, locked in or muted.",
+          )
+        : null,
+      el(
+        "dl",
+        null,
+        ...(links.browser.length ? [el("dt", null, "Same browser"), names(links.browser)] : []),
+        ...(links.network.length ? [el("dt", null, "Same network"), names(links.network)] : []),
+      ),
+      links.network.length
+        ? el("p", { class: "mod-note" }, "A shared network can be a family, a school or a café.")
+        : null,
+    );
   }
 
   async function act(p, action) {
@@ -452,6 +514,9 @@
       if ($("mod-reason")) $("mod-reason").value = "";
       renderList();
       renderDetail(false);
+      // the whole list again: a ban or a lock-in flags the accounts linked
+      // to this one (and lifting it unflags them)
+      refresh();
       loadLog();
       loadPlayerLog();
     } else {
@@ -529,11 +594,60 @@
   async function loadPlayerLog() {
     const id = state.selected;
     if (!id) return;
-    const { body } = await api(`/api/mod/log?player=${encodeURIComponent(id)}`);
-    if (body && body.ok && state.selected === id) {
-      state.playerLog = body.entries;
-      renderDetail(true);
-    }
+    const [{ body }, money] = await Promise.all([
+      api(`/api/mod/log?player=${encodeURIComponent(id)}`),
+      api(`/api/mod/transfers?player=${encodeURIComponent(id)}`),
+    ]);
+    if (state.selected !== id) return;
+    if (body && body.ok) state.playerLog = body.entries;
+    if (money.body && money.body.ok) state.playerMoney = money.body.transfers;
+    renderDetail(true);
+  }
+
+  // The passenger's money sent and received (where a purse's money came
+  // from: a player's second accounts emptying theirs into it show here)
+  function moneyTable(list) {
+    if (!list.length) return el("p", { class: "mod-empty" }, "Nothing yet.");
+    return el(
+      "div",
+      { class: "mod-log-scroll" },
+      el(
+        "table",
+        { class: "mod-log-table" },
+        el(
+          "thead",
+          null,
+          el(
+            "tr",
+            null,
+            el("th", { scope: "col" }, "When"),
+            el("th", { scope: "col" }, "Sent or received"),
+            el("th", { scope: "col" }, "Passenger"),
+            el("th", { scope: "col" }, "Amount"),
+            el("th", { scope: "col" }, "Note"),
+          ),
+        ),
+        el(
+          "tbody",
+          null,
+          ...list.map((t) => {
+            const who = el("button", { type: "button", class: "mod-link", own: true }, t.other);
+            who.addEventListener("click", () => {
+              if (state.players.some((x) => x.id === t.otherId)) select(t.otherId);
+            });
+            return el(
+              "tr",
+              null,
+              el("td", null, when(t.at)),
+              el("td", null, t.out ? "Sent" : "Received"),
+              el("td", null, who),
+              el("td", { class: "mod-money" }, `${t.out ? "−" : "+"}£${t.amount.toFixed(2)}`),
+              el("td", { own: true }, t.note),
+            );
+          }),
+        ),
+      ),
+    );
   }
 
   // --------------------------------------------------------- looking again

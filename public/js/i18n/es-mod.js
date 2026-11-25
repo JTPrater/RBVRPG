@@ -92,4 +92,22 @@ Object.assign((window.RBV_I18N_DICT = window.RBV_I18N_DICT || {}).es.exact, {
   "Made an admin": "Nombrado administrador",
   "No longer an admin": "Ya no es administrador",
   "Given a new password": "Contraseña nueva entregada",
+  // second accounts
+  "Flagged": "Sospechosos",
+  "Possible second account": "Posible segunda cuenta",
+  "Linked accounts": "Cuentas vinculadas",
+  "Same browser": "Mismo navegador",
+  "Same network": "Misma red",
+  "Possibly a second account of a passenger who is banned, locked in or muted.":
+    "Posiblemente sea la segunda cuenta de un pasajero con la entrada prohibida, bajo llave o silenciado.",
+  "A shared network can be a family, a school or a café.":
+    "Una misma red puede ser la de una familia, una escuela o un café.",
+  // money (the passenger's card)
+  "Purse": "Monedero",
+  "Money sent and received": "Dinero enviado y recibido",
+  "Sent or received": "Enviado o recibido",
+  "Amount": "Cantidad",
+  "Note": "Nota",
+  "Sent": "Enviado",
+  "Received": "Recibido",
 });

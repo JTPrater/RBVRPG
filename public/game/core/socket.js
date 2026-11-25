@@ -4,12 +4,13 @@
     // Which of the characters logged in on this browser this tab plays (see
     // core/me.js), named again at every reconnection: without it a dropped
     // connection came back as whoever had logged in last, in any tab
+    // (and this browser's mark for the moderators: js/device.js)
     auth: (cb) => {
       let player = "";
       try {
         player = sessionStorage.getItem("playerId") || "";
       } catch (e) {}
-      cb({ player });
+      cb({ player, device: window.RBV_DEVICE || "" });
     },
   });
 

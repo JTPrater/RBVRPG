@@ -172,6 +172,18 @@
 .mod-tag.padded_room {
   color: #6b4a1f;
 }
+/* a possible second account: the same browser as a passenger who is banned,
+   locked in or muted, in the red block; the same network only, in grey */
+.mod-tag.flag {
+  border-color: var(--red);
+  background: var(--red);
+  color: #fffaf0;
+}
+.mod-tag.flag.weak {
+  border-color: var(--ink-3);
+  background: transparent;
+  color: var(--ink-2);
+}
 
 /* ---------- One passenger ---------- */
 .mod-detail {
@@ -231,6 +243,57 @@
 .mod-standing dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+/* the accounts seen with the same browser or network */
+.mod-links {
+  margin-bottom: 16px;
+  border-left: 3px solid var(--rule);
+  padding: 4px 0 4px 10px;
+}
+.mod-links.flagged.browser {
+  border-left-color: var(--red);
+}
+.mod-links.flagged.network {
+  border-left-color: var(--ink-3);
+}
+.mod-links h3 {
+  font-size: 18px;
+  margin-bottom: 2px;
+}
+.mod-flag-note {
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+.mod-links.flagged.browser .mod-flag-note {
+  color: var(--red);
+}
+.mod-links dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 15px;
+}
+.mod-links dt {
+  color: var(--ink-3);
+  font-style: italic;
+}
+.mod-links dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+}
+.mod-linked {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.mod-links .mod-note {
+  margin-top: 4px;
+  font-size: 14px;
 }
 
 .mod-form {

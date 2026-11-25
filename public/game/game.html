@@ -356,6 +356,47 @@
         <!-- Deck plan room tooltip, outside the popup so the popup's transform doesn't offset it -->
         <div id="room-tooltip" class="room-tooltip"></div>
 
+        <!-- Money (modules/money.js): the purse, sending money to another
+             passenger, the richest aboard and one's own recent sends -->
+        <div id="money-popup" class="settings-popup money-popup">
+          <div class="settings-content">
+            <span class="close-money" role="button" tabindex="0" aria-label="Close">&times;</span>
+            <h2>Money</h2>
+            <div class="money-columns">
+              <div class="money-column">
+                <div class="money-purse">
+                  <span class="money-label">Your purse</span>
+                  <span id="money-balance" class="money-balance">£0.00</span>
+                  <span id="money-place" class="money-place"></span>
+                </div>
+                <section class="money-send" aria-labelledby="money-send-title">
+                  <h3 id="money-send-title">Send money</h3>
+                  <label for="money-to">To</label>
+                  <select id="money-to">
+                    <option value="">Choose a passenger</option>
+                  </select>
+                  <label for="money-amount">Amount (£)</label>
+                  <input type="number" id="money-amount" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" />
+                  <label for="money-note">Note (optional)</label>
+                  <input type="text" id="money-note" maxlength="80" placeholder="What it is for" autocomplete="off" />
+                  <button type="button" id="money-send-btn" class="money-send-btn">Send</button>
+                  <p id="money-status" class="money-status" role="status"></p>
+                </section>
+              </div>
+              <div class="money-column">
+                <section aria-labelledby="money-richest-title">
+                  <h3 id="money-richest-title">Richest aboard</h3>
+                  <ol id="money-richest" class="money-richest"></ol>
+                </section>
+                <section aria-labelledby="money-recent-title">
+                  <h3 id="money-recent-title">Recent</h3>
+                  <ul id="money-recent" class="money-recent"></ul>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div id="rules-popup" class="settings-popup">
           <div class="settings-content">
             <span class="close-rules">&times;</span>
@@ -581,6 +622,8 @@
     <script src="../game/data/skyData.js"></script>
     <script src="../game/core/rbv.js"></script>
     <script src="../game/core/log.js"></script>
+    <!-- this browser's mark, sent as the game connects (for the moderators) -->
+    <script src="/js/device.js"></script>
     <script src="../game/core/socket.js"></script>
     <script src="../game/core/util.js"></script>
     <script src="../game/core/layout.js"></script>
@@ -595,6 +638,7 @@
     <script src="../game/modules/routeMap.js"></script>
     <script src="../game/modules/musicPlayer.js"></script>
     <script src="../game/modules/stats.js"></script>
+    <script src="../game/modules/money.js"></script>
     <script src="../game/menuData.js?v=1"></script>
     <script src="../game/data/deckRooms.js"></script>
     <script src="../game/data/roomImages.js"></script>

@@ -147,7 +147,8 @@ async function handleLogin(event) {
     response = await fetch("/api/check-credentials", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      // (device: this browser's mark for the moderators, js/device.js)
+      body: JSON.stringify({ email, password, device: window.RBV_DEVICE || "" }),
     });
     result = await response.json().catch(() => null);
   } catch (error) {

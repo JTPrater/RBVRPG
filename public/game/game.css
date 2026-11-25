@@ -732,6 +732,15 @@ body::-webkit-scrollbar-thumb {
   pointer-events: none;
 }
 
+/* the pointer over Mars in the night sky (a click takes one there) */
+html.over-mars,
+html.over-mars body,
+html.over-mars .game-wrapper,
+html.over-mars .game-container,
+html.over-mars .ui-wrapper {
+  cursor: pointer;
+}
+
 /* Soft atmospheric band where sea meets sky; one variant per sky phase,
    crossfaded by celestial.js the same way the sky gradients crossfade */
 .horizon-haze {

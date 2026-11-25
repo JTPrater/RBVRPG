@@ -3166,6 +3166,8 @@ document.addEventListener("DOMContentLoaded", function () {
   function sayNow(text) {
     addChatMessage({ type: "system", message: text, room: currentRoom.name, timestamp: Date.now() });
   }
+  // (and for the other modules: money sent and received, modules/money.js)
+  RBV.sayInChat = sayNow;
   function mutedNow() {
     const m = moderationState.mute;
     return !!m && (!m.until || Date.parse(m.until) > Date.now());
@@ -4473,6 +4475,13 @@ document.addEventListener("DOMContentLoaded", function () {
         image: "Mars.jpg",
       },
     });
+  };
+  // Mars in the night sky, clicked (modules/celestial.js), takes the player
+  // there; not before the game has begun (enterRoom keeps a locked-in
+  // player's door shut, Mars or no Mars)
+  RBV.visitMars = () => {
+    if (!currentRoom.name) return;
+    window[SECRET_ROOM_ALIAS]();
   };
 
   const locationImageSystem = {

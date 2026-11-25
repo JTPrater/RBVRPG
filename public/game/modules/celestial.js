@@ -591,6 +591,10 @@ function ensureLayers() {
     saturn: [250, 230, 175],
   };
 
+  // Mars as last drawn ({ x, y, r, a } on the canvas), null when not drawn:
+  // a click on it takes the player to the Mars room (below, "Mars")
+  let marsDrawn = null;
+
   function drawPlanets(planets, sunAlt, moon, cloud, cloudDim, now) {
     if (!planets) return;
     const glow = moonSkyglow(moon);
@@ -618,6 +622,7 @@ function ensureLayers() {
       // planets read as small steady discs, clearly fatter than the
       // point-like twinkling stars around them
       const r = clamp(2.9 - 0.42 * pl.mag, 1.5, 4.4);
+      if (pl.name === "mars") marsDrawn = { x: p.x, y: p.y, r, a };
       const redn = clamp((X - 1) * 0.05, 0, 0.8);
       const col = lerpRgb(
         PLANET_TINTS[pl.name] || [255, 245, 225],
@@ -1085,6 +1090,7 @@ function ensureLayers() {
     waterCtx.globalAlpha = 1;
     skyCtx.clearRect(0, 0, W, H);
     waterCtx.clearRect(0, 0, W, H);
+    marsDrawn = null; // (drawn again below, if it shows)
     // Recompute the gradient stops from THIS frame's sun altitude, then draw
     // them — keeps the sky perfectly in step with the bodies (no cross-loop
     // jitter between the timelapse loop and this one).
@@ -1124,6 +1130,53 @@ function ensureLayers() {
     }
   }
 
+  // ── Mars ────────────────────────────────────────────────────────────────
+  // On every night of the voyage Mars stands low in the south-south-west
+  // after dusk (some 25° up, a little left of Spica, until it sets after
+  // midnight), and the curious who click it find themselves in the Mars room
+  // (game.js RBV.visitMars). Only while it can be seen: in daylight, deep
+  // twilight's first minutes or under heavy cloud it cannot be clicked.
+  const MARS_MIN_ALPHA = 0.15;
+  const MARS_REACH_PX = 16; // on the screen, round its centre (it is tiny)
+  function onMars(clientX, clientY) {
+    if (!marsDrawn || marsDrawn.a < MARS_MIN_ALPHA || !skyCanvas) return false;
+    const rect = skyCanvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return false;
+    const sx = rect.width / W;
+    const sy = rect.height / H;
+    const dx = clientX - rect.left - marsDrawn.x * sx;
+    const dy = clientY - rect.top - marsDrawn.y * sy;
+    const reach = Math.max(MARS_REACH_PX, marsDrawn.r * 3 * sx);
+    return dx * dx + dy * dy <= reach * reach;
+  }
+  // The scene's layers let the pointer through; a pointer that reached one of
+  // these lay on nothing of the page's own (a panel, a button, a card)
+  const SCENE_BEHIND =
+    ".ui-wrapper, .game-container, .game-wrapper, .sprite-container, .scene-layer";
+  function onScene(target) {
+    return (
+      target === document.body ||
+      target === document.documentElement ||
+      (target instanceof Element && target.matches(SCENE_BEHIND))
+    );
+  }
+  document.addEventListener("click", (e) => {
+    if (!onScene(e.target) || !onMars(e.clientX, e.clientY)) return;
+    if (typeof RBV.visitMars === "function") RBV.visitMars();
+  });
+  // the pointer becomes a hand over Mars: the only hint there is
+  let overMars = false;
+  document.addEventListener(
+    "mousemove",
+    (e) => {
+      const over = onScene(e.target) && onMars(e.clientX, e.clientY);
+      if (over === overMars) return;
+      overMars = over;
+      document.documentElement.classList.toggle("over-mars", over);
+    },
+    { passive: true },
+  );
+
   document.addEventListener("DOMContentLoaded", () => {
     if (started) return;
     if (!ensureLayers()) return;
@@ -1138,6 +1191,19 @@ function ensureLayers() {
     },
     refreshWeather() {
       lastWeatherAt = 0;
+    },
+    // where Mars was last drawn, on the canvas (or null), and on the page
+    get mars() {
+      return marsDrawn;
+    },
+    marsOnPage() {
+      if (!marsDrawn || !skyCanvas) return null;
+      const rect = skyCanvas.getBoundingClientRect();
+      return {
+        x: rect.left + (marsDrawn.x * rect.width) / W,
+        y: rect.top + (marsDrawn.y * rect.height) / H,
+        visible: marsDrawn.a >= MARS_MIN_ALPHA,
+      };
     },
   };
 })(window.RBV);
