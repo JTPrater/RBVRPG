@@ -68,14 +68,65 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("hashchange", () => {
     if (location.hash === "#login") openLogin();
   });
+
+  // Sent here from the game by a moderator's ban (game core/socket.js): the
+  // card says so
+  let banned = null;
+  try {
+    banned = JSON.parse(sessionStorage.getItem("rbv:banned") || "null");
+    sessionStorage.removeItem("rbv:banned");
+  } catch (e) {}
+  if (banned) {
+    openLogin();
+    showBan(banned);
+  }
+  // the ban's date is written in the page's language: again when it changes
+  document.addEventListener("rbv:language", () => {
+    if (shownBan) showBan(shownBan);
+  });
 });
 
+// The ban the card is showing (or null)
+let shownBan = null;
+function showBan(ban) {
+  showLoginError(banLines(ban));
+  shownBan = ban;
+}
+
 // What went wrong, on the card itself (in the page's language: i18n.js
-// watches the page)
+// watches the page). Several lines: one sentence each.
 function showLoginError(message) {
-  const line = document.getElementById("login-error");
-  line.textContent = message || "";
-  line.hidden = !message;
+  shownBan = null;
+  const box = document.getElementById("login-error");
+  const lines = (Array.isArray(message) ? message : [message]).filter(Boolean);
+  box.textContent = "";
+  lines.forEach((text, i) => {
+    if (i) box.appendChild(document.createElement("br"));
+    box.appendChild(document.createTextNode(text));
+  });
+  box.hidden = !lines.length;
+}
+
+// A ban, as the passenger is told it: until when (in the page's language),
+// and why (the moderator's own words)
+function banLines({ until, reason } = {}) {
+  let when = "";
+  const d = until ? new Date(until) : null;
+  if (d && !isNaN(d.getTime())) {
+    const lang = (window.RBV_I18N && window.RBV_I18N.lang) || "en";
+    const options = { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" };
+    try {
+      when = d.toLocaleString(lang === "en" ? "en-GB" : lang, options);
+    } catch (e) {
+      when = d.toLocaleString();
+    }
+  }
+  return [
+    when
+      ? `This passenger has been banned until ${when}.`
+      : "This passenger has been banned.",
+    reason ? `Reason: ${reason}` : "",
+  ];
 }
 
 // Every outcome says something: a refused password, too many attempts, a
@@ -111,6 +162,8 @@ async function handleLogin(event) {
     if (result.playerId) sessionStorage.setItem("playerId", result.playerId);
     else sessionStorage.removeItem("playerId");
     window.location.href = "/game";
+  } else if (result && result.banned) {
+    showBan(result);
   } else if (response && response.status === 429) {
     // the server says how long to wait
     showLoginError(

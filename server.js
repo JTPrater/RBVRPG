@@ -25,6 +25,7 @@ const {
 } = require("./lib/voyageState");
 const { lookupMenuItem } = require("./lib/menuCatalog");
 const { createSocketGameAuth } = require("./lib/socketGameAuth");
+const moderation = require("./lib/moderation");
 
 // Initialize Express and Server
 const app = express();
@@ -77,6 +78,41 @@ io.use((socket, next) => {
   const refused = new Error("not-logged-in");
   refused.data = { reason: "not-logged-in" };
   next(refused);
+});
+
+// The player's record, read as they connect and before any of their events
+// are taken (lib/moderation.js): a banned player is turned away, and one
+// locked in the padded room or hell is put there before they can ask for any
+// other room. When the record cannot be read the connection is turned away
+// too, to be tried again in a moment (game core/socket.js): let in unread, a
+// locked-in player could walk out.
+io.use(async (socket, next) => {
+  const refuse = (reason, extra = {}) => {
+    const error = new Error(reason);
+    error.data = { reason, ...extra };
+    next(error);
+  };
+  if (!mongoose.isValidObjectId(socket.playerId)) return refuse("not-logged-in");
+  let user;
+  try {
+    user = await User.findById(socket.playerId)
+      .select("email character chatColor isAdmin isOwner moderation")
+      .lean();
+  } catch (err) {
+    console.error("Could not read a connecting player's record:", err.message);
+    return refuse("try-again");
+  }
+  if (!user) return refuse("not-logged-in");
+  const status = moderation.statusOf(user);
+  if (status.ban) {
+    return refuse("banned", { until: status.ban.until, why: status.ban.reason });
+  }
+  socket.mod = status;
+  socket.userEmail = user.email;
+  socket.character = user.character || null;
+  socket.sessionUserId = user._id;
+  socket.savedChatColor = user.chatColor;
+  next();
 });
 
 // Global voyage start time (loaded from DB or set on first boot)
@@ -231,6 +267,7 @@ const initMongoDB = async () => {
 
 const User = require("./models/User");
 const ServerState = require("./models/ServerState");
+const ModerationLog = require("./models/ModerationLog");
 const { requireSessionUser } = createSocketGameAuth(User);
 
 // Multer Configuration with Cloudinary
@@ -414,11 +451,27 @@ app.use((req, res, next) => {
   next();
 });
 
+// An address as the file server reads it: decoded, its doubled slashes and
+// "." and ".." steps resolved. A check on the address as sent can be stepped
+// round ("/game/%74ools/...", "/js/../game/tools/..." reach the same file).
+// null: it does not decode (and no file is served for it).
+function servedPath(req) {
+  let p;
+  try {
+    p = decodeURIComponent(req.path);
+  } catch (e) {
+    return null;
+  }
+  return path.posix.normalize(p.replace(/\/{2,}/g, "/"));
+}
+
 // Not for the public: the room editor's backups of the deck data, and the
 // editor's own page (it is served through /admin/room-editor, which checks
-// the admin flag; the static copy skipped that check)
+// the owner; the static copy skipped that check). The moderation panel's
+// files are kept by the gate below (MOD_FILES).
 app.use((req, res, next) => {
-  if (/\.bak$/i.test(req.path) || /^\/game\/tools\//i.test(req.path)) {
+  const p = servedPath(req);
+  if (p && (/\.bak$/i.test(p) || /^\/game\/tools\//i.test(p))) {
     return res.sendStatus(404);
   }
   next();
@@ -439,6 +492,34 @@ const assetsReady =
         })
         .catch((error) => console.error("Minifying failed; files sent as written:", error.message));
 const sendPage = pageSender(minifiedAssets, __dirname);
+
+// The moderation panel's own files (its page, script, stylesheet and words)
+// go to moderators only, never stored on the way (sendPage: no-store). To
+// anyone else they are not there at all: not found, like any address that
+// does not exist (the panel's address too: /moderation, below). Checked here,
+// ahead of the site's public files, with the browser's login read for these
+// addresses alone.
+const MOD_FILES = new Map([
+  ["/moderation-panel/moderation.html", "public/moderation-panel/moderation.html"],
+  ["/moderation-panel/moderation.js", "public/moderation-panel/moderation.js"],
+  ["/moderation-panel/moderation.css", "public/moderation-panel/moderation.css"],
+  ["/js/i18n/ru-mod.js", "public/js/i18n/ru-mod.js"],
+  ["/js/i18n/es-mod.js", "public/js/i18n/es-mod.js"],
+]);
+const MOD_ONLY = /^\/(moderation-panel\/|js\/i18n\/[a-z]+-mod\.js$)/i;
+app.use((req, res, next) => {
+  const p = servedPath(req);
+  if (!p || !MOD_ONLY.test(p)) return next();
+  sessionMiddleware(req, res, async () => {
+    try {
+      const file = MOD_FILES.get(p);
+      if (file && (await moderatorOf(req))) return sendPage(res, file);
+    } catch (error) {
+      console.error("Could not check a moderation file's reader:", error.message);
+    }
+    res.sendStatus(404);
+  });
+});
 
 // Of lib/, the browser loads only these; the rest is the server's own code
 const BROWSER_LIB = new Set(["/astro.js", "/voyageState.js", "/weather.js"]);
@@ -800,6 +881,19 @@ app.post("/api/check-credentials", loginLimiter, async (req, res) => {
       return res.json({ success: false });
     }
 
+    // A banned passenger is told so, and until when (the right password: not
+    // counted against the address's login limit)
+    const ban = moderation.statusOf(user).ban;
+    if (ban) {
+      res.locals.loginSucceeded = true;
+      return res.status(403).json({
+        success: false,
+        banned: true,
+        until: ban.until,
+        reason: ban.reason,
+      });
+    }
+
     await logInPlayer(req, user._id);
     console.info(`User logged in: ${user._id}`);
     res.locals.loginSucceeded = true; // not counted against the login limit
@@ -814,11 +908,20 @@ app.post("/api/check-credentials", loginLimiter, async (req, res) => {
   }
 });
 
-// Admin-only: reset a user's password to a server-generated temporary password.
-// This endpoint does NOT reveal existing plaintext passwords (they are hashed),
-// but it does allow an admin to reset a user's password and log the temporary
-// password to the server console for administrative purposes (only recommended
-// if you understand the security risk of server logs).
+// A new password for a passenger who has lost theirs: easy to read out, and
+// shown once, to the owner who asked for it (never logged)
+const TEMP_PASSWORD_LETTERS = "abcdefghjkmnpqrstuvwxyz23456789";
+function temporaryPassword() {
+  return Array.from(
+    crypto.randomBytes(10),
+    (b) => TEMP_PASSWORD_LETTERS[b % TEMP_PASSWORD_LETTERS.length],
+  ).join("");
+}
+
+// The ship's owner's own tools (the room editor, the voyage's clock, a
+// passenger's new password): for the owner only, now that the owner makes
+// admins from the moderation panel, and an admin is there to moderate. The
+// moderation panel gives a new password too (/api/mod/action).
 app.post("/api/admin/reset-password", authLimiter, async (req, res) => {
   try {
     // Ensure requester is authenticated
@@ -826,49 +929,33 @@ app.post("/api/admin/reset-password", authLimiter, async (req, res) => {
     if (!requesterId) return res.status(403).json({ error: "Not authorized" });
 
     const requester = await User.findById(requesterId);
-    if (!requester || !requester.isAdmin) {
-      return res.status(403).json({ error: "Admin privileges required" });
+    if (!requester || !requester.isOwner) {
+      return res.status(403).json({ error: "Owner only" });
     }
 
     const { email } = req.body;
-    if (!email) return res.status(400).json({ error: "Email is required" });
+    if (typeof email !== "string" || !email) {
+      return res.status(400).json({ error: "Email is required" });
+    }
 
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    // Generate a secure temporary password
-    const tempPass = crypto
-      .randomBytes(10)
-      .toString("base64")
-      .replace(/[^a-zA-Z0-9]/g, "")
-      .slice(0, 12);
-
-    // Hash and save the temporary password
-    const hashed = await bcrypt.hash(tempPass, 10);
-    user.password = hashed;
+    // It used to be saved and never shown to anyone, which only locked the
+    // passenger out: now the owner is told it, to pass on
+    const tempPass = temporaryPassword();
+    user.password = await bcrypt.hash(tempPass, 10);
     await user.save();
+    console.info(`[OWNER] New password given to ${user._id} (not logged)`);
 
-    // Log to server console for the admin to copy and communicate securely.
-    // NOTE: This is sensitive — logs can be read by others. Prefer emailing a
-    // reset link or sending the temporary password via an admin-only channel.
-    // Log that a temp password was generated, but do not print the plaintext password to logs
-    console.info(
-      `[ADMIN] Temporary password generated for ${email} (not logged)`,
-    );
-
-    // (Optional) Here you could send an email with nodemailer — omitted for brevity.
-
-    res.json({
-      success: true,
-      message: "Temporary password generated and saved",
-    });
+    res.json({ success: true, temporaryPassword: tempPass });
   } catch (error) {
     console.error("Admin reset-password error:", error);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
 
-// Admin-only: reset the voyage to restart the clock from now
+// Owner-only: reset the voyage to restart the clock from now
 app.post("/api/admin/reset-voyage", authLimiter, async (req, res) => {
   try {
     const sessionUserId = req.session?.userId;
@@ -876,7 +963,7 @@ app.post("/api/admin/reset-voyage", authLimiter, async (req, res) => {
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
     const admin = await User.findById(sessionUserId);
-    if (!admin?.isAdmin) {
+    if (!admin?.isOwner) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
@@ -995,7 +1082,7 @@ app.get("/admin/room-editor", async (req, res) => {
   if (!req.session?.userId) return res.redirect("/");
   try {
     const admin = await User.findById(req.session.userId);
-    if (!admin?.isAdmin) return res.status(403).send("Forbidden");
+    if (!admin?.isOwner) return res.status(403).send("Forbidden");
   } catch (e) {
     return res.status(500).send("Server error");
   }
@@ -1007,7 +1094,7 @@ app.post("/api/admin/save-rooms", authLimiter, async (req, res) => {
     if (!req.session?.userId)
       return res.status(401).json({ success: false, error: "Unauthorized" });
     const admin = await User.findById(req.session.userId);
-    if (!admin?.isAdmin)
+    if (!admin?.isOwner)
       return res.status(403).json({ success: false, error: "Forbidden" });
 
     const { deckRooms, deckViewBoxes, roomClassColors } = req.body || {};
@@ -1098,6 +1185,21 @@ app.post("/api/report", reportLimiter, async (req, res) => {
       return res
         .status(401)
         .json({ success: false, error: "Please log in to send a report" });
+    }
+    // a banned passenger's login can outlive the ban's start in their
+    // browser: it sends nothing to the moderators' channel
+    const reporter = mongoose.isValidObjectId(req.session.userId)
+      ? await User.findById(req.session.userId).select("moderation").lean()
+      : null;
+    if (!reporter) {
+      return res
+        .status(401)
+        .json({ success: false, error: "Please log in to send a report" });
+    }
+    if (moderation.statusOf(reporter).ban) {
+      return res
+        .status(403)
+        .json({ success: false, error: "This passenger has been banned." });
     }
     const body = req.body || {};
     const asText = (v, max) =>
@@ -1233,6 +1335,203 @@ app.get("/game", (req, res) => {
 
 app.get("/list", (req, res) => {
   sendPage(res, "public/main/list.html");
+});
+
+// ── The moderation panel (/moderation; lib/moderation.js has the rules) ─────
+const modLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 900, // the panel looks again every 15 s, and each action is one more
+  handler: limitReached("requests"),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// The moderator at this browser: of the characters logged in on it, the one
+// standing highest (the owner before an admin), or null if none is either.
+// An admin who is banned or locked in moderates nobody (a ban leaves their
+// login in the browser's cookie for up to a day).
+async function moderatorOf(req) {
+  const ids = sessionPlayers(req.session).filter((id) => mongoose.isValidObjectId(id));
+  if (!ids.length) return null;
+  const users = await User.find({ _id: { $in: ids } })
+    .select("isAdmin isOwner character moderation")
+    .lean();
+  let best = null;
+  for (const user of users) {
+    const standing = moderation.statusOf(user);
+    if (standing.ban || standing.confinement) continue;
+    const role = moderation.roleOf(user);
+    if (role && (!best || (role === "owner" && best.role !== "owner"))) {
+      best = { user, role };
+    }
+  }
+  return best;
+}
+
+async function requireModerator(req, res, next) {
+  try {
+    const found = await moderatorOf(req);
+    if (!found) {
+      return res.status(403).json({ ok: false, error: "Only moderators can do that." });
+    }
+    req.moderator = found;
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+// The panel's page, for moderators; anyone else finds no such page (the
+// same "not found" as any address that does not exist)
+app.get("/moderation", async (req, res, next) => {
+  try {
+    if (!(await moderatorOf(req))) return next();
+    res.setHeader("X-Robots-Tag", "noindex");
+    sendPage(res, "public/moderation-panel/moderation.html");
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Who is aboard, and where (the room of a connection that stands in one)
+function playersAboard() {
+  const aboard = new Map();
+  for (const s of io.of("/").sockets.values()) {
+    if (!s.playerId) continue;
+    const seen = aboard.get(s.playerId);
+    if (!seen || (!seen.room && s.rbvRoom)) aboard.set(s.playerId, { room: s.rbvRoom || null });
+  }
+  return aboard;
+}
+
+const MOD_FIELDS = "email isAdmin isOwner character moderation";
+
+app.get("/api/mod/players", modLimiter, requireModerator, async (req, res, next) => {
+  try {
+    const users = await User.find({}).select(MOD_FIELDS).lean();
+    const aboard = playersAboard();
+    const viewerRole = req.moderator.role;
+    const now = Date.now();
+    const players = users
+      .filter((u) => u.character && u.character.forename)
+      .map((u) =>
+        moderation.summary(u, { online: aboard.get(String(u._id)) || null, viewerRole, now }),
+      );
+    res.json({
+      ok: true,
+      me: {
+        id: String(req.moderator.user._id),
+        name: moderation.nameOf(req.moderator.user),
+        role: viewerRole,
+      },
+      players,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/mod/log", modLimiter, requireModerator, async (req, res, next) => {
+  try {
+    const filter = {};
+    const player = req.query.player;
+    if (typeof player === "string" && mongoose.isValidObjectId(player)) {
+      filter["target.id"] = player;
+    }
+    const entries = await ModerationLog.find(filter).sort({ at: -1 }).limit(200).lean();
+    res.json({
+      ok: true,
+      entries: entries.map((e) => ({
+        at: e.at,
+        action: e.action,
+        actor: (e.actor && e.actor.name) || "",
+        actorRole: (e.actor && e.actor.role) || "",
+        target: (e.target && e.target.name) || "",
+        targetId: e.target && e.target.id ? String(e.target.id) : "",
+        reason: e.reason || "",
+        until: e.until || null,
+        place: e.place || "",
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// One moderator's action on one passenger: checked (lib/moderation.js
+// refusal, and again by the database in the update itself), written to the
+// passenger's record and to the log, and carried to the passenger's open
+// pages at once (applyStatus: a ban ends them; the padded room and hell take
+// them in)
+app.post("/api/mod/action", modLimiter, requireModerator, async (req, res, next) => {
+  try {
+    // JSON only: a form posted from another site can send no such thing
+    if (!req.is("application/json")) {
+      return res.status(415).json({ ok: false, error: "Bad request" });
+    }
+    const asked = moderation.cleanRequest(req.body);
+    if (asked.error) return res.status(400).json({ ok: false, error: asked.error });
+    const { action, player, reason, minutes } = asked;
+    const actor = req.moderator.user;
+    const role = req.moderator.role;
+
+    const target = await User.findById(player).select(MOD_FIELDS).lean();
+    const refused = moderation.refusal(actor, target, action);
+    if (refused) {
+      return res.status(target ? 403 : 404).json({ ok: false, error: refused });
+    }
+
+    let newPassword = null;
+    let update;
+    if (action === "reset-password") {
+      newPassword = temporaryPassword();
+      update = { $set: { password: await bcrypt.hash(newPassword, 10) } };
+    } else {
+      update = moderation.updateFor(action, { actor, reason, minutes });
+    }
+    const done = await User.updateOne(moderation.guardFilter(actor, action, target._id), update);
+    if (!done.matchedCount) {
+      return res.status(409).json({
+        ok: false,
+        error: "Another moderator has just changed this passenger. Look again.",
+      });
+    }
+
+    const fresh = await User.findById(target._id).select(MOD_FIELDS).lean();
+    const status = moderation.statusOf(fresh);
+    await ModerationLog.create({
+      action,
+      actor: { id: actor._id, name: moderation.nameOf(actor), role },
+      target: { id: fresh._id, name: moderation.nameOf(fresh) },
+      reason,
+      until:
+        (action === "mute" && status.mute && status.mute.until) ||
+        (action === "ban" && status.ban && status.ban.until) ||
+        null,
+      place: action === "padded" ? "padded_room" : action === "hell" ? "hell" : "",
+    });
+    console.info(
+      `Moderation: ${moderation.nameOf(actor)} (${role}) ${action} ${moderation.nameOf(fresh)} (${fresh._id})`,
+    );
+
+    for (const s of socketsOfPlayer(fresh._id)) {
+      applyStatus(s, status, moderation.EVENT_OF[action]);
+    }
+    // off the other rooms' lists at once, connected or not
+    if (status.ban) dropLingering(fresh._id, null);
+    else if (status.confinement) dropLingering(fresh._id, status.confinement.place);
+
+    res.json({
+      ok: true,
+      player: moderation.summary(fresh, {
+        online: playersAboard().get(String(fresh._id)) || null,
+        viewerRole: role,
+      }),
+      ...(newPassword ? { newPassword } : {}),
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // At the top of server.js, maintain a user-color mapping
@@ -1562,6 +1861,132 @@ function presenceExit(socket, roomId, { grace = false } = {}) {
   }
 }
 
+// Puts a connection in a room: out of the one it stood in, into this one. The
+// room is told of a real arrival only (not a second tab, a reconnection within
+// the grace period, or the same connection again).
+function placeSocket(socket, room) {
+  const from = socket.rbvRoom;
+  if (from && from !== room) {
+    socket.leave(from);
+    presenceExit(socket, from);
+  }
+  socket.join(room);
+  socket.rbvRoom = room;
+  const character = socket.character;
+  if (presenceEnter(socket, room, character)) {
+    socket.to(room).emit("user-joined", { character, socketId: socket.id, roomId: room });
+    emitRoomCount(room);
+    emitRoomPlayers(room);
+  } else {
+    socket.emit("room-players", { roomId: room, players: roomPlayerList(room) });
+  }
+}
+
+// ── Moderation (lib/moderation.js) ───────────────────────────────────────────
+// The padded room and hell are rooms like any other to the chat and the
+// passenger lists, though on no deck plan
+for (const place of Object.keys(moderation.PLACES)) {
+  if (!allowedRoomSet.has(place)) {
+    allowedRoomSet.add(place);
+    allowedRooms.push(place);
+  }
+}
+
+// A locked-in connection put in its room (the padded room or hell) and its
+// page told so: event "confined" (a moderator has just locked them in),
+// "locked" (their page asked for another room), or none (as they connect,
+// after the status has gone)
+function sendToPlace(socket, place, event) {
+  if (socket.rbvRoom !== place) placeSocket(socket, place);
+  dropLingering(socket.sessionUserId, place);
+  if (!moderation.PLACES[place].poker) socket.pokerGame = null;
+  if (event) {
+    socket.emit("moderation-status", { ...moderation.forPlayer(socket.mod), event });
+  }
+}
+
+// A player locked in (or banned) stands nowhere else: a room still counting
+// them from a dropped connection (its grace period, presenceExit) hears they
+// have left now, not when the grace runs out. A room where another tab of
+// theirs stands is left alone: that tab is moved on its own (applyStatus).
+// keepRoom: the room they are locked in (null for a ban).
+function dropLingering(userId, keepRoom) {
+  if (!userId) return;
+  const key = `user:${userId}`;
+  for (const [roomId, members] of roomPresence) {
+    if (roomId === keepRoom) continue;
+    const entry = members.get(key);
+    if (!entry || entry.sockets.size) continue;
+    if (entry.leaveTimer) clearTimeout(entry.leaveTimer);
+    members.delete(key);
+    if (!members.size) roomPresence.delete(roomId);
+    io.to(roomId).emit("user-left", { character: entry.character, socketId: null, roomId });
+    emitRoomCount(roomId);
+    emitRoomPlayers(roomId);
+  }
+}
+
+// Cards are dealt anywhere a player may be, except where a locked-in
+// player's room has none (hell)
+function cardsAllowed(socket) {
+  const confinement = socket.mod && socket.mod.confinement;
+  return !confinement || moderation.PLACES[confinement.place].poker;
+}
+
+// A connection's standing changed (a moderator acted, or it was found
+// changed): a ban ends the connection; otherwise the connection keeps the new
+// standing, a locked-in player is put in their room, and the page is told.
+// `event`: what happened, as the page words it (moderation.EVENT_OF); worked
+// out from the change when not given.
+function applyStatus(socket, status, event) {
+  if (status.ban) {
+    socket.emit("moderation-banned", { until: status.ban.until, reason: status.ban.reason });
+    socket.disconnect(true);
+    return;
+  }
+  const before = socket.mod;
+  socket.mod = status;
+  const told = event || moderation.eventBetween(before, status);
+  const place = status.confinement && status.confinement.place;
+  if (place) {
+    sendToPlace(socket, place, told || null);
+  } else if (told) {
+    socket.emit("moderation-status", { ...moderation.forPlayer(status), event: told });
+  }
+}
+
+// The connections of one player (a tab each)
+function socketsOfPlayer(userId) {
+  const id = String(userId);
+  const list = [];
+  for (const s of io.of("/").sockets.values()) {
+    if (s.playerId === id) list.push(s);
+  }
+  return list;
+}
+
+// The record read again for a connection just let in: a moderator's action
+// taken while it was being let in did not reach it. If it cannot be read,
+// the connection is let go (its page connects again, and is checked again as
+// it does): kept on a standing that may be out of date, a player locked in
+// or muted in that moment could have walked out, or talked.
+async function refreshModeration(socket) {
+  try {
+    const user = await User.findById(socket.playerId)
+      .select("isAdmin isOwner moderation")
+      .lean();
+    if (!socket.connected) return;
+    if (!user) {
+      socket.disconnect(true);
+      return;
+    }
+    applyStatus(socket, moderation.statusOf(user));
+  } catch (err) {
+    console.error("Could not read a player's record again:", err.message);
+    socket.disconnect(true);
+  }
+}
+
 function getCurrentVoyageState() {
   return computeVoyageStateAt(voyageStartTime);
 }
@@ -1749,6 +2174,17 @@ app.get("/api/get_available_cabins", (req, res) => {
   res.json(availableCabins);
 });
 
+// How fast each need falls, a second (the game's own rates: modules/stats.js),
+// and drink wears off
+const NEED_DECAY_PER_SECOND = {
+  hunger: 0.005,
+  thirst: 0.007,
+  energy: 0.003,
+  hygiene: 0.002,
+  bladder: 0.006,
+};
+const INTOXICATION_FALL_PER_SECOND = 0.01;
+
 async function populateSocketUserEmail(socket, includeCharacter = false) {
   if (!socket.userEmail && socket.playerId) {
     const selection = includeCharacter ? "email character" : "email";
@@ -1790,12 +2226,13 @@ async function handleLoadStats(socket) {
     const now = Date.now();
     const timeDiffSeconds = (now - user.stats.lastUpdated) / 1000;
 
-    const hungerDecay = Math.min(100, timeDiffSeconds * 0.005);
-    const thirstDecay = Math.min(100, timeDiffSeconds * 0.007);
-    const energyDecay = Math.min(100, timeDiffSeconds * 0.003);
-    const hygieneDecay = Math.min(100, timeDiffSeconds * 0.002);
-    const bladderDecay = Math.min(100, timeDiffSeconds * 0.006);
-    const intoxicationDecay = Math.max(0, timeDiffSeconds * 0.01);
+    const decay = (key) => Math.min(100, timeDiffSeconds * NEED_DECAY_PER_SECOND[key]);
+    const hungerDecay = decay("hunger");
+    const thirstDecay = decay("thirst");
+    const energyDecay = decay("energy");
+    const hygieneDecay = decay("hygiene");
+    const bladderDecay = decay("bladder");
+    const intoxicationDecay = Math.max(0, timeDiffSeconds * INTOXICATION_FALL_PER_SECOND);
 
     const currentMoneyVersion = user.stats.moneyVersion || 0;
     if (currentMoneyVersion < 1) {
@@ -1848,16 +2285,41 @@ async function handleSaveStats(socket, statsData) {
     // to 100 (and no account is made up for an email that has none)
     const data = statsData && typeof statsData === "object" ? statsData : {};
     const need = (v) => Math.min(100, Math.max(0, Number(v) || 0));
+    const values = {
+      hunger: need(data.hunger),
+      thirst: need(data.thirst),
+      energy: need(data.energy),
+      hygiene: need(data.hygiene),
+      bladder: need(data.bladder),
+      intoxication: need(data.intoxication),
+    };
+
+    // In hell nothing eases a need, and there is nothing to drink: whatever a
+    // page sends (one altered in the browser's own tools could send them all
+    // full), none goes above what it has fallen to since it was last kept
+    const confinement = socket.mod && socket.mod.confinement;
+    if (confinement && confinement.place === "hell") {
+      const user = await User.findOne({ email: targetEmail }).select("stats").lean();
+      const kept = (user && user.stats) || {};
+      const since = kept.lastUpdated ? new Date(kept.lastUpdated).getTime() : Date.now();
+      const seconds = Math.max(0, (Date.now() - since) / 1000);
+      const rates = { ...NEED_DECAY_PER_SECOND, intoxication: INTOXICATION_FALL_PER_SECOND };
+      for (const [key, rate] of Object.entries(rates)) {
+        const fallen = Math.max(0, (Number(kept[key]) || 0) - seconds * rate);
+        values[key] = Math.min(values[key], fallen);
+      }
+    }
+
     await User.findOneAndUpdate(
       { email: targetEmail },
       {
         $set: {
-          "stats.hunger": need(data.hunger),
-          "stats.thirst": need(data.thirst),
-          "stats.energy": need(data.energy),
-          "stats.hygiene": need(data.hygiene),
-          "stats.bladder": need(data.bladder),
-          "stats.intoxication": need(data.intoxication),
+          "stats.hunger": values.hunger,
+          "stats.thirst": values.thirst,
+          "stats.energy": values.energy,
+          "stats.hygiene": values.hygiene,
+          "stats.bladder": values.bladder,
+          "stats.intoxication": values.intoxication,
           "stats.lastUpdated": Date.now(),
         },
       },
@@ -1896,7 +2358,7 @@ io.on("connection", async (socket) => {
   const onEvent = (event, handler) =>
     socket.on(
       event,
-      guardSocketHandler(event, (...args) => {
+      guardSocketHandler(event, async (...args) => {
         if (event !== "disconnect") {
           const now = Date.now();
           if (now - floodWindow > 1000) {
@@ -1904,6 +2366,11 @@ io.on("connection", async (socket) => {
             floodCount = 0;
           }
           if (++floodCount > 40) return undefined;
+          // Nothing the connection asks is done before its record has been
+          // read again (refreshModeration, below): a lock-in, ban or mute
+          // given while it was being let in holds from its first event
+          await socket.modReady;
+          if (!socket.connected) return undefined;
         }
         return handler(...args);
       }),
@@ -1918,48 +2385,31 @@ io.on("connection", async (socket) => {
   socket.emit("voyage-start-time", voyageStartTime);
   socket.emit("voyage-state", voyageStateMessage());
 
-  // Who this is, from the session. Looked up alongside the handlers below
-  // rather than before them: until a handler is in place its events are lost,
-  // and a reconnecting client sends "join-room" the moment it connects (it was
-  // dropped, and the player stood in no room). Handlers that need the player
-  // load them themselves (requireSessionUser).
-  userChatColors[socket.id] = "#c0932b";
-  (async () => {
-    let assignedColor = "#c0932b";
-    const sessionUserId = socket.playerId; // this tab's character (see io.use)
-
-    if (sessionUserId) {
-      try {
-        const dbUser = await User.findById(sessionUserId).select(
-          "email chatColor character",
-        );
-        if (dbUser) {
-          socket.userEmail = dbUser.email;
-          socket.character = dbUser.character || null;
-          socket.sessionUserId = dbUser._id;
-          if (isChatColor(dbUser.chatColor)) {
-            assignedColor = dbUser.chatColor;
-          }
-        }
-      } catch (err) {
-        console.error(
-          `Error loading session user ${sessionUserId}:`,
-          err.message,
-        );
-      }
-    }
-    if (!socket.connected) return; // gone while we looked
-
-    userChatColors[socket.id] = assignedColor;
-
-    if (socket.sessionUserId) {
-      handleLoadStats(socket);
-    }
-
-    // Send the assigned color to the connected client
-    socket.emit("assign-chat-color", assignedColor);
-  })();
+  // Who this is: their record was read as they connected (io.use above), so
+  // it is here before any of their events, a reconnecting page's "join-room"
+  // included
+  const assignedColor = isChatColor(socket.savedChatColor)
+    ? socket.savedChatColor
+    : "#c0932b";
+  userChatColors[socket.id] = assignedColor;
+  handleLoadStats(socket);
+  socket.emit("assign-chat-color", assignedColor);
   socket.emit("game-user-count", gameClientCount);
+
+  // The room this connection stands in (set by "join-room", and by the
+  // moderators: sendToPlace)
+  socket.rbvRoom = null;
+
+  // Their standing with the moderators, for their page; a player locked in
+  // stands in their room from the first moment (whatever their page asks)
+  socket.emit("moderation-status", moderation.forPlayer(socket.mod));
+  if (socket.mod && socket.mod.confinement) {
+    sendToPlace(socket, socket.mod.confinement.place);
+  }
+  // A moderator's action taken while this connection was being let in (after
+  // its record was read, before it was among the connections they reach):
+  // the record read again, and every event waits for it (onEvent)
+  socket.modReady = refreshModeration(socket);
 
   // Where the story stands (the whole passenger list is no longer sent: the
   // game never used it, and the list page reads /api/passengers)
@@ -1972,8 +2422,11 @@ io.on("connection", async (socket) => {
     });
   }
 
-  // Initialize per-socket variables
-  let currentRoom = null;
+  // The page asks again once its moderation module is listening (an answer
+  // sent as it connected can come before that)
+  onEvent("request-moderation-status", () => {
+    socket.emit("moderation-status", moderation.forPlayer(socket.mod));
+  });
 
   onEvent("load-stats", async () => {
     const auth = await requireSessionUser(socket);
@@ -2016,29 +2469,21 @@ io.on("connection", async (socket) => {
       console.info(`Game client count increased: ${gameClientCount}`);
     }
     if (isAllowedRoom(room)) {
-      // Leave old room if switching rooms
-      if (currentRoom && currentRoom !== room) {
-        socket.leave(currentRoom);
-        presenceExit(socket, currentRoom);
+      // Locked in by a moderator: their own room and no other, whatever the
+      // page asks (it is told again where they are, and shows it)
+      const confinement = socket.mod && socket.mod.confinement;
+      if (confinement && room !== confinement.place) {
+        console.warn(`Locked-in player asked for ${room}: kept in ${confinement.place}`);
+        sendToPlace(socket, confinement.place, "locked");
+        return;
+      }
+      // The padded room and hell take only those locked in there, and the
+      // moderators who visit them
+      if (!confinement && moderation.isPlace(room) && !(socket.mod && socket.mod.role)) {
+        return;
       }
 
-      socket.join(room);
-      socket.character = character; // Store character data on socket
-      currentRoom = room;
-      // Only a real arrival is announced: not a second tab, a reconnection
-      // within the grace period, or the same socket joining again
-      if (presenceEnter(socket, room, character)) {
-        socket
-          .to(room)
-          .emit("user-joined", { character, socketId: socket.id, roomId: room });
-        emitRoomCount(room);
-        emitRoomPlayers(room);
-      } else {
-        socket.emit("room-players", {
-          roomId: room,
-          players: roomPlayerList(room),
-        });
-      }
+      placeSocket(socket, room);
 
       // Send recent message history for this room
       const roomHistory = roomMessageHistory[room] || [];
@@ -2078,6 +2523,23 @@ io.on("connection", async (socket) => {
 
     if (!isAllowedRoom(roomId)) {
       console.warn("Message sent to invalid or missing room");
+      return reply({ ok: false, reason: "room" });
+    }
+
+    // Muted by a moderator: nothing goes out until the time is up
+    const mute = moderation.muteNow(socket.mod);
+    if (mute) return reply({ ok: false, reason: "muted", until: mute.until });
+    // Locked in: lines are said in their own room only; and none is said in
+    // the padded room or hell by anyone else but a moderator standing there
+    const confinement = socket.mod && socket.mod.confinement;
+    if (confinement && roomId !== confinement.place) {
+      return reply({ ok: false, reason: "room" });
+    }
+    if (
+      !confinement &&
+      moderation.isPlace(roomId) &&
+      !(socket.mod && socket.mod.role && socket.rbvRoom === roomId)
+    ) {
       return reply({ ok: false, reason: "room" });
     }
 
@@ -2169,8 +2631,12 @@ io.on("connection", async (socket) => {
       console.warn("Telegraph order sent to invalid or missing room");
       return;
     }
-    // Only from the room one stands in, and not faster than a hand can ring it
-    if (room !== currentRoom) return;
+    // Only from the room one stands in, and not faster than a hand can ring it;
+    // never by a player locked in (there is no telegraph in a cell), nor by a
+    // muted one (each ring puts a line with their name in everyone's chat)
+    if (room !== socket.rbvRoom) return;
+    if (socket.mod && socket.mod.confinement) return;
+    if (moderation.muteNow(socket.mod)) return;
     const telegNow = Date.now();
     if (telegNow - (socket.lastTelegraph || 0) < 400) return;
     socket.lastTelegraph = telegNow;
@@ -2243,10 +2709,13 @@ io.on("connection", async (socket) => {
 
     const { room } = data || {};
     if (isAllowedRoom(room)) {
+      // A player locked in does not leave their room (not even for none)
+      const confinement = socket.mod && socket.mod.confinement;
+      if (confinement && room === confinement.place) return;
       socket.leave(room);
       presenceExit(socket, room);
-      if (currentRoom === room) {
-        currentRoom = null;
+      if (socket.rbvRoom === room) {
+        socket.rbvRoom = null;
       }
     }
   });
@@ -2392,6 +2861,11 @@ io.on("connection", async (socket) => {
       const { bet } = payload || {};
       const auth = await requireSessionUser(socket);
       if (!auth.ok) return;
+      // no cards where a locked-in player's room has none (hell)
+      if (!cardsAllowed(socket)) {
+        socket.emit("poker-error", { message: "There are no cards here." });
+        return;
+      }
       const betAmount = Number(bet) || 0;
       if (!VALID_BETS.includes(betAmount)) return;
 
@@ -2445,6 +2919,7 @@ io.on("connection", async (socket) => {
       const game = socket.pokerGame;
       if (!game) return;
       socket.pokerGame = null;
+      if (!cardsAllowed(socket)) return; // dealt before they were sent to hell
       // Draw replacements from the stored deck
       for (let i = 0; i < 5; i++) {
         if (!held[i]) {
@@ -2506,6 +2981,20 @@ io.on("connection", async (socket) => {
         return;
       }
 
+      // A player locked in is served their room's fare and nothing else
+      // (the padded room: rice and water; hell: nothing)
+      const confinement = socket.mod && socket.mod.confinement;
+      if (
+        confinement &&
+        !moderation.PLACES[confinement.place].menu.includes(menuItem.name)
+      ) {
+        socket.emit("purchase-result", {
+          success: false,
+          message: "That is not served here.",
+        });
+        return;
+      }
+
       const cost = Number(menuItem.price) || 0;
       if (cost <= 0) {
         socket.emit("purchase-result", { success: true, money: null });
@@ -2555,11 +3044,11 @@ io.on("connection", async (socket) => {
         console.info(`Game client count decremented: ${gameClientCount}`);
       }
 
-      if (currentRoom) {
+      if (socket.rbvRoom) {
         // The room hears "has left" only if the player does not come back
         // within the grace period (a phone dropping its connection, a reload)
-        presenceExit(socket, currentRoom, { grace: true });
-        console.info(`${socket.id} disconnected from room: ${currentRoom}`);
+        presenceExit(socket, socket.rbvRoom, { grace: true });
+        console.info(`${socket.id} disconnected from room: ${socket.rbvRoom}`);
       }
 
       // Remove the user's character data

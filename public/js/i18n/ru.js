@@ -41,6 +41,12 @@
     tooMany: "Слишком много попыток. Подождите {0} мин. и попробуйте снова.",
     fieldTooLong: "{0}: не больше {1} символов",
     cabinNamed: "Каюта {0}",
+    // the moderators' word ({0}: a date, already in Russian; the reason as the moderator wrote it)
+    modMutedUntil: "Модератор запретил вам писать в чат до {0}.",
+    mutedUntil: "Вам запрещено писать в чат до {0}.",
+    notSentMutedUntil: "Не отправлено: вам запрещено писать в чат до {0}.",
+    bannedUntil: "Вход на корабль для этого пассажира закрыт до {0}.",
+    reason: "Причина: {0}",
   },
   exact: {
     // the game screen
@@ -379,5 +385,27 @@
     // logging in
     "Too many login attempts. Please wait a few minutes and try again.": "Слишком много попыток входа. Подождите несколько минут и попробуйте снова.",
     "The ship could not be reached. Check your connection and try again.": "Не удалось связаться с кораблём. Проверьте подключение и попробуйте снова.",
+    // the moderators: the padded room and hell, mutes and bans (game.js; the panel's own words are in ru-mod.js)
+    "Padded Room": "Мягкая палата",
+    "Hell": "Ад",
+    "The door is locked. Only a moderator can let you out.": "Дверь заперта. Выпустить вас может только модератор.",
+    "There is no way out of hell.": "Из ада выхода нет.",
+    "A moderator has sent you to the padded room.": "Модератор отправил вас в мягкую палату.",
+    "A moderator has sent you to hell.": "Модератор отправил вас в ад.",
+    "You are locked in the padded room.": "Вы заперты в мягкой палате.",
+    "You are in hell.": "Вы в аду.",
+    "A moderator has let you out.": "Модератор вас выпустил.",
+    "A moderator has muted you.": "Модератор запретил вам писать в чат.",
+    "You are muted.": "Вам запрещено писать в чат.",
+    "You can speak again.": "Вы снова можете писать в чат.",
+    "Not sent: you are muted.": "Не отправлено: вам запрещено писать в чат.",
+    "Not sent: nobody can hear you there.": "Не отправлено: там вас никто не услышит.",
+    "There are no cards here.": "Здесь нет карт.",
+    "That is not served here.": "Здесь такое не подают.",
+    "This passenger has been banned.": "Вход на корабль для этого пассажира закрыт.",
+    "Moderation": "Модерация",
+    "Moderation panel": "Панель модерации",
+    "Visit the padded room": "Зайти в мягкую палату",
+    "Visit hell": "Зайти в ад",
   },
 };

@@ -34,6 +34,12 @@
     tooMany: "Demasiados intentos. Espera {0} min y vuelve a intentarlo.",
     fieldTooLong: "{0}: {1} caracteres como máximo",
     cabinNamed: "Camarote {0}",
+    // the moderators' word ({0}: a date, already in Spanish; the reason as the moderator wrote it)
+    modMutedUntil: "Un moderador te ha silenciado hasta el {0}.",
+    mutedUntil: "No puedes escribir en el chat hasta el {0}.",
+    notSentMutedUntil: "No enviado: no puedes escribir en el chat hasta el {0}.",
+    bannedUntil: "Este pasajero tiene prohibida la entrada al barco hasta el {0}.",
+    reason: "Motivo: {0}",
   },
   exact: {
     // the game screen
@@ -368,5 +374,27 @@
     // logging in
     "Too many login attempts. Please wait a few minutes and try again.": "Demasiados intentos de inicio de sesión. Espera unos minutos y vuelve a intentarlo.",
     "The ship could not be reached. Check your connection and try again.": "No se pudo contactar con el barco. Comprueba tu conexión y vuelve a intentarlo.",
+    // the moderators: the padded room and hell, mutes and bans (game.js; the panel's own words are in es-mod.js)
+    "Padded Room": "Celda acolchada",
+    "Hell": "Infierno",
+    "The door is locked. Only a moderator can let you out.": "La puerta está cerrada con llave. Solo un moderador puede sacarte.",
+    "There is no way out of hell.": "Del infierno no se sale.",
+    "A moderator has sent you to the padded room.": "Un moderador te ha enviado a la celda acolchada.",
+    "A moderator has sent you to hell.": "Un moderador te ha enviado al infierno.",
+    "You are locked in the padded room.": "Estás bajo llave en la celda acolchada.",
+    "You are in hell.": "Estás en el infierno.",
+    "A moderator has let you out.": "Un moderador te ha dejado salir.",
+    "A moderator has muted you.": "Un moderador te ha silenciado.",
+    "You are muted.": "No puedes escribir en el chat.",
+    "You can speak again.": "Ya puedes volver a escribir en el chat.",
+    "Not sent: you are muted.": "No enviado: no puedes escribir en el chat.",
+    "Not sent: nobody can hear you there.": "No enviado: allí nadie puede oírte.",
+    "There are no cards here.": "Aquí no hay cartas.",
+    "That is not served here.": "Eso no se sirve aquí.",
+    "This passenger has been banned.": "Este pasajero tiene prohibida la entrada al barco.",
+    "Moderation": "Moderación",
+    "Moderation panel": "Panel de moderación",
+    "Visit the padded room": "Visitar la celda acolchada",
+    "Visit hell": "Visitar el infierno",
   },
 };

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Britannic Voyage - Moderation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/css/front.css" />
+    <!-- the panel's own files are served to moderators only (server.js MOD_FILES) -->
+    <link rel="stylesheet" href="/moderation-panel/moderation.css" />
+    <!-- the page in the moderator's language; the rooms' names come with the game's part -->
+    <script src="/js/i18n.js" data-parts="game mod"></script>
+  </head>
+  <body class="mod">
+    <header class="board">
+      <nav class="board-links" aria-label="Pages">
+        <a href="/game">Back to the ship</a>
+        <a href="/main/main.html">Home</a>
+      </nav>
+      <select class="lang-select" aria-label="Language"></select>
+    </header>
+
+    <main class="sheet">
+      <div class="mod-head">
+        <h1>Moderation</h1>
+        <p class="mod-who" id="mod-who" hidden>
+          <span id="mod-me" data-no-i18n></span> · <span id="mod-role"></span>
+        </p>
+      </div>
+      <p class="form-error mod-page-error" id="mod-page-error" role="alert" hidden></p>
+
+      <div class="mod-grid">
+        <section class="mod-list" aria-labelledby="mod-list-title">
+          <h2 id="mod-list-title" class="visually-hidden">Passengers</h2>
+          <label for="mod-search" class="visually-hidden">Find a passenger</label>
+          <input type="text" id="mod-search" placeholder="Find a passenger" autocomplete="off" />
+          <div class="mod-filters" role="group" aria-label="Show">
+            <button type="button" data-filter="all" aria-pressed="true">All</button>
+            <button type="button" data-filter="aboard" aria-pressed="false">Aboard</button>
+            <button type="button" data-filter="muted" aria-pressed="false">Muted</button>
+            <button type="button" data-filter="banned" aria-pressed="false">Banned</button>
+            <button type="button" data-filter="locked" aria-pressed="false">Locked in</button>
+            <button type="button" data-filter="staff" aria-pressed="false">Moderators</button>
+          </div>
+          <p class="mod-count" id="mod-count"></p>
+          <ul class="mod-players" id="mod-players"></ul>
+        </section>
+
+        <section class="mod-detail" id="mod-detail" aria-live="polite">
+          <p class="mod-empty">Choose a passenger.</p>
+        </section>
+      </div>
+
+      <section class="mod-log" aria-labelledby="mod-log-title">
+        <h2 id="mod-log-title">Log</h2>
+        <div class="mod-log-scroll">
+          <table class="mod-log-table">
+            <thead>
+              <tr>
+                <th scope="col">When</th>
+                <th scope="col">Moderator</th>
+                <th scope="col">Action</th>
+                <th scope="col">Passenger</th>
+                <th scope="col">Until</th>
+                <th scope="col">Reason</th>
+              </tr>
+            </thead>
+            <tbody id="mod-log"></tbody>
+          </table>
+        </div>
+        <p class="mod-empty" id="mod-log-empty" hidden>Nothing yet.</p>
+      </section>
+    </main>
+
+    <!-- the room names of the deck plans (an id -> its name) -->
+    <script src="/game/core/rbv.js"></script>
+    <script src="/game/data/deckRooms.js"></script>
+    <script src="/moderation-panel/moderation.js"></script>
+  </body>
+</html>

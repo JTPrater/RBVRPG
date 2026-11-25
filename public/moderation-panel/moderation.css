@@ -1,0 +1,347 @@
+/* =====================================================================
+   The moderation panel (/moderation), on the front pages' printed paper
+   (front.css): the passengers down the left, the one chosen on the right,
+   the log beneath. Ink blocks to press, the one red for what bites.
+   ===================================================================== */
+
+.mod .sheet {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: clamp(18px, 2.4vw, 34px) clamp(14px, 2.4vw, 34px) 40px;
+}
+
+.mod-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 10px;
+  margin-bottom: 18px;
+}
+.mod-head h1 {
+  font-size: clamp(28px, 3vw, 36px);
+  line-height: 1.1;
+}
+.mod-who {
+  color: var(--ink-2);
+  font-style: italic;
+}
+.mod-page-error {
+  margin: -6px 0 14px;
+}
+
+.mod-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: clamp(16px, 2.4vw, 32px);
+  align-items: start;
+}
+/* (a column no wider than the screen: the log's table scrolls on its own) */
+.mod-list,
+.mod-detail {
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .mod-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- The passengers ---------- */
+.mod-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+.mod-filters button {
+  border: 1px solid var(--ink-2);
+  border-radius: 0;
+  padding: 3px 10px 4px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+.mod-filters button:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+.mod-filters button[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper-field);
+}
+.mod-count {
+  color: var(--ink-3);
+  font-size: 14px;
+  font-style: italic;
+  margin-bottom: 4px;
+}
+.mod-players {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 62vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--rule);
+}
+.mod-player {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  padding: 8px 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.mod-player:hover {
+  background: rgba(33, 26, 19, 0.05);
+}
+.mod-player[aria-current="true"] {
+  background: rgba(33, 26, 19, 0.09);
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+.mod-player:focus-visible {
+  outline: 1px solid var(--ink);
+  outline-offset: -2px;
+}
+.mod-avatar {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  object-fit: cover;
+  border: 1px solid var(--ink-2);
+  background: var(--paper-deep);
+}
+.mod-avatar.big {
+  width: 84px;
+  height: 84px;
+}
+.mod-player-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.mod-name {
+  font-size: 17px;
+  line-height: 1.2;
+}
+.mod-line {
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.mod-where {
+  font-style: italic;
+}
+.mod-where.on {
+  color: var(--ink);
+  font-style: normal;
+}
+
+.mod-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.mod-tag {
+  border: 1px solid currentColor;
+  padding: 0 6px 1px;
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}
+.mod-tag.role {
+  color: var(--brass-ink);
+}
+.mod-tag.mute {
+  color: var(--ink-2);
+}
+.mod-tag.ban,
+.mod-tag.hell {
+  color: var(--red);
+}
+.mod-tag.padded_room {
+  color: #6b4a1f;
+}
+
+/* ---------- One passenger ---------- */
+.mod-detail {
+  min-height: 200px;
+  border: 1px solid var(--rule);
+  padding: clamp(14px, 2vw, 24px);
+  background: rgba(250, 246, 236, 0.55);
+}
+.mod-empty {
+  color: var(--ink-3);
+  font-style: italic;
+}
+.mod-card-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.mod-card-head h2 {
+  font-size: 26px;
+  line-height: 1.15;
+  margin-bottom: 2px;
+}
+
+.mod-standings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.mod-standing {
+  border-left: 3px solid var(--ink-2);
+  padding: 4px 0 4px 10px;
+}
+.mod-standing.ban,
+.mod-standing.hell {
+  border-left-color: var(--red);
+}
+.mod-standing.padded_room {
+  border-left-color: #6b4a1f;
+}
+.mod-standing h3 {
+  font-size: 18px;
+  margin-bottom: 2px;
+}
+.mod-standing dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px 10px;
+  margin: 0;
+  font-size: 15px;
+}
+.mod-standing dt {
+  color: var(--ink-3);
+  font-style: italic;
+}
+.mod-standing dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.mod-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-bottom: 12px;
+}
+.mod-field {
+  flex: 1 1 260px;
+}
+.mod-field.short {
+  flex: 0 1 220px;
+}
+.mod-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mod-act {
+  padding: 8px 16px 9px;
+  font-size: 16px;
+}
+/* what bites hardest, in the red at rest too */
+.mod-act.ban,
+.mod-act.hell {
+  background-color: var(--red);
+}
+.mod-act.ban:hover,
+.mod-act.hell:hover {
+  background-color: #7c1b13;
+}
+
+.mod-note {
+  margin-top: 10px;
+  color: var(--ink-2);
+  font-style: italic;
+}
+.mod-done {
+  margin-top: 10px;
+  color: var(--ink);
+}
+.mod-detail .form-error {
+  margin-top: 10px;
+}
+.mod-password {
+  margin-top: 12px;
+  border: 1px dashed var(--ink-2);
+  padding: 10px 12px;
+}
+.mod-password code {
+  display: inline-block;
+  margin: 4px 0;
+  font-family: "Courier New", monospace;
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+.mod-sub {
+  margin: 22px 0 6px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 4px;
+  font-size: 18px;
+}
+
+/* ---------- The log ---------- */
+.mod-log {
+  margin-top: clamp(22px, 3vw, 36px);
+}
+.mod-log h2 {
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  font-size: 24px;
+}
+.mod-log-scroll {
+  overflow-x: auto;
+}
+.mod-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.mod-log-table th {
+  border-bottom: 1px solid var(--ink-2);
+  padding: 4px 10px 4px 0;
+  color: var(--ink-2);
+  font-weight: 400;
+  font-style: italic;
+  text-align: left;
+  white-space: nowrap;
+}
+.mod-log-table td {
+  border-bottom: 1px solid var(--rule);
+  padding: 5px 10px 5px 0;
+  vertical-align: top;
+}
+.mod-log-table td:first-child {
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.mod-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.mod-link:hover {
+  color: var(--red);
+}
