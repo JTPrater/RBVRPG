@@ -53,6 +53,22 @@ const userSchema = new mongoose.Schema({
     ban: measureSchema,
     confinement: confinementSchema,
   },
+  // The marks the account was last seen with (server.js recordSeen): its
+  // browser's ("browser", js/device.js) and its network's ("network"), each
+  // only as a keyed hash, never the address or the id itself. The moderation
+  // panel links accounts seen with the same mark (lib/moderation.js
+  // linkAccounts). The most recent 12 are kept.
+  seenOn: [
+    new mongoose.Schema(
+      {
+        kind: String,
+        hash: { type: String, index: true },
+        first: Date,
+        last: Date,
+      },
+      { _id: false },
+    ),
+  ],
   character: {
     forename: String,
     surname: String,
@@ -69,7 +85,8 @@ const userSchema = new mongoose.Schema({
     hygiene: { type: Number, default: 100 },
     bladder: { type: Number, default: 100 },
     intoxication: { type: Number, default: 0 },
-    money: { type: Number, default: 0 },
+    // (indexed: the Money card's list of the richest aboard)
+    money: { type: Number, default: 0, index: true },
     moneyVersion: { type: Number, default: 0 },
     lastUpdated: { type: Date, default: Date.now },
   },

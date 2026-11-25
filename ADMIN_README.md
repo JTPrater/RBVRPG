@@ -42,6 +42,36 @@ which is the live database.
 Moderators can visit either room (Settings → Moderation) to talk to the passenger,
 and leave by the deck plans as usual.
 
+## Second accounts
+
+The panel flags accounts that may belong to a passenger who is banned, locked in
+or muted ("Possible second account"; the "Flagged" filter lists them all), and
+each passenger's card lists their linked accounts:
+
+- **Same browser** (red flag): the two accounts were played in the same browser.
+  A strong sign of one person.
+- **Same network** (grey flag): they played on the same internet connection. A weak
+  sign: a family, a school or a café share one.
+
+Nothing is done to a flagged account by itself; a moderator decides. How it knows:
+each browser keeps a random id of its own (`public/js/device.js`), sent at login,
+registration and as the game connects. The server keeps only a scrambled code of
+it and of the network (never the address), the first two and the latest four of
+each per account, and links accounts that share one. A player who clears their
+browser's data and changes network is not caught.
+
+## Money
+
+Passengers send each other money from the Money card in the game (the bottom
+bar's Money button), with a short note if they like, and see the ten richest
+aboard and their own place. Every first-class passenger starts with £1,000, so a
+player can make extra accounts and send their money to one character to climb the
+list. Each passenger's card on the panel shows their purse and their money sent and
+received, with the other passenger and the note: money arriving from several new
+accounts, or from linked ones (see above), is the sign. Banned passengers are left
+out of the list and cannot be sent money; a passenger locked in cannot send any,
+and a muted one cannot add a note.
+
 ## How the rooms hold
 
 Everything is checked on the server (`lib/moderation.js` has the rules,

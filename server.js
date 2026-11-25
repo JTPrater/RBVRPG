@@ -26,6 +26,7 @@ const {
 const { lookupMenuItem } = require("./lib/menuCatalog");
 const { createSocketGameAuth } = require("./lib/socketGameAuth");
 const moderation = require("./lib/moderation");
+const money = require("./lib/money");
 
 // Initialize Express and Server
 const app = express();
@@ -103,6 +104,12 @@ io.use(async (socket, next) => {
     return refuse("try-again");
   }
   if (!user) return refuse("not-logged-in");
+  // where they connect from (a banned player's too): for the moderators'
+  // second-account links; not waited for
+  recordSeen(
+    user._id,
+    marksOf(socketAddress(socket), socket.handshake.auth && socket.handshake.auth.device),
+  );
   const status = moderation.statusOf(user);
   if (status.ban) {
     return refuse("banned", { until: status.ban.until, why: status.ban.reason });
@@ -268,6 +275,7 @@ const initMongoDB = async () => {
 const User = require("./models/User");
 const ServerState = require("./models/ServerState");
 const ModerationLog = require("./models/ModerationLog");
+const MoneyTransfer = require("./models/MoneyTransfer");
 const { requireSessionUser } = createSocketGameAuth(User);
 
 // Multer Configuration with Cloudinary
@@ -821,6 +829,8 @@ app.post("/api/register", authLimiter, async (req, res) => {
     });
 
     await newUser.save();
+    // where the account was made from, for the moderators' second-account links
+    await recordSeen(newUser._id, marksOf(req.ip, req.body.device));
     await logInPlayer(req, newUser._id);
     await new Promise((resolve, reject) => {
       req.session.save((sessionError) => {
@@ -880,6 +890,10 @@ app.post("/api/check-credentials", loginLimiter, async (req, res) => {
       console.warn("Login failed");
       return res.json({ success: false });
     }
+
+    // Where the account is logged in from (a banned one's too: a second
+    // account made in the same browser is linked to it), for the moderators
+    await recordSeen(user._id, marksOf(req.ip, req.body.device));
 
     // A banned passenger is told so, and until when (the right password: not
     // counted against the address's login limit)
@@ -1404,18 +1418,27 @@ function playersAboard() {
   return aboard;
 }
 
-const MOD_FIELDS = "email isAdmin isOwner character moderation";
+const MOD_FIELDS = "email isAdmin isOwner character moderation stats.money";
 
 app.get("/api/mod/players", modLimiter, requireModerator, async (req, res, next) => {
   try {
-    const users = await User.find({}).select(MOD_FIELDS).lean();
+    // (the marks are read to link accounts, and never sent: summary)
+    const users = await User.find({}).select(`${MOD_FIELDS} seenOn`).lean();
     const aboard = playersAboard();
     const viewerRole = req.moderator.role;
     const now = Date.now();
+    const links = moderation.linkAccounts(users);
+    const standing = new Map(users.map((u) => [String(u._id), moderation.statusOf(u, now)]));
     const players = users
       .filter((u) => u.character && u.character.forename)
       .map((u) =>
-        moderation.summary(u, { online: aboard.get(String(u._id)) || null, viewerRole, now }),
+        moderation.summary(u, {
+          online: aboard.get(String(u._id)) || null,
+          viewerRole,
+          now,
+          links,
+          standing,
+        }),
       );
     res.json({
       ok: true,
@@ -1452,6 +1475,38 @@ app.get("/api/mod/log", modLimiter, requireModerator, async (req, res, next) => 
         until: e.until || null,
         place: e.place || "",
       })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// A passenger's money sent and received, latest first (lib/money.js): for
+// the moderators, who can see where a purse's money came from (a player's
+// second accounts emptying theirs into it)
+app.get("/api/mod/transfers", modLimiter, requireModerator, async (req, res, next) => {
+  try {
+    const player = req.query.player;
+    if (typeof player !== "string" || !mongoose.isValidObjectId(player)) {
+      return res.status(400).json({ ok: false, error: "No such passenger." });
+    }
+    const list = await MoneyTransfer.find({ $or: [{ "from.id": player }, { "to.id": player }] })
+      .sort({ at: -1 })
+      .limit(30)
+      .lean();
+    res.json({
+      ok: true,
+      transfers: list.map((t) => {
+        const out = String(t.from && t.from.id) === player;
+        return {
+          at: t.at,
+          out,
+          other: (out ? t.to && t.to.name : t.from && t.from.name) || "",
+          otherId: String((out ? t.to && t.to.id : t.from && t.from.id) || ""),
+          amount: money.pounds(t.amount),
+          note: t.note || "",
+        };
+      }),
     });
   } catch (error) {
     next(error);
@@ -1953,6 +2008,189 @@ function applyStatus(socket, status, event) {
   } else if (told) {
     socket.emit("moderation-status", { ...moderation.forPlayer(status), event: told });
   }
+}
+
+// ── Second accounts: the marks an account is seen with ───────────────────────
+// (lib/moderation.js linkAccounts.) Each is kept only as a hash keyed with the
+// server's own secret: the database holds no network address and no
+// browser's id, only what tells two accounts' marks apart or the same.
+const MARK_SECRET = process.env.SESSION_SECRET || "change-this-in-production";
+function markHash(kind, value) {
+  return crypto.createHmac("sha256", MARK_SECRET).update(`${kind}:${value}`).digest("base64url").slice(0, 22);
+}
+// The marks of a login or a connection: its network's, and its browser's if
+// the page sent one (js/device.js)
+function marksOf(ip, device) {
+  const marks = [];
+  const network = moderation.networkMark(ip);
+  if (network) marks.push({ kind: "network", hash: markHash("network", network) });
+  const browser = moderation.deviceMark(device);
+  if (browser) marks.push({ kind: "browser", hash: markHash("browser", browser) });
+  return marks;
+}
+// A connection's address, read as Express reads req.ip behind the site's one
+// proxy ("trust proxy" 1): the last address the proxy added
+function socketAddress(socket) {
+  const forwarded = String(socket.handshake.headers["x-forwarded-for"] || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return forwarded.length ? forwarded[forwarded.length - 1] : socket.handshake.address;
+}
+// Kept on the account: a mark seen again has its time moved on (at most
+// every half hour), a new one is added, and which stay is lib/moderation.js
+// keepMarks' choice (each kind's first two for good, and the latest four).
+// One account's marks are written one change at a time (a login and its
+// game's connection come together), so neither change is lost.
+const SEEN_EVERY_MS = 30 * 60 * 1000;
+const markWrittenAt = new Map(); // "user|kind|hash" -> when last kept
+const markWrites = new Map(); // user -> the last write of their marks
+function recordSeen(userId, marks) {
+  if (!userId || !marks.length) return Promise.resolve();
+  const now = Date.now();
+  if (markWrittenAt.size > 50000) markWrittenAt.clear();
+  const due = marks.filter(
+    (m) => now - (markWrittenAt.get(`${userId}|${m.kind}|${m.hash}`) || 0) >= SEEN_EVERY_MS,
+  );
+  if (!due.length) return Promise.resolve();
+  for (const m of due) markWrittenAt.set(`${userId}|${m.kind}|${m.hash}`, now);
+  const id = String(userId);
+  const write = (markWrites.get(id) || Promise.resolve())
+    .then(async () => {
+      const user = await User.findById(userId).select("seenOn").lean();
+      if (!user) return;
+      const at = new Date(now);
+      const list = (user.seenOn || []).map((s) => ({ ...s }));
+      for (const m of due) {
+        const known = list.find((s) => s.kind === m.kind && s.hash === m.hash);
+        if (known) known.last = at;
+        else list.push({ kind: m.kind, hash: m.hash, first: at, last: at });
+      }
+      await User.updateOne({ _id: userId }, { $set: { seenOn: moderation.keepMarks(list) } });
+    })
+    .catch((err) => {
+      for (const m of due) markWrittenAt.delete(`${userId}|${m.kind}|${m.hash}`);
+      console.error("Could not keep an account's marks:", err.message);
+    })
+    .finally(() => {
+      if (markWrites.get(id) === write) markWrites.delete(id);
+    });
+  markWrites.set(id, write);
+  return write;
+}
+
+// ── Money between passengers (lib/money.js) ──────────────────────────────────
+const moneySendTimes = new Map(); // player -> their recent sends' times (money.paceSend)
+
+// One money update of a passenger's purse, kept to whole pence: an
+// update the database runs on the document in one step
+const purseBy = (delta) => [
+  {
+    $set: {
+      "stats.money": { $round: [{ $add: [{ $ifNull: ["$stats.money", 0] }, delta] }, 2] },
+    },
+  },
+];
+// (the driver gives the document itself, or in "value" with older options)
+const docOf = (r) => (r && r.value !== undefined ? r.value : r);
+
+// Takes the amount from one passenger, if they have it, and gives it to
+// another. The taking is one update that happens only if the money is
+// there, so two sends at once cannot spend it twice; given back if the
+// other passenger cannot take it. Logged (MoneyTransfer).
+async function sendMoney(fromId, toId, amount, note) {
+  const users = mongoose.connection.collection("users");
+  const to = new mongoose.Types.ObjectId(toId);
+  const target = await User.findById(to).select("character moderation").lean();
+  if (
+    !target ||
+    !target.character ||
+    !target.character.forename ||
+    moderation.statusOf(target).ban
+  ) {
+    return { ok: false, reason: "no-one" };
+  }
+  const taken = docOf(
+    await users.findOneAndUpdate(
+      // (half a penny's grace: a purse kept before pence were rounded)
+      { _id: fromId, "stats.money": { $gte: amount - 0.004 } },
+      purseBy(-amount),
+      { returnDocument: "after", projection: { "stats.money": 1, character: 1 } },
+    ),
+  );
+  if (!taken) return { ok: false, reason: "not-enough" };
+  const given = docOf(
+    await users.findOneAndUpdate({ _id: to }, purseBy(amount), {
+      returnDocument: "after",
+      projection: { "stats.money": 1 },
+    }),
+  );
+  if (!given) {
+    await users.updateOne({ _id: fromId }, purseBy(amount));
+    return { ok: false, reason: "no-one" };
+  }
+  const fromName = moderation.nameOf(taken);
+  const toName = moderation.nameOf(target);
+  await MoneyTransfer.create({
+    from: { id: fromId, name: fromName },
+    to: { id: to, name: toName },
+    amount,
+    note,
+  });
+  return {
+    ok: true,
+    fromName,
+    toName,
+    toId: String(to),
+    fromBalance: money.pounds(taken.stats.money),
+    toBalance: money.pounds(given.stats.money),
+  };
+}
+
+// The Money card's figures for one passenger: their purse and its place
+// among those aboard (the banned left out), the ten richest, and their own
+// ten latest sends and receipts
+async function moneyOverview(userId) {
+  const now = Date.now();
+  const aboard = money.aboardFilter(now);
+  const me = await User.findById(userId).select("stats.money").lean();
+  const mine = money.pounds(me && me.stats && me.stats.money);
+  const [richest, above, total, recent] = await Promise.all([
+    User.find(aboard)
+      .sort({ "stats.money": -1, _id: 1 })
+      .limit(10)
+      .select("character.forename character.surname character.cabin_number stats.money")
+      .lean(),
+    User.countDocuments({ ...aboard, "stats.money": { $gt: mine } }),
+    User.countDocuments(aboard),
+    MoneyTransfer.find({ $or: [{ "from.id": userId }, { "to.id": userId }] })
+      .sort({ at: -1 })
+      .limit(10)
+      .lean(),
+  ]);
+  return {
+    ok: true,
+    balance: mine,
+    place: above + 1,
+    of: total,
+    richest: richest.map((u, i) => ({
+      place: i + 1,
+      name: moderation.nameOf(u),
+      cabin: (u.character && u.character.cabin_number) || "",
+      amount: money.pounds(u.stats && u.stats.money),
+      me: String(u._id) === String(userId),
+    })),
+    recent: recent.map((t) => {
+      const out = String(t.from && t.from.id) === String(userId);
+      return {
+        at: t.at,
+        out,
+        other: (out ? t.to && t.to.name : t.from && t.from.name) || "",
+        amount: money.pounds(t.amount),
+        note: t.note || "",
+      };
+    }),
+  };
 }
 
 // The connections of one player (a tab each)
@@ -3027,6 +3265,83 @@ io.on("connection", async (socket) => {
         message: "Purchase failed",
       });
     }
+  });
+
+  // ─── Money between passengers (lib/money.js; the game's Money card) ──────
+  // The card's figures come from the database: a page asks no more than once
+  // a second
+  let moneyAskedAt = 0;
+  const moneyAskTooSoon = () => {
+    const now = Date.now();
+    if (now - moneyAskedAt < 1000) return true;
+    moneyAskedAt = now;
+    return false;
+  };
+
+  // The purse, its place among the passengers, the ten richest, and the
+  // player's own recent sends and receipts
+  onEvent("money-overview", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    if (moneyAskTooSoon()) return reply({ ok: false, reason: "too-fast" });
+    reply(await moneyOverview(socket.sessionUserId));
+  });
+
+  // Whom money can go to: every passenger but oneself and the banned, those
+  // aboard now first
+  onEvent("money-people", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    const users = await User.find({ ...money.aboardFilter(), _id: { $ne: socket.sessionUserId } })
+      .select("character.forename character.surname character.cabin_number")
+      .lean();
+    const aboard = playersAboard();
+    const people = users
+      .map((u) => ({
+        id: String(u._id),
+        name: moderation.nameOf(u),
+        cabin: (u.character && u.character.cabin_number) || "",
+        aboard: aboard.has(String(u._id)),
+      }))
+      .sort((a, b) => Number(b.aboard) - Number(a.aboard) || a.name.localeCompare(b.name));
+    reply({ ok: true, people });
+  });
+
+  // Money sent to another passenger. Answered { ok, balance, to, amount } or
+  // { ok: false, reason }; the other's open pages are told at once.
+  onEvent("money-send", async (data, ack) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    const asked = money.cleanSend(data);
+    if (asked.error) return reply({ ok: false, reason: asked.error });
+    // the moderators' measures: locked in, nothing is sent; muted, no note
+    if (socket.mod && socket.mod.confinement) return reply({ ok: false, reason: "confined" });
+    if (asked.note && moderation.muteNow(socket.mod)) {
+      return reply({ ok: false, reason: "muted-note" });
+    }
+    const senderId = socket.sessionUserId;
+    if (asked.to === String(senderId)) return reply({ ok: false, reason: "self" });
+    const times = moneySendTimes.get(String(senderId)) || [];
+    moneySendTimes.set(String(senderId), times);
+    const pace = money.paceSend(times);
+    if (pace.error) return reply({ ok: false, reason: pace.error });
+
+    const sent = await sendMoney(senderId, asked.to, asked.amount, asked.note);
+    if (!sent.ok) {
+      times.pop(); // a send that did not happen does not count against the pace
+      return reply(sent);
+    }
+    for (const s of socketsOfPlayer(sent.toId)) {
+      s.emit("money-received", {
+        from: sent.fromName,
+        amount: asked.amount,
+        note: asked.note,
+        balance: sent.toBalance,
+      });
+    }
+    // (the sender's other tabs show the new purse too)
+    for (const s of socketsOfPlayer(senderId)) {
+      if (s !== socket) s.emit("money-balance", { balance: sent.fromBalance });
+    }
+    console.info(`Money: ${sent.fromName} sent £${asked.amount.toFixed(2)} to ${sent.toName}`);
+    reply({ ok: true, balance: sent.fromBalance, to: sent.toName, amount: asked.amount });
   });
 
   onEvent("disconnect", () => {

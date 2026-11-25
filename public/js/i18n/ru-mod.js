@@ -93,4 +93,22 @@ Object.assign((window.RBV_I18N_DICT = window.RBV_I18N_DICT || {}).ru.exact, {
   "Made an admin": "Назначение администратором",
   "No longer an admin": "Снятие с администратора",
   "Given a new password": "Выдан новый пароль",
+  // second accounts
+  "Flagged": "Под подозрением",
+  "Possible second account": "Возможно, второй аккаунт",
+  "Linked accounts": "Связанные аккаунты",
+  "Same browser": "Тот же браузер",
+  "Same network": "Та же сеть",
+  "Possibly a second account of a passenger who is banned, locked in or muted.":
+    "Возможно, это второй аккаунт пассажира, которому закрыт вход, который под замком или лишён права писать в чат.",
+  "A shared network can be a family, a school or a café.":
+    "Одной сетью может пользоваться семья, школа или кафе.",
+  // money (the passenger's card)
+  "Purse": "Кошелёк",
+  "Money sent and received": "Деньги: отправлено и получено",
+  "Sent or received": "Отправлено или получено",
+  "Amount": "Сумма",
+  "Note": "Записка",
+  "Sent": "Отправлено",
+  "Received": "Получено",
 });

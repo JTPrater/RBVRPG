@@ -138,6 +138,13 @@
     [/^Not sent: you are muted until (.+)\.$/, (m, t) => t.notSentMutedUntil && fill(t.notSentMutedUntil, m[1])],
     [/^This passenger has been banned until (.+)\.$/, (m, t) => t.bannedUntil && fill(t.bannedUntil, m[1])],
     [/^Reason: (.+)$/, (m, t) => t.reason && fill(t.reason, m[1])],
+    // money (modules/money.js): the amounts are figures, the names and notes
+    // the passengers' own
+    [/^Place (\d+) of (\d+)$/, (m, t) => t.moneyPlace && fill(t.moneyPlace, m[1], m[2])],
+    [/^You sent (£\d+\.\d{2}) to (.+)\.$/, (m, t) => t.moneySent && fill(t.moneySent, m[1], m[2])],
+    [/^(.+) sent you (£\d+\.\d{2}) with a note: (.+)$/, (m, t) => t.moneyInNote && fill(t.moneyInNote, m[1], m[2], m[3])],
+    [/^(.+) sent you (£\d+\.\d{2})\.$/, (m, t) => t.moneyIn && fill(t.moneyIn, m[1], m[2])],
+    [/^Send (£\d+\.\d{2}) to (.+)\?$/, (m, t) => t.moneyAsk && fill(t.moneyAsk, m[1], m[2])],
   ];
   window.RBV_I18N_PATTERNS = PATTERNS; // (for the checks in scripts/i18n)
 

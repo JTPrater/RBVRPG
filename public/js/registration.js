@@ -216,6 +216,8 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     const formData = new FormData(this);
+    // this browser's mark for the moderators (js/device.js)
+    formData.append("device", window.RBV_DEVICE || "");
     showFormError("");
     // one registration a press: the button waits for the answer
     submitButton.disabled = true;
