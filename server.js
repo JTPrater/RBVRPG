@@ -26,6 +26,7 @@ const {
 const { lookupMenuItem } = require("./lib/menuCatalog");
 const { createSocketGameAuth } = require("./lib/socketGameAuth");
 const moderation = require("./lib/moderation");
+const { clientAddress, isProxyHop } = require("./lib/clientAddress");
 const money = require("./lib/money");
 const inbox = require("./lib/inbox");
 const shipEvents = require("./lib/shipEvents");
@@ -412,8 +413,10 @@ async function postJson(urlString, payload) {
 }
 
 // Middleware Setup
-// Trust proxy - required for Render and other reverse proxies
-app.set("trust proxy", 1);
+// Behind Render's proxy and Cloudflare: req.ip is the player's own address,
+// read past both (lib/clientAddress.js). The rate limits count by it, and the
+// moderators' "same network" links are made from it.
+app.set("trust proxy", isProxyHop);
 
 // Disable caching for ALL files to ensure users get latest updates. Pictures
 // and sounds are kept by the browser but checked with the server each time
@@ -2051,14 +2054,10 @@ function marksOf(ip, device) {
   if (browser) marks.push({ kind: "browser", hash: markHash("browser", browser) });
   return marks;
 }
-// A connection's address, read as Express reads req.ip behind the site's one
-// proxy ("trust proxy" 1): the last address the proxy added
+// A game connection's address: the player's own, read as Express reads req.ip
+// (lib/clientAddress.js)
 function socketAddress(socket) {
-  const forwarded = String(socket.handshake.headers["x-forwarded-for"] || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return forwarded.length ? forwarded[forwarded.length - 1] : socket.handshake.address;
+  return clientAddress(socket.handshake.headers, socket.handshake.address);
 }
 // Kept on the account: a mark seen again has its time moved on (at most
 // every half hour), a new one is added, and which stay is lib/moderation.js
