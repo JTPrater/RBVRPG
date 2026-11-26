@@ -2287,6 +2287,30 @@ document.addEventListener("DOMContentLoaded", function () {
         first_class_reception_d: "First Class Reception Room",
         first_class_dining_room_d: "First Class Dining Room",
         "5741544e4559": "Mars",
+        // the boat-deck officers' house
+        sixth_officers_cabin_bd: "6th Officer's Cabin",
+        fifth_officers_cabin_bd: "5th Officer's Cabin",
+        pilots_cabin_bd: "Pilot's Cabin",
+        fourth_officers_cabin_bd: "4th Officer's Cabin",
+        second_officers_cabin_bd: "2nd Officer's Cabin",
+        first_officers_cabin_bd: "1st Officer's Cabin",
+        chief_officers_cabin_bd: "Chief Officer's Cabin",
+        assistant_commanders_cabin_bd: "Assistant Commander's Cabin",
+        third_officers_cabin_bd: "3rd Officer's Cabin",
+        captains_bathroom_bd: "Captain's Bathroom",
+        captains_bedroom_bd: "Captain's Bedroom",
+        captains_sitting_room_bd: "Captain's Sitting Room",
+        officers_port_corridor_bd: "Officers' Port Corridor",
+        officers_starboard_corridor_bd: "Officers' Starboard Corridor",
+        officers_entrance_bd: "Officers' Entrance",
+        officers_smoke_room_bd: "Officers' Smoke Room",
+        officers_pantry_bd: "Officers' Pantry",
+        stewards_room_bd: "Stewards' Room",
+        officers_lavatory_bd: "Officers' Lavatory",
+        officers_bath_bd: "Officers' Bath",
+        assistant_commanders_wc_bd: "Assistant Commander's W.C.",
+        officers_wc_bd: "Officers' W.C.",
+        oilskin_locker_bd: "Oilskin Locker",
         padded_room: "Padded Room",
         hell: "Hell",
       };
@@ -2395,6 +2419,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const hasGames =
             room.id === "first_class_lounge_a" ||
             room.id === "first_class_smoking_room_a" ||
+            room.id === "officers_smoke_room_bd" || // the officers' mess: cards and poker
             isPaddedRoom;
           gamesToggleBtn.style.display = hasGames ? "block" : "none";
           // a games list left open in the last room goes with it
@@ -2459,6 +2484,7 @@ document.addEventListener("DOMContentLoaded", function () {
             "first_class_reception_d",
             "restaurant_reception_room",
             "officers_smoke_room_bd",
+            "captains_sitting_room_bd",
           ];
           const isDiningRoom = diningRooms.includes(room.id);
           const isLoungeRoom = loungeRooms.includes(room.id);
@@ -2549,9 +2575,29 @@ document.addEventListener("DOMContentLoaded", function () {
       const prevCabinActions = document.getElementById("cabin-action-buttons");
       if (prevCabinActions) prevCabinActions.remove();
 
-      // Add shower, toilet, and sleep buttons for all cabin types (and the
-      // padded room, which has the same three)
-      if (room.type === "cabin" || room.id === "padded_room") {
+      // The buttons for washing, the W.C. and sleep: every cabin (and the padded
+      // room) has the three; the officers' house's wash rooms what is in them
+      // (the Captain's bathroom a bath and a W.C., the officers' bath a bath,
+      // their lavatory basins and a urinal, a W.C. its pan).
+      const CARE = {
+        shower: ["shower", "Take a Shower", "You take a refreshing shower.", "hygiene"],
+        bath: ["bathtub", "Take a Bath", "You take a hot bath.", "hygiene"],
+        wash: ["wash", "Wash at the Basin", "You wash at the basin.", "hygiene"],
+        toilet: ["wc", "Use the Toilet", "You use the toilet.", "bladder"],
+        sleep: ["bed", "Go to Sleep", "You lie down and get some rest.", "energy"],
+      };
+      const ROOM_CARE = {
+        captains_bathroom_bd: ["bath", "toilet"],
+        officers_bath_bd: ["bath"],
+        officers_lavatory_bd: ["wash", "toilet"],
+        assistant_commanders_wc_bd: ["toilet"],
+        officers_wc_bd: ["toilet"],
+      };
+      const careActions =
+        room.type === "cabin" || room.id === "padded_room"
+          ? ["shower", "toilet", "sleep"]
+          : ROOM_CARE[room.id];
+      if (careActions) {
         const locationDisplay = document.querySelector(".location-display");
         // in the row of the room's own buttons, after them (the padded room
         // has Eat & Drink and Games too: laid over the picture's corner, the
@@ -2567,63 +2613,26 @@ document.addEventListener("DOMContentLoaded", function () {
         actionDiv.style.gap = "8px";
         actionDiv.style.zIndex = "20";
 
-        // Shower button
-        const showerBtn = document.createElement("button");
-        showerBtn.className = "cabin-action-btn";
-        showerBtn.title = "Take a Shower";
-        showerBtn.innerHTML = '<span class="material-icons">shower</span>';
-        showerBtn.onclick = function () {
-          addChatMessage({
-            type: "system",
-            message: "You take a refreshing shower.",
-            room: currentRoom.name,
-            timestamp: Date.now(),
-          });
-          statusBars.hygiene.value = 100;
-          const hygieneBar = document.querySelector(".bar.hygiene");
-          if (hygieneBar) hygieneBar.style.width = "100%";
-          saveStatsToServer();
-        };
-
-        // Toilet button
-        const toiletBtn = document.createElement("button");
-        toiletBtn.className = "cabin-action-btn";
-        toiletBtn.title = "Use the Toilet";
-        toiletBtn.innerHTML = '<span class="material-icons">wc</span>';
-        toiletBtn.onclick = function () {
-          addChatMessage({
-            type: "system",
-            message: "You use the toilet.",
-            room: currentRoom.name,
-            timestamp: Date.now(),
-          });
-          statusBars.bladder.value = 100;
-          const bladderBar = document.querySelector(".bar.bladder");
-          if (bladderBar) bladderBar.style.width = "100%";
-          saveStatsToServer();
-        };
-
-        // Sleep button
-        const sleepBtn = document.createElement("button");
-        sleepBtn.className = "cabin-action-btn";
-        sleepBtn.title = "Go to Sleep";
-        sleepBtn.innerHTML = '<span class="material-icons">bed</span>';
-        sleepBtn.onclick = function () {
-          addChatMessage({
-            type: "system",
-            message: "You lie down and get some rest.",
-            room: currentRoom.name,
-            timestamp: Date.now(),
-          });
-          statusBars.energy.value = 100;
-          const energyBar = document.querySelector(".bar.energy");
-          if (energyBar) energyBar.style.width = "100%";
-          saveStatsToServer();
-        };
-
-        actionDiv.appendChild(showerBtn);
-        actionDiv.appendChild(toiletBtn);
-        actionDiv.appendChild(sleepBtn);
+        for (const action of careActions) {
+          const [icon, title, message, stat] = CARE[action];
+          const btn = document.createElement("button");
+          btn.className = "cabin-action-btn";
+          btn.title = title;
+          btn.innerHTML = `<span class="material-icons">${icon}</span>`;
+          btn.onclick = function () {
+            addChatMessage({
+              type: "system",
+              message,
+              room: currentRoom.name,
+              timestamp: Date.now(),
+            });
+            statusBars[stat].value = 100;
+            const bar = document.querySelector(`.bar.${stat}`);
+            if (bar) bar.style.width = "100%";
+            saveStatsToServer();
+          };
+          actionDiv.appendChild(btn);
+        }
         (roomActions || locationDisplay).appendChild(actionDiv);
       }
 
