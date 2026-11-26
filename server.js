@@ -1153,6 +1153,9 @@ app.post("/api/admin/save-rooms", authLimiter, async (req, res) => {
       /* first save or no prior file — non-fatal */
     }
     await fs.writeFile(DECK_ROOMS_PATH, fileText, "utf8");
+    // the minified copy made at start would go on being sent: send the saved file
+    // itself from now on, so the game shows the change at once
+    minifiedAssets.delete("/game/data/deckRooms.js");
 
     const total = Object.values(probe.deckRooms).reduce(
       (n, a) => n + (Array.isArray(a) ? a.length : 0),

@@ -3710,3 +3710,18 @@ body.dev-timelapse .clouds {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(127, 140, 141, 0.3);
 }
+
+/* A crew room is crew red on the deck plans whatever its type: the colours by type above (cabin, corridor, promenade,
+   smoking room...) come later than the colours by class and painted crew rooms first-class blue or lavender. The room
+   editor colours by class alone; this makes the game agree. */
+.room-marker.crew-class .image-mapper-shape {
+  fill: #e0533a;
+  fill-opacity: 0.7;
+  stroke: #e0533a;
+  stroke-opacity: 0.7;
+}
+
+.room-marker.crew-class:hover .image-mapper-shape {
+  fill: #c0932b;
+  stroke: #c0932b;
+}
