@@ -4,6 +4,10 @@ import json, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..", "..")
 names = [l.rstrip("\n").split("\t")[1] for l in open(os.path.join(HERE, "exterior_list.tsv"), encoding="utf-8") if l.strip()]
+# rooms whose night and sunrise/sunset pictures are our own renders, not edits (scripts/images/install_officers_house.py)
+RENDERED = os.path.join(HERE, "rendered_list.tsv")
+if os.path.exists(RENDERED):
+    names += [l.rstrip("\n").split("\t")[1] for l in open(RENDERED, encoding="utf-8") if l.strip()]
 for tod, folder in (("night", "britannic (night)"), ("twilight", "britannic (twilight)")):
     d = os.path.join(ROOT, "public", "images", "animations", "locations", folder)
     missing = [n for n in names if not os.path.exists(os.path.join(d, os.path.splitext(n)[0] + ".webp"))]
@@ -13,6 +17,7 @@ body = ",\n".join("    " + json.dumps(n) for n in names)
 js = r"""// Night and sunrise/sunset versions of the Britannic's exterior location pictures, made from the day pictures
 // (scripts/night_edit; written by make_tod_manifest.py). Sunrise and sunset share one set ("twilight"). A version has
 // the day picture's name with a .webp extension, in its own folder beside images/animations/locations/britannic.
+// After them come the rooms rendered in all three lights (rendered_list.tsv): the officers' house on the boat deck.
 (function (RBV) {
   const FOLDERS = { night: "britannic (night)", twilight: "britannic (twilight)" };
   const NAMES = [

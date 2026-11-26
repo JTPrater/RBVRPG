@@ -689,6 +689,119 @@ roomImages.cabin_a23 = {
   currentIndex: 0,
 };
 
+// >>> the boat-deck officers' house: our own renders in three lights (scripts/images/install_officers_house.py)
+roomImages.sixth_officers_cabin_bd = {
+  images: ["6th Officer Cabin 1.jpg", "6th Officer Cabin 2.jpg", "6th Officer Cabin 3.jpg", "6th Officer Cabin 4.jpg", "6th Officer Cabin 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.fifth_officers_cabin_bd = {
+  images: ["5th Officer Cabin 1.jpg", "5th Officer Cabin 2.jpg", "5th Officer Cabin 3.jpg", "5th Officer Cabin 4.jpg", "5th Officer Cabin 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.pilots_cabin_bd = {
+  images: ["Pilot Cabin 1.jpg", "Pilot Cabin 2.jpg", "Pilot Cabin 3.jpg", "Pilot Cabin 4.jpg", "Pilot Cabin 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.fourth_officers_cabin_bd = {
+  images: ["4th Officer Cabin 1.jpg", "4th Officer Cabin 2.jpg", "4th Officer Cabin 3.jpg", "4th Officer Cabin 4.jpg", "4th Officer Cabin 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.second_officers_cabin_bd = {
+  images: ["2nd Officer Cabin 1.jpg", "2nd Officer Cabin 2.jpg", "2nd Officer Cabin 3.jpg", "2nd Officer Cabin 4.jpg", "2nd Officer Cabin 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_officers_cabin_bd = {
+  images: ["1st Officer Cabin 1.jpg", "1st Officer Cabin 2.jpg", "1st Officer Cabin 3.jpg", "1st Officer Cabin 4.jpg", "1st Officer Cabin 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.chief_officers_cabin_bd = {
+  images: ["Chief Officer Cabin 1.jpg", "Chief Officer Cabin 2.jpg", "Chief Officer Cabin 3.jpg", "Chief Officer Cabin 4.jpg", "Chief Officer Cabin 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.assistant_commanders_cabin_bd = {
+  images: ["Assistant Commander Cabin 1.jpg", "Assistant Commander Cabin 2.jpg", "Assistant Commander Cabin 3.jpg", "Assistant Commander Cabin 4.jpg", "Assistant Commander Cabin 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.third_officers_cabin_bd = {
+  images: ["3rd Officer Cabin 1.jpg", "3rd Officer Cabin 2.jpg", "3rd Officer Cabin 3.jpg", "3rd Officer Cabin 4.jpg", "3rd Officer Cabin 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.captains_bathroom_bd = {
+  images: ["Captain Bathroom 1.jpg", "Captain Bathroom 2.jpg", "Captain Bathroom 3.jpg", "Captain Bathroom 4.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.captains_bedroom_bd = {
+  images: ["Captain Bedroom 1.jpg", "Captain Bedroom 2.jpg", "Captain Bedroom 3.jpg", "Captain Bedroom 4.jpg", "Captain Bedroom 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.captains_sitting_room_bd = {
+  images: ["Captain Sitting Room 1.jpg", "Captain Sitting Room 2.jpg", "Captain Sitting Room 3.jpg", "Captain Sitting Room 4.jpg", "Captain Sitting Room 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.officers_port_corridor_bd = {
+  images: ["Officers Port Corridor 1.jpg", "Officers Port Corridor 2.jpg", "Officers Port Corridor 3.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.officers_starboard_corridor_bd = {
+  images: ["Officers Starboard Corridor 1.jpg", "Officers Starboard Corridor 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.officers_entrance_bd = {
+  images: ["Officers Entrance 1.jpg", "Officers Entrance 2.jpg", "Officers Entrance 3.jpg", "Officers Entrance 4.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.officers_smoke_room_bd = {
+  images: ["Officers Smoke Room 1.jpg", "Officers Smoke Room 2.jpg", "Officers Smoke Room 3.jpg", "Officers Smoke Room 4.jpg", "Officers Smoke Room 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.officers_pantry_bd = {
+  images: ["Officers Pantry 1.jpg", "Officers Pantry 2.jpg", "Officers Pantry 3.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.stewards_room_bd = {
+  images: ["Stewards Room 1.jpg", "Stewards Room 2.jpg", "Stewards Room 3.jpg", "Stewards Room 4.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.officers_lavatory_bd = {
+  images: ["Officers Lavatory 1.jpg", "Officers Lavatory 2.jpg", "Officers Lavatory 3.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.officers_bath_bd = {
+  images: ["Officers Bath 1.jpg", "Officers Bath 2.jpg", "Officers Bath 3.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.assistant_commanders_wc_bd = {
+  images: ["Assistant Commander WC 1.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.officers_wc_bd = {
+  images: ["Officers WC 1.jpg"],
+  currentIndex: 0,
+};
+
+// <<< the boat-deck officers' house
+
   RBV.data = RBV.data || {};
   RBV.data.roomImages = roomImages;
   window.roomImages = roomImages;
