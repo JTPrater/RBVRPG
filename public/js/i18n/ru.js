@@ -150,6 +150,10 @@
     "You use the toilet.": "Вы сходили в туалет.",
     "Go to Sleep": "Лечь спать",
     "You lie down and get some rest.": "Вы ложитесь отдохнуть.",
+    "Take a Bath": "Принять ванну",
+    "You take a hot bath.": "Вы принимаете горячую ванну.",
+    "Wash at the Basin": "Умыться у раковины",
+    "You wash at the basin.": "Вы умываетесь у раковины.",
     "Go Aboard": "Подняться на борт",
     "Food": "Еда",
     // (short: the menu's side column is narrow)
