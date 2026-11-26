@@ -165,9 +165,9 @@
       "name": "the Wheelhouse",
       "class": "crew",
       "type": "wheelhouse",
-      "coordinates": "2994,274 2994,278 2997,285 2994,289 2993,314 2995,323 2994,388 2998,390 3021,390 3027,387 3074,387 3078,385 3077,261 3073,259 3028,258 3024,260 3024,269 3021,272 2998,272",
+      "coordinates": "2996,273 2995,274 2997,286 2996,290 2994,291 2993,314 2995,323 2994,388 2998,390 3021,390 3027,387 3074,387 3078,385 3077,261 3073,259 3028,258 3026,259 3026,271 3021,274",
       "x": 94.9,
-      "y": 50.4,
+      "y": 50.5,
       "isSVG": true,
       "location": {
         "image": "wheelhouse1.png",
@@ -232,6 +232,282 @@
       "location": {
         "image": "2nd class staircasebd1.png",
         "chatRoom": "2nd_class_staircase_bd"
+      }
+    },
+    {
+      "id": "sixth_officers_cabin_bd",
+      "name": "6th Officer's Cabin",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2535,175 2535,239 2578,239 2578,175",
+      "isSVG": true,
+      "location": {
+        "image": "6th Officer Cabin 1.jpg",
+        "chatRoom": "sixth_officers_cabin_bd"
+      }
+    },
+    {
+      "id": "fifth_officers_cabin_bd",
+      "name": "5th Officer's Cabin",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2604,175 2604,239 2654,239 2651,221 2644,218 2645,202 2643,177 2647,175",
+      "isSVG": true,
+      "location": {
+        "image": "5th Officer Cabin 1.jpg",
+        "chatRoom": "fifth_officers_cabin_bd"
+      }
+    },
+    {
+      "id": "pilots_cabin_bd",
+      "name": "Pilot's Cabin",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2644,177 2646,202 2645,218 2652,221 2653,230 2657,232 2661,231 2674,239 2679,239 2683,237 2684,238 2688,236 2687,177 2683,175 2648,175",
+      "isSVG": true,
+      "location": {
+        "image": "Pilot Cabin 1.jpg",
+        "chatRoom": "pilots_cabin_bd"
+      }
+    },
+    {
+      "id": "fourth_officers_cabin_bd",
+      "name": "4th Officer's Cabin",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2718,177 2718,232 2722,234 2728,232 2738,238 2764,238 2768,236 2768,209 2766,206 2768,203 2768,177 2764,175 2722,175",
+      "isSVG": true,
+      "location": {
+        "image": "4th Officer Cabin 1.jpg",
+        "chatRoom": "fourth_officers_cabin_bd"
+      }
+    },
+    {
+      "id": "second_officers_cabin_bd",
+      "name": "2nd Officer's Cabin",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2769,176 2769,203 2767,206 2769,209 2769,231 2775,231 2785,238 2816,238 2820,236 2820,177 2816,175",
+      "isSVG": true,
+      "location": {
+        "image": "2nd Officer Cabin 1.jpg",
+        "chatRoom": "second_officers_cabin_bd"
+      }
+    },
+    {
+      "id": "first_officers_cabin_bd",
+      "name": "1st Officer's Cabin",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2881,176 2877,174 2821,176 2821,231 2830,232 2839,238 2877,238 2881,236",
+      "isSVG": true,
+      "location": {
+        "image": "1st Officer Cabin 1.jpg",
+        "chatRoom": "first_officers_cabin_bd"
+      }
+    },
+    {
+      "id": "chief_officers_cabin_bd",
+      "name": "Chief Officer's Cabin",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2882,175 2882,237 2921,238 2935,230 2942,233 2946,231 2946,176 2942,174 2935,174 2931,176 2917,174",
+      "isSVG": true,
+      "location": {
+        "image": "Chief Officer Cabin 1.jpg",
+        "chatRoom": "chief_officers_cabin_bd"
+      }
+    },
+    {
+      "id": "assistant_commanders_cabin_bd",
+      "name": "Assistant Commander's Cabin",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2981,174 2977,176 2978,216 2976,271 2980,273 3021,273 3025,271 3025,177 3015,174",
+      "isSVG": true,
+      "location": {
+        "image": "Assistant Commander Cabin 1.jpg",
+        "chatRoom": "assistant_commanders_cabin_bd"
+      }
+    },
+    {
+      "id": "third_officers_cabin_bd",
+      "name": "3rd Officer's Cabin",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2512,411 2512,469 2516,471 2566,471 2570,469 2570,441 2561,435 2570,425 2570,411 2566,409 2516,409",
+      "isSVG": true,
+      "location": {
+        "image": "3rd Officer Cabin 1.jpg",
+        "chatRoom": "third_officers_cabin_bd"
+      }
+    },
+    {
+      "id": "captains_bathroom_bd",
+      "name": "Captain's Bathroom",
+      "class": "crew",
+      "type": "bathroom",
+      "coordinates": "2749,411 2749,443 2751,444 2751,470 2794,471 2798,469 2798,418 2783,409 2779,410 2775,408 2753,409",
+      "isSVG": true,
+      "location": {
+        "image": "Captain Bathroom 1.jpg",
+        "chatRoom": "captains_bathroom_bd"
+      }
+    },
+    {
+      "id": "captains_bedroom_bd",
+      "name": "Captain's Bedroom",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2797,411 2797,415 2801,422 2799,425 2799,470 2852,471 2856,469 2855,441 2849,437 2852,433 2855,432 2855,411 2851,409 2836,410 2832,408 2804,408",
+      "isSVG": true,
+      "location": {
+        "image": "Captain Bedroom 1.jpg",
+        "chatRoom": "captains_bedroom_bd"
+      }
+    },
+    {
+      "id": "captains_sitting_room_bd",
+      "name": "Captain's Sitting Room",
+      "class": "crew",
+      "type": "lounge",
+      "coordinates": "2857,391 2857,395 2862,401 2854,409 2856,411 2856,432 2854,433 2857,456 2856,470 2908,471 2912,469 2943,470 2947,468 2946,406 2942,404 2940,401 2944,396 2944,391 2940,389 2861,389",
+      "isSVG": true,
+      "location": {
+        "image": "Captain Sitting Room 1.jpg",
+        "chatRoom": "captains_sitting_room_bd"
+      }
+    },
+    {
+      "id": "officers_port_corridor_bd",
+      "name": "Officers' Port Corridor",
+      "class": "crew",
+      "type": "corridor",
+      "coordinates": "2587,187 2587,256 2589,257 2615,256 2619,254 2627,258 2631,256 2651,256 2654,258 2947,257 2951,260 2951,290 2955,292 2991,292 2995,290 2994,274 2980,274 2975,271 2976,237 2974,236 2931,236 2921,239 2884,239 2881,237 2877,239 2839,239 2836,237 2819,237 2816,239 2785,239 2782,237 2769,237 2764,239 2738,239 2735,237 2687,237 2679,240 2674,240 2671,238 2655,238 2654,240 2604,240 2603,181 2600,179",
+      "isSVG": true,
+      "location": {
+        "image": "Officers Port Corridor 1.jpg",
+        "chatRoom": "officers_port_corridor_bd"
+      }
+    },
+    {
+      "id": "officers_starboard_corridor_bd",
+      "name": "Officers' Starboard Corridor",
+      "class": "crew",
+      "type": "corridor",
+      "coordinates": "2855,391 2851,389 2822,389 2818,391 2655,390 2652,392 2630,392 2627,390 2615,390 2612,392 2594,392 2591,390 2587,392 2587,408 2591,410 2750,410 2753,408 2775,407 2779,409 2800,409 2804,407 2832,407 2836,409 2853,409 2855,408",
+      "isSVG": true,
+      "location": {
+        "image": "Officers Starboard Corridor 1.jpg",
+        "chatRoom": "officers_starboard_corridor_bd"
+      }
+    },
+    {
+      "id": "officers_entrance_bd",
+      "name": "Officers' Entrance",
+      "class": "crew",
+      "type": "corridor",
+      "coordinates": "2586,234 2584,237 2579,237 2578,240 2570,240 2570,323 2573,327 2570,333 2570,385 2567,389 2564,390 2518,390 2514,392 2514,396 2518,401 2517,408 2566,408 2571,411 2570,470 2574,472 2587,468 2589,469 2589,412 2591,411 2587,410 2584,406 2584,329 2588,325 2588,310 2584,306 2584,262 2587,258 2589,258 2586,256",
+      "isSVG": true,
+      "location": {
+        "image": "Officers Entrance 1.jpg",
+        "chatRoom": "officers_entrance_bd"
+      }
+    },
+    {
+      "id": "officers_smoke_room_bd",
+      "name": "Officers' Smoke Room",
+      "class": "crew",
+      "type": "smoking-room",
+      "coordinates": "2590,412 2590,469 2594,471 2684,471 2688,469 2688,411 2680,411 2673,415 2670,411 2609,411 2608,414 2604,416 2596,411",
+      "isSVG": true,
+      "location": {
+        "image": "Officers Smoke Room 1.jpg",
+        "chatRoom": "officers_smoke_room_bd"
+      }
+    },
+    {
+      "id": "officers_pantry_bd",
+      "name": "Officers' Pantry",
+      "class": "crew",
+      "type": "pantry",
+      "coordinates": "2720,444 2719,469 2723,471 2746,471 2750,469 2750,444 2746,442 2724,442",
+      "isSVG": true,
+      "location": {
+        "image": "Officers Pantry 1.jpg",
+        "chatRoom": "officers_pantry_bd"
+      }
+    },
+    {
+      "id": "stewards_room_bd",
+      "name": "Stewards' Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2589,350 2590,389 2594,391 2612,391 2622,384 2626,387 2626,389 2630,391 2652,391 2656,389 2655,350",
+      "isSVG": true,
+      "location": {
+        "image": "Stewards Room 1.jpg",
+        "chatRoom": "stewards_room_bd"
+      }
+    },
+    {
+      "id": "officers_lavatory_bd",
+      "name": "Officers' Lavatory",
+      "class": "crew",
+      "type": "lavatory",
+      "coordinates": "2655,259 2651,257 2629,258 2629,275 2627,276 2629,277 2628,291 2615,299 2601,303 2597,302 2597,296 2591,295 2589,296 2589,309 2600,309 2603,306 2620,301 2628,302 2630,305 2630,309 2634,311 2639,309 2642,305 2651,310 2655,308",
+      "isSVG": true,
+      "location": {
+        "image": "Officers Lavatory 1.jpg",
+        "chatRoom": "officers_lavatory_bd"
+      }
+    },
+    {
+      "id": "officers_bath_bd",
+      "name": "Officers' Bath",
+      "class": "crew",
+      "type": "bathroom",
+      "coordinates": "2614,311 2614,348 2620,350 2651,350 2655,348 2655,312 2650,310 2638,310 2635,312 2631,310",
+      "isSVG": true,
+      "location": {
+        "image": "Officers Bath 1.jpg",
+        "chatRoom": "officers_bath_bd"
+      }
+    },
+    {
+      "id": "assistant_commanders_wc_bd",
+      "name": "Assistant Commander's W.C.",
+      "class": "crew",
+      "type": "wc",
+      "coordinates": "2589,259 2590,266 2596,269 2601,268 2604,271 2604,274 2608,276 2624,277 2628,275 2628,259 2624,257 2593,257",
+      "isSVG": true,
+      "location": {
+        "image": "Assistant Commander WC 1.jpg",
+        "chatRoom": "assistant_commanders_wc_bd"
+      }
+    },
+    {
+      "id": "officers_wc_bd",
+      "name": "Officers' W.C.",
+      "class": "crew",
+      "type": "wc",
+      "coordinates": "2589,293 2593,295 2619,295 2623,293 2622,288 2628,282 2628,277 2618,278 2608,277 2605,275 2593,275 2589,277",
+      "isSVG": true,
+      "location": {
+        "image": "Officers WC 1.jpg",
+        "chatRoom": "officers_wc_bd"
+      }
+    },
+    {
+      "id": "oilskin_locker_bd",
+      "name": "Oilskin Locker",
+      "class": "crew",
+      "type": "locker",
+      "coordinates": "2589,310 2589,349 2613,349 2613,310",
+      "isSVG": true,
+      "location": {
+        "image": "placeholder.jpg",
+        "chatRoom": "oilskin_locker_bd"
       }
     }
   ],

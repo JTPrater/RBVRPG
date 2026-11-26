@@ -2421,6 +2421,12 @@ document.addEventListener("DOMContentLoaded", function () {
           "corridor",
           "reading-writing-room",
           "padded-room",
+          // the boat-deck officers' house (2026-11-26): its wet rooms, pantry and locker
+          "bathroom",
+          "lavatory",
+          "wc",
+          "pantry",
+          "locker",
         ];
 
         const eatDrinkBtn = document.getElementById("eat-drink-btn");
@@ -2452,6 +2458,7 @@ document.addEventListener("DOMContentLoaded", function () {
             "verandah_palm_court_a",
             "first_class_reception_d",
             "restaurant_reception_room",
+            "officers_smoke_room_bd",
           ];
           const isDiningRoom = diningRooms.includes(room.id);
           const isLoungeRoom = loungeRooms.includes(room.id);

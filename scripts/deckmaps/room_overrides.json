@@ -992,6 +992,254 @@
     ]
    ],
    "shape": "box"
+  },
+  "sixth_officers_cabin_bd": {
+   "seeds": [
+    [
+     2545,
+     190
+    ],
+    [
+     2560,
+     228
+    ]
+   ],
+   "shape": "box"
+  },
+  "fifth_officers_cabin_bd": {
+   "seeds": [
+    [
+     2610,
+     195
+    ],
+    [
+     2617,
+     225
+    ]
+   ],
+   "shape": "box"
+  },
+  "pilots_cabin_bd": {
+   "seeds": [
+    [
+     2671,
+     223
+    ]
+   ]
+  },
+  "fourth_officers_cabin_bd": {
+   "seeds": [
+    [
+     2744,
+     223
+    ]
+   ]
+  },
+  "second_officers_cabin_bd": {
+   "seeds": [
+    [
+     2796,
+     223
+    ]
+   ]
+  },
+  "first_officers_cabin_bd": {
+   "seeds": [
+    [
+     2850,
+     223
+    ]
+   ]
+  },
+  "chief_officers_cabin_bd": {
+   "seeds": [
+    [
+     2915,
+     223
+    ]
+   ]
+  },
+  "assistant_commanders_cabin_bd": {
+   "seeds": [
+    [
+     3000,
+     220
+    ]
+   ]
+  },
+  "third_officers_cabin_bd": {
+   "seeds": [
+    [
+     2545,
+     450
+    ]
+   ]
+  },
+  "captains_bathroom_bd": {
+   "seeds": [
+    [
+     2785,
+     455
+    ],
+    [
+     2762,
+     418
+    ]
+   ],
+   "close": 11
+  },
+  "captains_bedroom_bd": {
+   "seeds": [
+    [
+     2830,
+     455
+    ]
+   ]
+  },
+  "captains_sitting_room_bd": {
+   "seeds": [
+    [
+     2905,
+     455
+    ]
+   ]
+  },
+  "officers_port_corridor_bd": {
+   "seeds": [
+    [
+     2700,
+     248
+    ],
+    [
+     2850,
+     248
+    ],
+    [
+     2950,
+     248
+    ]
+   ],
+   "close": 11
+  },
+  "officers_starboard_corridor_bd": {
+   "seeds": [
+    [
+     2700,
+     399
+    ],
+    [
+     2800,
+     399
+    ]
+   ],
+   "close": 11
+  },
+  "officers_entrance_bd": {
+   "seeds": [
+    [
+     2579,
+     320
+    ],
+    [
+     2589,
+     320
+    ],
+    [
+     2581,
+     205
+    ],
+    [
+     2596,
+     205
+    ],
+    [
+     2577,
+     445
+    ],
+    [
+     2588,
+     445
+    ]
+   ],
+   "close": 15
+  },
+  "officers_smoke_room_bd": {
+   "seeds": [
+    [
+     2640,
+     455
+    ]
+   ]
+  },
+  "officers_pantry_bd": {
+   "seeds": [
+    [
+     2735,
+     455
+    ]
+   ]
+  },
+  "stewards_room_bd": {
+   "seeds": [
+    [
+     2623,
+     372
+    ]
+   ]
+  },
+  "officers_lavatory_bd": {
+   "seeds": [
+    [
+     2640,
+     275
+    ],
+    [
+     2600,
+     304
+    ],
+    [
+     2625,
+     304
+    ]
+   ],
+   "close": 9
+  },
+  "officers_bath_bd": {
+   "seeds": [
+    [
+     2635,
+     332
+    ]
+   ]
+  },
+  "assistant_commanders_wc_bd": {
+   "seeds": [
+    [
+     2603,
+     267
+    ]
+   ]
+  },
+  "officers_wc_bd": {
+   "seeds": [
+    [
+     2603,
+     284
+    ]
+   ]
+  },
+  "oilskin_locker_bd": {
+   "seeds": [
+    [
+     2598,
+     322
+    ],
+    [
+     2604,
+     340
+    ]
+   ],
+   "shape": "box"
   }
  },
  "b_deck": {
