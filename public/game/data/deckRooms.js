@@ -1538,6 +1538,186 @@
         "image": "placeholder.jpg",
         "chatRoom": "c_grand_staircase"
       }
+    },
+    {
+      "id": "third_class_entrance_c",
+      "name": "3rd Class Entrance",
+      "class": "third",
+      "type": "entrance",
+      "coordinates": "340,25 333,27 333,40 330,42 330,49 332,50 332,107 336,110 330,118 330,162 333,166 332,170 330,171 330,210 334,214 330,218 331,227 335,231 335,234 330,241 330,265 335,271 334,277 330,280 330,310 334,312 385,316 389,314 389,25 385,23",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 3rd Class Entrance 1.jpg",
+        "chatRoom": "third_class_entrance_c"
+      }
+    },
+    {
+      "id": "third_class_general_room_c",
+      "name": "3rd Class General Room",
+      "class": "third",
+      "type": "lounge",
+      "coordinates": "207,180 206,187 209,191 210,224 209,273 213,275 215,274 218,277 218,282 225,285 226,291 230,293 249,295 253,293 253,290 256,287 258,288 264,285 271,290 275,288 278,291 278,297 282,299 301,301 305,299 305,296 308,293 311,294 315,292 317,287 322,285 324,281 330,279 330,266 323,263 321,253 324,243 330,240 330,223 326,221 306,221 303,218 303,203 299,201 298,197 295,194 298,190 298,182 295,179 298,176 298,170 294,168 280,168 276,170 276,174 273,177 219,177",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 3rd Class General Room 1.jpg",
+        "chatRoom": "third_class_general_room_c"
+      }
+    },
+    {
+      "id": "third_class_waiting_room_c",
+      "name": "3rd Class Waiting Room",
+      "class": "third",
+      "type": "waiting-room",
+      "coordinates": "332,28 328,26 312,27 307,30 307,40 309,41 309,49 307,50 307,71 331,71 331,50 327,48 314,49 313,43 321,41 328,42 332,40",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 3rd Class Waiting Room 1.jpg",
+        "chatRoom": "third_class_waiting_room_c"
+      }
+    },
+    {
+      "id": "surgery_c",
+      "name": "Surgery and Dispensary",
+      "class": "third",
+      "type": "surgery",
+      "coordinates": "306,29 280,30 276,32 276,70 306,71 306,50 308,49 308,41 306,40",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Surgery 1.jpg",
+        "chatRoom": "surgery_c"
+      }
+    },
+    {
+      "id": "infectious_hospital_2_c",
+      "name": "Infectious Hospital No. 2",
+      "class": "third",
+      "type": "hospital",
+      "coordinates": "241,36 234,34 208,38 200,41 200,70 204,72 232,70 235,66 241,64",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Infectious Hospital Two 1.jpg",
+        "chatRoom": "infectious_hospital_2_c"
+      }
+    },
+    {
+      "id": "infectious_hospital_1_c",
+      "name": "Infectious Hospital No. 1",
+      "class": "third",
+      "type": "hospital",
+      "coordinates": "275,32 264,31 244,33 240,35 242,36 242,64 240,65 245,67 247,70 275,70",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Infectious Hospital One 1.jpg",
+        "chatRoom": "infectious_hospital_1_c"
+      }
+    },
+    {
+      "id": "infectious_hospitals_passage_c",
+      "name": "Infectious Hospitals' Passage",
+      "class": "third",
+      "type": "passage",
+      "coordinates": "218,84 233,85 236,83 258,83 262,85 265,83 288,83 291,85 302,85 302,72 305,71 218,71",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Infectious Hospitals Passage 1.jpg",
+        "chatRoom": "infectious_hospitals_passage_c"
+      }
+    },
+    {
+      "id": "infectious_hospitals_bath_c",
+      "name": "Infectious Hospitals' Bath",
+      "class": "third",
+      "type": "bathroom",
+      "coordinates": "200,86 200,106 204,108 221,108 225,106 225,90 214,83 205,83",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Infectious Hospitals Bath 1.jpg",
+        "chatRoom": "infectious_hospitals_bath_c"
+      }
+    },
+    {
+      "id": "hospital_attendants_c",
+      "name": "Hospital Attendants' Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "303,72 303,106 331,106 331,72",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Hospital Attendants 1.jpg",
+        "chatRoom": "hospital_attendants_c"
+      }
+    },
+    {
+      "id": "hospital_1_c",
+      "name": "Hospital No. 1",
+      "class": "third",
+      "type": "hospital",
+      "coordinates": "263,85 263,100 261,101 261,105 263,106 263,117 261,118 272,125 288,125 292,123 292,86 288,84",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Hospital One 1.jpg",
+        "chatRoom": "hospital_1_c"
+      }
+    },
+    {
+      "id": "hospital_2_c",
+      "name": "Hospital No. 2",
+      "class": "third",
+      "type": "hospital",
+      "coordinates": "236,84 232,86 232,108 234,109 233,121 236,124 250,124 254,122 256,119 262,117 262,106 259,103 262,100 262,86 258,84",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Hospital Two 1.jpg",
+        "chatRoom": "hospital_2_c"
+      }
+    },
+    {
+      "id": "hospital_3_c",
+      "name": "Hospital No. 3",
+      "class": "third",
+      "type": "hospital",
+      "coordinates": "200,136 200,157 204,159 213,159 216,162 216,166 221,169 237,169 241,167 241,146 235,143 234,137 230,135 224,137",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Hospital Three 1.jpg",
+        "chatRoom": "hospital_3_c"
+      }
+    },
+    {
+      "id": "hospital_4_c",
+      "name": "Hospital No. 4",
+      "class": "third",
+      "type": "hospital",
+      "coordinates": "233,109 229,107 224,107 221,109 200,109 200,134 204,136 224,136 228,134 229,128 233,126",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Hospital Four 1.jpg",
+        "chatRoom": "hospital_4_c"
+      }
+    },
+    {
+      "id": "hospital_passage_c",
+      "name": "Hospital Passage",
+      "class": "third",
+      "type": "passage",
+      "coordinates": "331,107 303,107 302,86 293,86 292,124 288,126 272,126 267,123 253,123 250,125 234,124 234,126 232,127 232,135 235,137 235,141 242,146 255,146 259,144 259,139 262,136 292,137 296,135 299,131 305,129 305,121 308,118 327,119 331,117",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Hospital Passage 1.jpg",
+        "chatRoom": "hospital_passage_c"
+      }
+    },
+    {
+      "id": "hospital_bath_c",
+      "name": "Hospital Bath and W.C.",
+      "class": "third",
+      "type": "bathroom",
+      "coordinates": "249,154 249,167 253,169 273,169 277,167 277,148 273,146 259,146 255,148 252,153",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Hospital Bath 1.jpg",
+        "chatRoom": "hospital_bath_c"
+      }
     }
   ]
 };

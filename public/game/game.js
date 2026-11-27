@@ -101,8 +101,9 @@ const MODERATION_ROOMS = {
     name: "Padded Room",
     type: "padded-room",
     location: {
+      // its pictures are the ship's real padded room on C deck aft
+      // (roomImages.padded_room, scripts/images/install_c_deck_aft.py)
       chatRoom: "padded_room",
-      imagePath: "/images/animations/locations/moderation/padded room.webp",
     },
   },
   hell: {
@@ -117,6 +118,13 @@ const MODERATION_ROOMS = {
 };
 // The padded room's fare (the server serves nothing else there)
 const PADDED_ROOM_MENU = ["Helping rice", "Water"];
+// The Eat & Drink button's word for a room's menu: an open deck offers only
+// tobacco, the hospitals only medicine
+function menuButtonLabel(mode) {
+  if (mode === "tobacco") return "Tobacco";
+  if (mode === "medicine") return "Medicine";
+  return "Eat & Drink";
+}
 // The player's standing, as the server last told it ("moderation-status"):
 // role ("owner", "admin" or null), mute ({ until, reason } or null) and
 // confinement ({ place, reason } or null); ready once the first word has come
@@ -2311,6 +2319,22 @@ document.addEventListener("DOMContentLoaded", function () {
         assistant_commanders_wc_bd: "Assistant Commander's W.C.",
         officers_wc_bd: "Officers' W.C.",
         oilskin_locker_bd: "Oilskin Locker",
+        // C deck aft, under the poop (2026-11-26)
+        third_class_entrance_c: "3rd Class Entrance",
+        third_class_general_room_c: "3rd Class General Room",
+        third_class_waiting_room_c: "3rd Class Waiting Room",
+        surgery_c: "Surgery and Dispensary",
+        infectious_hospital_1_c: "Infectious Hospital No. 1",
+        infectious_hospital_2_c: "Infectious Hospital No. 2",
+        hospital_1_c: "Hospital No. 1",
+        hospital_2_c: "Hospital No. 2",
+        hospital_3_c: "Hospital No. 3",
+        hospital_4_c: "Hospital No. 4",
+        hospital_attendants_c: "Hospital Attendants' Room",
+        infectious_hospitals_passage_c: "Infectious Hospitals' Passage",
+        infectious_hospitals_bath_c: "Infectious Hospitals' Bath",
+        hospital_passage_c: "Hospital Passage",
+        hospital_bath_c: "Hospital Bath and W.C.",
         padded_room: "Padded Room",
         hell: "Hell",
       };
@@ -2452,6 +2476,13 @@ document.addEventListener("DOMContentLoaded", function () {
           "wc",
           "pantry",
           "locker",
+          // C deck aft (2026-11-26): the third-class entrance, the hospitals' passages, the hospitals, surgery and
+          // waiting room
+          "entrance",
+          "passage",
+          "hospital",
+          "surgery",
+          "waiting-room",
         ];
 
         const eatDrinkBtn = document.getElementById("eat-drink-btn");
@@ -2485,9 +2516,24 @@ document.addEventListener("DOMContentLoaded", function () {
             "restaurant_reception_room",
             "officers_smoke_room_bd",
             "captains_sitting_room_bd",
+            "third_class_general_room_c", // C deck aft: the general room's buffet (my choice, 2026-11-26)
+          ];
+          //   the hospitals, the surgery and dispensary, the hospital's waiting
+          //   room and its attendants' room: the medicine, nothing else
+          const medicineRooms = [
+            "hospital_1_c",
+            "hospital_2_c",
+            "hospital_3_c",
+            "hospital_4_c",
+            "infectious_hospital_1_c",
+            "infectious_hospital_2_c",
+            "surgery_c",
+            "third_class_waiting_room_c",
+            "hospital_attendants_c",
           ];
           const isDiningRoom = diningRooms.includes(room.id);
           const isLoungeRoom = loungeRooms.includes(room.id);
+          const isMedicineRoom = medicineRooms.includes(room.id);
           const isOutdoorRoom =
             !isDiningRoom &&
             !isLoungeRoom &&
@@ -2499,25 +2545,31 @@ document.addEventListener("DOMContentLoaded", function () {
             ? "padded"
             : isHell
               ? ""
-              : isDiningRoom
-                ? "full"
-                : isLoungeRoom
-                  ? "drinks"
-                  : isOutdoorRoom
-                    ? "tobacco"
-                    : "";
+              : isMedicineRoom
+                ? "medicine"
+                : isDiningRoom
+                  ? "full"
+                  : isLoungeRoom
+                    ? "drinks"
+                    : isOutdoorRoom
+                      ? "tobacco"
+                      : "";
 
           eatDrinkBtn.dataset.menuMode = menuMode;
           eatDrinkBtn.dataset.tobaccoOnly =
             menuMode === "tobacco" ? "true" : "false";
           eatDrinkBtn.style.display = menuMode ? "block" : "none";
-          // Open decks only offer tobacco, so the button says so
-          eatDrinkBtn.textContent =
-            menuMode === "tobacco" ? "Tobacco" : "Eat & Drink";
+          // Open decks only offer tobacco and the hospitals medicine, so the
+          // button says so
+          eatDrinkBtn.textContent = menuButtonLabel(menuMode);
 
+          // (no tobacco in the third-class general room: third class smoked
+          // in its smoke room and on deck)
+          const smokeFreeRooms = ["third_class_general_room_c"];
           const tobaccoBtn = document.getElementById("tobacco-btn");
           if (tobaccoBtn) {
-            tobaccoBtn.style.display = menuMode === "drinks" ? "block" : "none";
+            tobaccoBtn.style.display =
+              menuMode === "drinks" && !smokeFreeRooms.includes(room.id) ? "block" : "none";
             tobaccoBtn.textContent = "Tobacco";
           }
         }
@@ -2592,11 +2644,24 @@ document.addEventListener("DOMContentLoaded", function () {
         officers_lavatory_bd: ["wash", "toilet"],
         assistant_commanders_wc_bd: ["toilet"],
         officers_wc_bd: ["toilet"],
+        // C deck aft: the hospitals (a basin and berths), the attendants'
+        // room (a basin and a two-tier berth: no shower), the baths and W.C.s
+        hospital_1_c: ["wash", "sleep"],
+        hospital_2_c: ["wash", "sleep"],
+        hospital_3_c: ["wash", "sleep"],
+        hospital_4_c: ["wash", "sleep"],
+        infectious_hospital_1_c: ["wash", "sleep"],
+        infectious_hospital_2_c: ["wash", "sleep"],
+        hospital_attendants_c: ["wash", "sleep"],
+        infectious_hospitals_bath_c: ["bath", "toilet"],
+        hospital_bath_c: ["bath", "toilet"],
       };
+      // a room's own list first, then every cabin and the padded room
       const careActions =
-        room.type === "cabin" || room.id === "padded_room"
+        ROOM_CARE[room.id] ||
+        (room.type === "cabin" || room.id === "padded_room"
           ? ["shower", "toilet", "sleep"]
-          : ROOM_CARE[room.id];
+          : undefined);
       if (careActions) {
         const locationDisplay = document.querySelector(".location-display");
         // in the row of the room's own buttons, after them (the padded room
@@ -4941,8 +5006,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function resetMenuButtons() {
     if (eatDrinkBtn) {
-      eatDrinkBtn.textContent =
-        eatDrinkBtn.dataset.menuMode === "tobacco" ? "Tobacco" : "Eat & Drink";
+      eatDrinkBtn.textContent = menuButtonLabel(eatDrinkBtn.dataset.menuMode);
     }
     if (tobaccoBtn) tobaccoBtn.textContent = "Tobacco";
   }
@@ -5115,6 +5179,27 @@ document.addEventListener("DOMContentLoaded", function () {
           </div>
     `;
 
+    // The hospitals: the dispensary's medicine, pills and powders, and the
+    // draughts taken in water
+    const medicineSidebar = `
+          <div class="edm-category" data-category="food">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▼</span> Medicine
+            </div>
+            <div class="edm-subcategories" style="display:flex">
+              <div class="edm-subcat-btn active" data-top="food" data-sub="medicine">All</div>
+            </div>
+          </div>
+          <div class="edm-category" data-category="soft_beverages">
+            <div class="edm-category-header">
+              <span class="edm-arrow">▶</span> Medicinal Drinks
+            </div>
+            <div class="edm-subcategories">
+              <div class="edm-subcat-btn active" data-top="soft_beverages" data-sub="medicine">All</div>
+            </div>
+          </div>
+    `;
+
     popup.innerHTML = `
       <div class="edm-body">
         <div class="edm-sidebar">
@@ -5125,7 +5210,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 ? drinksSidebar
                 : mode === "padded"
                   ? paddedSidebar
-                  : fullSidebar
+                  : mode === "medicine"
+                    ? medicineSidebar
+                    : fullSidebar
           }
         </div>
         <div class="edm-content">
@@ -5164,6 +5251,9 @@ document.addEventListener("DOMContentLoaded", function () {
         )
           return false;
         if (mode === "padded" && !PADDED_ROOM_MENU.includes(item.name)) return false;
+        // medicine is kept at the hospital's dispensary, and the hospitals
+        // serve nothing else
+        if ((mode === "medicine") !== (item.subCategory === "medicine")) return false;
         return true;
       });
 

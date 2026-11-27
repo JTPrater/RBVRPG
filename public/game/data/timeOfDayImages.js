@@ -1,7 +1,8 @@
 // Night and sunrise/sunset versions of the Britannic's exterior location pictures, made from the day pictures
 // (scripts/night_edit; written by make_tod_manifest.py). Sunrise and sunset share one set ("twilight"). A version has
 // the day picture's name with a .webp extension, in its own folder beside images/animations/locations/britannic.
-// After them come the rooms rendered in all three lights (rendered_list.tsv): the officers' house on the boat deck.
+// After them come the rooms rendered in all three lights (rendered_list*.tsv): the officers' house on the boat deck
+// and C deck aft under the poop.
 (function (RBV) {
   const FOLDERS = { night: "britannic (night)", twilight: "britannic (twilight)" };
   const NAMES = [
@@ -226,6 +227,26 @@
     "Officers Bath 3.jpg",
     "Assistant Commander WC 1.jpg",
     "Officers WC 1.jpg",
+    "C Deck 3rd Class Entrance 1.jpg",
+    "C Deck 3rd Class Entrance 2.jpg",
+    "C Deck 3rd Class Entrance 3.jpg",
+    "C Deck 3rd Class Entrance 4.jpg",
+    "C Deck 3rd Class Entrance 5.jpg",
+    "C Deck 3rd Class Entrance 6.jpg",
+    "C Deck 3rd Class General Room 1.jpg",
+    "C Deck 3rd Class General Room 2.jpg",
+    "C Deck 3rd Class General Room 3.jpg",
+    "C Deck 3rd Class General Room 4.jpg",
+    "C Deck 3rd Class General Room 5.jpg",
+    "C Deck 3rd Class Waiting Room 1.jpg",
+    "C Deck 3rd Class Waiting Room 2.jpg",
+    "C Deck Surgery 1.jpg",
+    "C Deck Surgery 2.jpg",
+    "C Deck Surgery 3.jpg",
+    "C Deck Infectious Hospital One 1.jpg",
+    "C Deck Infectious Hospital One 2.jpg",
+    "C Deck Infectious Hospital Two 1.jpg",
+    "C Deck Infectious Hospital Two 2.jpg",
   ];
   const have = new Set(NAMES);
 
