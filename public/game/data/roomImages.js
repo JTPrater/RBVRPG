@@ -984,6 +984,111 @@ roomImages.lamp_trimmer_storekeeper_c = {
   currentIndex: 0,
 };
 
+roomImages.first_class_midship_gents_lavatory_c = {
+  images: ["C Deck 1st Class Midship Gentlemens Lavatory 1.jpg", "C Deck 1st Class Midship Gentlemens Lavatory 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_midship_gents_bath_c = {
+  images: ["C Deck 1st Class Midship Gentlemens Bath 1.jpg", "C Deck 1st Class Midship Gentlemens Bath 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_midship_ladies_lavatory_c = {
+  images: ["C Deck 1st Class Midship Ladies Lavatory 1.jpg", "C Deck 1st Class Midship Ladies Lavatory 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_midship_ladies_bath_port_c = {
+  images: ["C Deck 1st Class Midship Ladies Port Bath 1.jpg", "C Deck 1st Class Midship Ladies Port Bath 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_midship_ladies_bath_starboard_c = {
+  images: ["C Deck 1st Class Midship Ladies Starboard Bath 1.jpg", "C Deck 1st Class Midship Ladies Starboard Bath 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_forward_ladies_lavatory_c = {
+  images: ["C Deck 1st Class Forward Ladies Lavatory 1.jpg", "C Deck 1st Class Forward Ladies Lavatory 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_forward_ladies_bath_port_c = {
+  images: ["C Deck 1st Class Forward Ladies Port Bath 1.jpg", "C Deck 1st Class Forward Ladies Port Bath 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_forward_ladies_bath_starboard_c = {
+  images: ["C Deck 1st Class Forward Ladies Starboard Bath 1.jpg", "C Deck 1st Class Forward Ladies Starboard Bath 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_forward_gents_lavatory_c = {
+  images: ["C Deck 1st Class Forward Gentlemens Lavatory 1.jpg", "C Deck 1st Class Forward Gentlemens Lavatory 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_forward_gents_bath_1_c = {
+  images: ["C Deck 1st Class Forward Gentlemens Bath One 1.jpg", "C Deck 1st Class Forward Gentlemens Bath One 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_forward_gents_bath_2_c = {
+  images: ["C Deck 1st Class Forward Gentlemens Bath Two 1.jpg", "C Deck 1st Class Forward Gentlemens Bath Two 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_forward_gents_bath_3_c = {
+  images: ["C Deck 1st Class Forward Gentlemens Bath Three 1.jpg", "C Deck 1st Class Forward Gentlemens Bath Three 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.purser_c = {
+  images: ["C Deck Pursers Cabin 1.jpg", "C Deck Pursers Cabin 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.forward_stewardesses_c = {
+  images: ["C Deck Forward Stewardesses Room 1.jpg", "C Deck Forward Stewardesses Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.midship_stewardesses_c = {
+  images: ["C Deck Midship Stewardesses Room 1.jpg", "C Deck Midship Stewardesses Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.firemens_entrance_port_c = {
+  images: ["C Deck Firemens Port Entrance 1.jpg", "C Deck Firemens Port Entrance 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.firemens_entrance_starboard_c = {
+  images: ["C Deck Firemens Starboard Entrance 1.jpg", "C Deck Firemens Starboard Entrance 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.seamens_entrance_c = {
+  images: ["C Deck Seamens Entrance 1.jpg", "C Deck Seamens Entrance 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.trimmers_wcs_c = {
+  images: ["C Deck Trimmers WCs 1.jpg", "C Deck Trimmers WCs 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.carpenters_shop_c = {
+  images: ["C Deck Carpenters Shop 1.jpg", "C Deck Carpenters Shop 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.carpenters_store_c = {
+  images: ["C Deck Carpenters Store 1.jpg", "C Deck Carpenters Store 2.jpg"],
+  currentIndex: 0,
+};
+
 // <<< C deck amidships and under the forecastle
 
   RBV.data = RBV.data || {};

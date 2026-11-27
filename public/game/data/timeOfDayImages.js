@@ -267,6 +267,8 @@
     "C Deck Greasers Mess 2.jpg",
     "C Deck Lamp Trimmer and Storekeepers Room 1.jpg",
     "C Deck Lamp Trimmer and Storekeepers Room 2.jpg",
+    "C Deck Trimmers WCs 1.jpg",
+    "C Deck Trimmers WCs 2.jpg",
     "C Deck 2nd Class Library 1.jpg",
     "C Deck 2nd Class Library 2.jpg",
     "C Deck 2nd Class Library 3.jpg",
