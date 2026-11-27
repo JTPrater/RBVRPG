@@ -1114,6 +1114,26 @@ roomImages.firemens_wcs_c = {
   currentIndex: 0,
 };
 
+roomImages.consulting_room_c = {
+  images: ["C Deck Consulting Room 1.jpg", "C Deck Consulting Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.deck_engineers_c = {
+  images: ["C Deck Deck Engineers Room 1.jpg", "C Deck Deck Engineers Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.forward_pantry_c = {
+  images: ["C Deck Forward Pantry 1.jpg", "C Deck Forward Pantry 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.midship_pantry_c = {
+  images: ["C Deck Midship Pantry 1.jpg", "C Deck Midship Pantry 2.jpg"],
+  currentIndex: 0,
+};
+
 // <<< C deck amidships and under the forecastle
 
   RBV.data = RBV.data || {};

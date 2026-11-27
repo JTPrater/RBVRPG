@@ -41,9 +41,12 @@ ACCENT = (176, 58, 46)      # the red centreline and frame marks
 # partition between the seamen's mess and the petty officers' room (the 1914 drawing has one mess there; Britannic as
 # built has the petty officers' room in its fore end, measured on the same sheet: from the ship's side down to the
 # carpenter's store, the room 2.05 m fore and aft; the 1914 "P. Officers" room forward of it is the boatswain's mates').
+# The doctor's consulting room at the fore end of the second-class promenade, port side (the 1914 drawing has open
+# promenade there): its after wall in line with the second-class house's fore end, its inboard wall 3.0 m in from the
+# side with the door's gap at its forward end; measured on the same sheet.
 ADDED_WALLS = {
     "c_deck": [(497, 208, 534, 209), (496, 205, 497, 269), (496, 268, 568, 269), (567, 262, 568, 269),
-               (2904, 67, 2905, 120)],
+               (2904, 67, 2905, 120), (846, 13, 847, 43), (846, 42, 881, 43)],
 }
 
 
