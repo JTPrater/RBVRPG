@@ -1934,6 +1934,258 @@
         "image": "C Deck Lamp Trimmer and Storekeepers Room 1.jpg",
         "chatRoom": "lamp_trimmer_storekeeper_c"
       }
+    },
+    {
+      "id": "first_class_midship_gents_lavatory_c",
+      "name": "Midship Gentlemen's Lavatory",
+      "class": "first",
+      "type": "lavatory",
+      "coordinates": "1526,140 1526,178 1561,178 1560,140",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Midship Gentlemens Lavatory 1.jpg",
+        "chatRoom": "first_class_midship_gents_lavatory_c"
+      }
+    },
+    {
+      "id": "first_class_midship_gents_bath_c",
+      "name": "Midship Gentlemen's Bath",
+      "class": "first",
+      "type": "bathroom",
+      "coordinates": "1561,140 1561,169 1585,169 1585,140",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Midship Gentlemens Bath 1.jpg",
+        "chatRoom": "first_class_midship_gents_bath_c"
+      }
+    },
+    {
+      "id": "first_class_midship_ladies_lavatory_c",
+      "name": "Midship Ladies' Lavatory",
+      "class": "first",
+      "type": "lavatory",
+      "coordinates": "1735,167 1735,216 1773,216 1773,167",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Midship Ladies Lavatory 1.jpg",
+        "chatRoom": "first_class_midship_ladies_lavatory_c"
+      }
+    },
+    {
+      "id": "first_class_midship_ladies_bath_port_c",
+      "name": "Midship Ladies' Port Bath",
+      "class": "first",
+      "type": "bathroom",
+      "coordinates": "1700,110 1700,140 1724,140 1724,110",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Midship Ladies Port Bath 1.jpg",
+        "chatRoom": "first_class_midship_ladies_bath_port_c"
+      }
+    },
+    {
+      "id": "first_class_midship_ladies_bath_starboard_c",
+      "name": "Midship Ladies' Starboard Bath",
+      "class": "first",
+      "type": "bathroom",
+      "coordinates": "1700,216 1700,247 1724,247 1724,216",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Midship Ladies Starboard Bath 1.jpg",
+        "chatRoom": "first_class_midship_ladies_bath_starboard_c"
+      }
+    },
+    {
+      "id": "first_class_forward_ladies_lavatory_c",
+      "name": "Forward Ladies' Lavatory",
+      "class": "first",
+      "type": "lavatory",
+      "coordinates": "2165,140 2164,215 2200,215 2200,141",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Forward Ladies Lavatory 1.jpg",
+        "chatRoom": "first_class_forward_ladies_lavatory_c"
+      }
+    },
+    {
+      "id": "first_class_forward_ladies_bath_port_c",
+      "name": "Forward Ladies' Port Bath",
+      "class": "first",
+      "type": "bathroom",
+      "coordinates": "2140,111 2140,140 2164,140 2164,111",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Forward Ladies Port Bath 1.jpg",
+        "chatRoom": "first_class_forward_ladies_bath_port_c"
+      }
+    },
+    {
+      "id": "first_class_forward_ladies_bath_starboard_c",
+      "name": "Forward Ladies' Starboard Bath",
+      "class": "first",
+      "type": "bathroom",
+      "coordinates": "2140,216 2140,244 2164,244 2164,216",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Forward Ladies Starboard Bath 1.jpg",
+        "chatRoom": "first_class_forward_ladies_bath_starboard_c"
+      }
+    },
+    {
+      "id": "first_class_forward_gents_lavatory_c",
+      "name": "Forward Gentlemen's Lavatory",
+      "class": "first",
+      "type": "lavatory",
+      "coordinates": "2371,140 2371,216 2412,216 2412,140",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Forward Gentlemens Lavatory 1.jpg",
+        "chatRoom": "first_class_forward_gents_lavatory_c"
+      }
+    },
+    {
+      "id": "first_class_forward_gents_bath_1_c",
+      "name": "Forward Gentlemen's Bath No. 1",
+      "class": "first",
+      "type": "bathroom",
+      "coordinates": "2413,140 2413,165 2437,165 2437,140",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Forward Gentlemens Bath One 1.jpg",
+        "chatRoom": "first_class_forward_gents_bath_1_c"
+      }
+    },
+    {
+      "id": "first_class_forward_gents_bath_2_c",
+      "name": "Forward Gentlemen's Bath No. 2",
+      "class": "first",
+      "type": "bathroom",
+      "coordinates": "2413,177 2413,200 2437,200 2437,177",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Forward Gentlemens Bath Two 1.jpg",
+        "chatRoom": "first_class_forward_gents_bath_2_c"
+      }
+    },
+    {
+      "id": "first_class_forward_gents_bath_3_c",
+      "name": "Forward Gentlemen's Bath No. 3",
+      "class": "first",
+      "type": "bathroom",
+      "coordinates": "2413,201 2413,224 2437,224 2437,201",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Forward Gentlemens Bath Three 1.jpg",
+        "chatRoom": "first_class_forward_gents_bath_3_c"
+      }
+    },
+    {
+      "id": "purser_c",
+      "name": "Purser's Cabin",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2172,111 2172,140 2216,140 2216,111",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Pursers Cabin 1.jpg",
+        "chatRoom": "purser_c"
+      }
+    },
+    {
+      "id": "forward_stewardesses_c",
+      "name": "Forward Stewardesses' Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2172,216 2172,244 2205,244 2205,216",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Forward Stewardesses Room 1.jpg",
+        "chatRoom": "forward_stewardesses_c"
+      }
+    },
+    {
+      "id": "midship_stewardesses_c",
+      "name": "Midship Stewardesses' Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "1735,140 1735,166 1773,166 1773,140",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Midship Stewardesses Room 1.jpg",
+        "chatRoom": "midship_stewardesses_c"
+      }
+    },
+    {
+      "id": "firemens_entrance_port_c",
+      "name": "Firemen's Port Entrance",
+      "class": "crew",
+      "type": "entrance",
+      "coordinates": "2805,117 2805,135 2849,135 2849,117",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Firemens Port Entrance 1.jpg",
+        "chatRoom": "firemens_entrance_port_c"
+      }
+    },
+    {
+      "id": "firemens_entrance_starboard_c",
+      "name": "Firemen's Starboard Entrance",
+      "class": "crew",
+      "type": "entrance",
+      "coordinates": "2805,222 2805,251 2823,251 2824,240 2850,240 2850,222",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Firemens Starboard Entrance 1.jpg",
+        "chatRoom": "firemens_entrance_starboard_c"
+      }
+    },
+    {
+      "id": "seamens_entrance_c",
+      "name": "Seamen's Entrance",
+      "class": "crew",
+      "type": "entrance",
+      "coordinates": "2795,153 2795,193 2810,193 2810,153",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Seamens Entrance 1.jpg",
+        "chatRoom": "seamens_entrance_c"
+      }
+    },
+    {
+      "id": "trimmers_wcs_c",
+      "name": "Trimmers' W.C.s",
+      "class": "crew",
+      "type": "wc",
+      "coordinates": "2851,241 2824,241 2823,252 2805,252 2807,300 2806,306 2810,308 2816,307 2822,304 2822,301 2825,298 2844,293 2845,294 2851,291",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Trimmers WCs 1.jpg",
+        "chatRoom": "trimmers_wcs_c"
+      }
+    },
+    {
+      "id": "carpenters_shop_c",
+      "name": "Carpenter's Shop",
+      "class": "crew",
+      "type": "pantry",
+      "coordinates": "2841,152 2841,204 2868,204 2868,152",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Carpenters Shop 1.jpg",
+        "chatRoom": "carpenters_shop_c"
+      }
+    },
+    {
+      "id": "carpenters_store_c",
+      "name": "Carpenter's Store",
+      "class": "crew",
+      "type": "locker",
+      "coordinates": "2881,120 2881,135 2919,135 2919,120",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Carpenters Store 1.jpg",
+        "chatRoom": "carpenters_store_c"
+      }
     }
   ]
 };

@@ -1,4 +1,5 @@
-"""C deck amidships and under the forecastle, in the game: sixteen rooms' pictures (2026-11-27).
+"""C deck amidships, forward and under the forecastle, in the game: the rooms' pictures (2026-11-27; 37 rooms in two
+releases).
 
 The pictures are our own renders (blender/c_deck_midships/renders, 1920 x 1080; see its README.md, which is
 kept beside the Blender files and not in git): rooms with a window or sidelights in three lights (renders/day,
@@ -53,6 +54,34 @@ ROOMS = [
     ("firemens_wash_place_c", "C Deck Firemens Wash Place", ["Firemens_Wash_Place"], "3"),
     ("greasers_mess_c", "C Deck Greasers Mess", ["Greasers_Mess"], "3"),
     ("lamp_trimmer_storekeeper_c", "C Deck Lamp Trimmer and Storekeepers Room", ["Lamp_Trimmer_and_Storekeeper"], "3"),
+    # first class's other public lavatories and baths: between Nos. 2 and 3 boiler casings, and forward
+    ("first_class_midship_gents_lavatory_c", "C Deck 1st Class Midship Gentlemens Lavatory", ["Midship_Gents_Lavatory"], "lamp"),
+    ("first_class_midship_gents_bath_c", "C Deck 1st Class Midship Gentlemens Bath", ["Midship_Gents_Bath"], "lamp"),
+    ("first_class_midship_ladies_lavatory_c", "C Deck 1st Class Midship Ladies Lavatory", ["Midship_Ladies_Lavatory"], "lamp"),
+    ("first_class_midship_ladies_bath_port_c", "C Deck 1st Class Midship Ladies Port Bath", ["Midship_Ladies_Bath_Port"],
+     "lamp"),
+    ("first_class_midship_ladies_bath_starboard_c", "C Deck 1st Class Midship Ladies Starboard Bath",
+     ["Midship_Ladies_Bath_Starboard"], "lamp"),
+    ("first_class_forward_ladies_lavatory_c", "C Deck 1st Class Forward Ladies Lavatory", ["Forward_Ladies_Lavatory"], "lamp"),
+    ("first_class_forward_ladies_bath_port_c", "C Deck 1st Class Forward Ladies Port Bath", ["Forward_Ladies_Bath_Port"],
+     "lamp"),
+    ("first_class_forward_ladies_bath_starboard_c", "C Deck 1st Class Forward Ladies Starboard Bath",
+     ["Forward_Ladies_Bath_Starboard"], "lamp"),
+    ("first_class_forward_gents_lavatory_c", "C Deck 1st Class Forward Gentlemens Lavatory", ["Forward_Gents_Lavatory"], "lamp"),
+    ("first_class_forward_gents_bath_1_c", "C Deck 1st Class Forward Gentlemens Bath One", ["Forward_Gents_Bath_1"], "lamp"),
+    ("first_class_forward_gents_bath_2_c", "C Deck 1st Class Forward Gentlemens Bath Two", ["Forward_Gents_Bath_2"], "lamp"),
+    ("first_class_forward_gents_bath_3_c", "C Deck 1st Class Forward Gentlemens Bath Three", ["Forward_Gents_Bath_3"], "lamp"),
+    # the Purser's and two more stewardesses' rooms
+    ("purser_c", "C Deck Pursers Cabin", ["Forward_Purser"], "lamp"),
+    ("forward_stewardesses_c", "C Deck Forward Stewardesses Room", ["Forward_Stewardesses"], "lamp"),
+    ("midship_stewardesses_c", "C Deck Midship Stewardesses Room", ["Midship_Stewardesses"], "lamp"),
+    # more crew spaces under the forecastle (the bugler boys' room is not in: its pictures failed the check)
+    ("firemens_entrance_port_c", "C Deck Firemens Port Entrance", ["Firemens_Entrance_Port"], "lamp"),
+    ("firemens_entrance_starboard_c", "C Deck Firemens Starboard Entrance", ["Firemens_Entrance_Starboard"], "lamp"),
+    ("seamens_entrance_c", "C Deck Seamens Entrance", ["Seamens_Entrance"], "lamp"),
+    ("trimmers_wcs_c", "C Deck Trimmers WCs", ["Trimmers_WCs"], "3"),
+    ("carpenters_shop_c", "C Deck Carpenters Shop", ["Carpenters_Shop"], "lamp"),
+    ("carpenters_store_c", "C Deck Carpenters Store", ["Carpenters_Store"], "lamp"),
 ]
 ON_PLAN = [r for r in ROOMS if r[0] != "padded_room"]       # the padded room is the moderators' cell, on no plan
 KINDS = (("day", None), ("sunset", "britannic (twilight)"), ("night", "britannic (night)"))
