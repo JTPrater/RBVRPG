@@ -2379,6 +2379,12 @@ document.addEventListener("DOMContentLoaded", function () {
         trimmers_wcs_c: "Trimmers' W.C.s",
         carpenters_shop_c: "Carpenter's Shop",
         carpenters_store_c: "Carpenter's Store",
+        // C deck under the forecastle: the centre house abaft the fore mast, the bugler boys, the firemen's W.C.s
+        bugler_boys_c: "Bugler Boys' Room",
+        masters_at_arms_c: "Masters-at-Arms' Room",
+        potato_store_c: "Potato Store",
+        galley_store_c: "Galley Store",
+        firemens_wcs_c: "Firemen's W.C.s",
         padded_room: "Padded Room",
         hell: "Hell",
       };
