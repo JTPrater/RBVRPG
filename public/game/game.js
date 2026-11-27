@@ -2335,6 +2335,9 @@ document.addEventListener("DOMContentLoaded", function () {
         infectious_hospitals_bath_c: "Infectious Hospitals' Bath",
         hospital_passage_c: "Hospital Passage",
         hospital_bath_c: "Hospital Bath and W.C.",
+        // C deck, the second-class house (2026-11-27)
+        second_class_library_c: "2nd Class Library",
+        second_class_gymnasium_c: "2nd Class Gymnasium",
         padded_room: "Padded Room",
         hell: "Hell",
       };
@@ -2483,6 +2486,8 @@ document.addEventListener("DOMContentLoaded", function () {
           "hospital",
           "surgery",
           "waiting-room",
+          // C deck, the second-class house (2026-11-27): the library
+          "library",
         ];
 
         const eatDrinkBtn = document.getElementById("eat-drink-btn");
@@ -2517,6 +2522,7 @@ document.addEventListener("DOMContentLoaded", function () {
             "officers_smoke_room_bd",
             "captains_sitting_room_bd",
             "third_class_general_room_c", // C deck aft: the general room's buffet (my choice, 2026-11-26)
+            "second_class_library_c", // the second-class library and writing room (my choice, 2026-11-27)
           ];
           //   the hospitals, the surgery and dispensary, the hospital's waiting
           //   room and its attendants' room: the medicine, nothing else
@@ -2565,7 +2571,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
           // (no tobacco in the third-class general room: third class smoked
           // in its smoke room and on deck)
-          const smokeFreeRooms = ["third_class_general_room_c"];
+          // (nor in the second-class library: the class smoked in its smoke room on B deck)
+          const smokeFreeRooms = ["third_class_general_room_c", "second_class_library_c"];
           const tobaccoBtn = document.getElementById("tobacco-btn");
           if (tobaccoBtn) {
             tobaccoBtn.style.display =

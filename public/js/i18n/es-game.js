@@ -71,6 +71,8 @@
     "Poop Deck": "Cubierta de popa",
     "3rd Class Smoke Room": "Salón de fumar de tercera clase",
     "2nd Class Smoke Room": "Salón de fumar de segunda clase",
+    "2nd Class Library": "Biblioteca de segunda clase",
+    "2nd Class Gymnasium": "Gimnasio de segunda clase",
     "2nd Class Starboard Promenade": "Paseo de estribor de segunda clase",
     "2nd Class Port Promenade": "Paseo de babor de segunda clase",
     "B-Deck Aft Staircase": "Escalera de popa de la cubierta B",
