@@ -885,6 +885,19 @@ roomImages.padded_room = {
 
 // <<< C deck aft
 
+// >>> C deck, the second-class house: our own renders (scripts/images/install_c_deck_second_class.py)
+roomImages.second_class_library_c = {
+  images: ["C Deck 2nd Class Library 1.jpg", "C Deck 2nd Class Library 2.jpg", "C Deck 2nd Class Library 3.jpg", "C Deck 2nd Class Library 4.jpg", "C Deck 2nd Class Library 5.jpg", "C Deck 2nd Class Library 6.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.second_class_gymnasium_c = {
+  images: ["C Deck 2nd Class Gymnasium 1.jpg", "C Deck 2nd Class Gymnasium 2.jpg", "C Deck 2nd Class Gymnasium 3.jpg", "C Deck 2nd Class Gymnasium 4.jpg", "C Deck 2nd Class Gymnasium 5.jpg"],
+  currentIndex: 0,
+};
+
+// <<< C deck, the second-class house
+
   RBV.data = RBV.data || {};
   RBV.data.roomImages = roomImages;
   window.roomImages = roomImages;

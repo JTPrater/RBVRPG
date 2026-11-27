@@ -247,6 +247,17 @@
     "C Deck Infectious Hospital One 2.jpg",
     "C Deck Infectious Hospital Two 1.jpg",
     "C Deck Infectious Hospital Two 2.jpg",
+    "C Deck 2nd Class Library 1.jpg",
+    "C Deck 2nd Class Library 2.jpg",
+    "C Deck 2nd Class Library 3.jpg",
+    "C Deck 2nd Class Library 4.jpg",
+    "C Deck 2nd Class Library 5.jpg",
+    "C Deck 2nd Class Library 6.jpg",
+    "C Deck 2nd Class Gymnasium 1.jpg",
+    "C Deck 2nd Class Gymnasium 2.jpg",
+    "C Deck 2nd Class Gymnasium 3.jpg",
+    "C Deck 2nd Class Gymnasium 4.jpg",
+    "C Deck 2nd Class Gymnasium 5.jpg",
   ];
   const have = new Set(NAMES);
 

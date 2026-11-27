@@ -71,6 +71,8 @@
     "Poop Deck": "Ют",
     "3rd Class Smoke Room": "Курительная третьего класса",
     "2nd Class Smoke Room": "Курительная второго класса",
+    "2nd Class Library": "Библиотека второго класса",
+    "2nd Class Gymnasium": "Спортзал второго класса",
     "2nd Class Starboard Promenade": "Прогулочная палуба второго класса, правый борт",
     "2nd Class Port Promenade": "Прогулочная палуба второго класса, левый борт",
     "B-Deck Aft Staircase": "Кормовая лестница палубы B",

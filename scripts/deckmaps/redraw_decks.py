@@ -32,6 +32,32 @@ WIDTH = 3200
 PAPER = (255, 255, 255)
 INK = (30, 38, 52)
 ACCENT = (176, 58, 46)      # the red centreline and frame marks
+
+
+# Walls that the 1914 drawing does not show, in map pixels (x0, y0, x1, y1, inclusive), drawn in the drawing's own
+# ink. C deck: the second-class gymnasium at No 5 hatch, starboard (it was added after 1914; measured from the
+# third-party plan's sheet 2 and fitted to this map's walls: its fore wall is the entrance's after bulkhead, its
+# inboard wall runs on from the stair casing's side, 4.9 m by 5.75 m inside).
+ADDED_WALLS = {
+    "c_deck": [(497, 208, 534, 209), (496, 205, 497, 269), (496, 268, 568, 269), (567, 262, 568, 269)],
+}
+
+
+def add_walls(deck, img):
+    """Draw ADDED_WALLS for this deck into the PIL map: ink coverage made at 4x and box-filtered down, so the new
+    lines have the same soft edge as the redrawn ones."""
+    walls = ADDED_WALLS.get(deck)
+    if not walls:
+        return img
+    k = 4
+    a = np.asarray(img.convert("RGB")).astype(np.float32)
+    h, w = a.shape[:2]
+    cov = np.zeros((h * k, w * k), np.float32)
+    for x0, y0, x1, y1 in walls:
+        cov[y0 * k:(y1 + 1) * k, x0 * k:(x1 + 1) * k] = 1.0
+    cov = cov.reshape(h, k, w, k).mean(axis=(1, 3))[..., None]
+    out = a * (1.0 - cov) + np.array(INK, np.float32) * cov
+    return Image.fromarray(np.clip(out + 0.5, 0, 255).astype(np.uint8))
 SRC_LINE = 4.0              # typical wall line in the scans (px)
 MIN_LINE = 1.7              # wanted at the output width (px)
 
@@ -156,6 +182,7 @@ def process(deck, scan_dir, out_dir, work_dir):
         out[..., c] = v * (1.0 - redf * 0.85) + ACCENT[c] * redf * 0.85
     oh = round(h * WIDTH / w)
     img = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).resize((WIDTH, oh), Image.LANCZOS)
+    img = add_walls(deck, img)
     img.save(os.path.join(out_dir, deck + ".jpg"), quality=90, optimize=True)
     meta = dict(scan=scan_name, box=list(box), angle=angle, rot_centre=[(x1 - x0) / 2.0, (y1 - y0) / 2.0],
                 trim=[tx0, ty0, tx1, ty1], scale=WIDTH / (tx1 - tx0), size=[WIDTH, oh], dilate=rad)
