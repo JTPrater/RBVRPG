@@ -12,7 +12,7 @@ and then the tables: roomImages.js (a marked block, one entry a room), scripts/n
 timeOfDayImages.js (make_tod_manifest.py), dayImages.js (day_webp.py), and in deckRooms.js each room's first picture
 and its type. Run again after new renders: pictures older than their render are made again.
 
-usage: python scripts/images/install_officers_house.py [--undo] [--dry]
+usage: python scripts/images/install_officers_house.py [--renders DIR] [--undo] [--dry]
 """
 import json
 import os
@@ -24,6 +24,9 @@ from PIL import Image
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 RENDERS = os.path.join(ROOT, "blender", "boat_deck_cabins", "renders")
+for _i, _a in enumerate(sys.argv):                     # --renders DIR (a release worktree has no blender/ folder)
+    if _a == "--renders" and _i + 1 < len(sys.argv):
+        RENDERS = sys.argv[_i + 1]
 LOC = os.path.join(ROOT, "public", "images", "animations", "locations")
 DATA = os.path.join(ROOT, "public", "game", "data")
 LIST = os.path.join(ROOT, "scripts", "night_edit", "rendered_list.tsv")
@@ -60,8 +63,6 @@ EXCLUDE = {  # the independent picture check of 2026-11-26
     "Port_Corridor_3_chief_officers_door": "half the frame is one blank wall",
     "Starboard_Corridor_3_captains_door": "walls close to the lens fill most of the frame",
     "Officers_Lavatory_4_urinal": "two blank walls fill three quarters of the frame",
-    "Oilskins_1_from_the_door": "the hanging coats still read as stiff cut-outs: the locker waits for draped coats",
-    "Oilskins_2_peg_rails": "a coat hangs at the lens",
     "Pantry_4_sink": "the plates in the rack, close to the lens, read as pillows (second check)",
     "Captain_Bath_1_from_the_bedroom_door": "a door at the lens fills a third of the frame (second check)",
 }

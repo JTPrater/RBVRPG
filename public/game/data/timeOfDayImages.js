@@ -227,6 +227,7 @@
     "Officers Bath 3.jpg",
     "Assistant Commander WC 1.jpg",
     "Officers WC 1.jpg",
+    "Oilskin Locker 1.jpg",
     "C Deck 3rd Class Entrance 1.jpg",
     "C Deck 3rd Class Entrance 2.jpg",
     "C Deck 3rd Class Entrance 3.jpg",

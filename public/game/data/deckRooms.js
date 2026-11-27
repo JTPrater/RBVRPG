@@ -506,7 +506,7 @@
       "coordinates": "2589,310 2589,349 2613,349 2613,310",
       "isSVG": true,
       "location": {
-        "image": "placeholder.jpg",
+        "image": "Oilskin Locker 1.jpg",
         "chatRoom": "oilskin_locker_bd"
       }
     }
