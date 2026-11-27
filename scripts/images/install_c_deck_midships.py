@@ -1,4 +1,4 @@
-"""C deck amidships, forward and under the forecastle, in the game: the rooms' pictures (2026-11-27; 37 rooms in two
+"""C deck amidships, forward and under the forecastle, in the game: the rooms' pictures (2026-11-27; 42 rooms in three
 releases).
 
 The pictures are our own renders (blender/c_deck_midships/renders, 1920 x 1080; see its README.md, which is
@@ -75,13 +75,19 @@ ROOMS = [
     ("purser_c", "C Deck Pursers Cabin", ["Forward_Purser"], "lamp"),
     ("forward_stewardesses_c", "C Deck Forward Stewardesses Room", ["Forward_Stewardesses"], "lamp"),
     ("midship_stewardesses_c", "C Deck Midship Stewardesses Room", ["Midship_Stewardesses"], "lamp"),
-    # more crew spaces under the forecastle (the bugler boys' room is not in: its pictures failed the check)
+    # more crew spaces under the forecastle (the bugler boys' room came in later, with new pictures)
     ("firemens_entrance_port_c", "C Deck Firemens Port Entrance", ["Firemens_Entrance_Port"], "lamp"),
     ("firemens_entrance_starboard_c", "C Deck Firemens Starboard Entrance", ["Firemens_Entrance_Starboard"], "lamp"),
     ("seamens_entrance_c", "C Deck Seamens Entrance", ["Seamens_Entrance"], "lamp"),
     ("trimmers_wcs_c", "C Deck Trimmers WCs", ["Trimmers_WCs"], "3"),
     ("carpenters_shop_c", "C Deck Carpenters Shop", ["Carpenters_Shop"], "lamp"),
     ("carpenters_store_c", "C Deck Carpenters Store", ["Carpenters_Store"], "lamp"),
+    # the centre house abaft the fore mast, the bugler boys' room and the firemen's W.C.s
+    ("bugler_boys_c", "C Deck Bugler Boys Room", ["Bugler_Boys"], "lamp"),
+    ("masters_at_arms_c", "C Deck Masters at Arms Room", ["Masters_at_Arms"], "lamp"),
+    ("potato_store_c", "C Deck Potato Store", ["Potato_Store"], "lamp"),
+    ("galley_store_c", "C Deck Galley Store", ["Galley_Store"], "lamp"),
+    ("firemens_wcs_c", "C Deck Firemens WCs", ["Firemens_WCs"], "3"),
 ]
 ON_PLAN = [r for r in ROOMS if r[0] != "padded_room"]       # the padded room is the moderators' cell, on no plan
 KINDS = (("day", None), ("sunset", "britannic (twilight)"), ("night", "britannic (night)"))

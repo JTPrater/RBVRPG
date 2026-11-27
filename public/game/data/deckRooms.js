@@ -2186,6 +2186,66 @@
         "image": "C Deck Carpenters Store 1.jpg",
         "chatRoom": "carpenters_store_c"
       }
+    },
+    {
+      "id": "bugler_boys_c",
+      "name": "Bugler Boys' Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2762,185 2762,204 2810,204 2810,194 2795,194 2794,185",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Bugler Boys Room 1.jpg",
+        "chatRoom": "bugler_boys_c"
+      }
+    },
+    {
+      "id": "masters_at_arms_c",
+      "name": "Masters-at-Arms' Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2736,173 2736,204 2761,204 2761,173",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Masters at Arms Room 1.jpg",
+        "chatRoom": "masters_at_arms_c"
+      }
+    },
+    {
+      "id": "potato_store_c",
+      "name": "Potato Store",
+      "class": "crew",
+      "type": "locker",
+      "coordinates": "2736,153 2736,172 2761,172 2761,153",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Potato Store 1.jpg",
+        "chatRoom": "potato_store_c"
+      }
+    },
+    {
+      "id": "galley_store_c",
+      "name": "Galley Store",
+      "class": "crew",
+      "type": "locker",
+      "coordinates": "2762,153 2762,172 2788,172 2788,153",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Galley Store 1.jpg",
+        "chatRoom": "galley_store_c"
+      }
+    },
+    {
+      "id": "firemens_wcs_c",
+      "name": "Firemen's W.C.s",
+      "class": "crew",
+      "type": "wc",
+      "coordinates": "2804,240 2777,240 2776,263 2728,263 2728,320 2806,308",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Firemens WCs 1.jpg",
+        "chatRoom": "firemens_wcs_c"
+      }
     }
   ]
 };

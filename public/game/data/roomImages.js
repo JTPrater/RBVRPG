@@ -1089,6 +1089,31 @@ roomImages.carpenters_store_c = {
   currentIndex: 0,
 };
 
+roomImages.bugler_boys_c = {
+  images: ["C Deck Bugler Boys Room 1.jpg", "C Deck Bugler Boys Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.masters_at_arms_c = {
+  images: ["C Deck Masters at Arms Room 1.jpg", "C Deck Masters at Arms Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.potato_store_c = {
+  images: ["C Deck Potato Store 1.jpg", "C Deck Potato Store 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.galley_store_c = {
+  images: ["C Deck Galley Store 1.jpg", "C Deck Galley Store 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.firemens_wcs_c = {
+  images: ["C Deck Firemens WCs 1.jpg", "C Deck Firemens WCs 2.jpg"],
+  currentIndex: 0,
+};
+
 // <<< C deck amidships and under the forecastle
 
   RBV.data = RBV.data || {};
