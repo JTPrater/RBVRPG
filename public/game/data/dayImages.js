@@ -360,6 +360,7 @@
     "Officers Starboard Corridor 1.jpg",
     "Officers Starboard Corridor 2.jpg",
     "Officers WC 1.jpg",
+    "Oilskin Locker 1.jpg",
     "Palm Court.png",
     "Palm Court2.png",
     "Palm Court3.png",
