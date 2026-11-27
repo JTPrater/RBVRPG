@@ -1742,6 +1742,198 @@
         "image": "C Deck 2nd Class Gymnasium 1.jpg",
         "chatRoom": "second_class_gymnasium_c"
       }
+    },
+    {
+      "id": "doctor_c",
+      "name": "Doctor's Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "892,107 892,170 915,170 915,107",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Doctors Room 1.jpg",
+        "chatRoom": "doctor_c"
+      }
+    },
+    {
+      "id": "assistant_doctor_c",
+      "name": "Assistant Doctor's Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "925,108 925,140 954,140 954,108",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Assistant Doctors Room 1.jpg",
+        "chatRoom": "assistant_doctor_c"
+      }
+    },
+    {
+      "id": "chief_steward_c",
+      "name": "Chief Steward's Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "892,171 892,212 916,212 916,171",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Chief Stewards Room 1.jpg",
+        "chatRoom": "chief_steward_c"
+      }
+    },
+    {
+      "id": "restaurant_manager_c",
+      "name": "Restaurant Manager's Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "892,213 892,245 916,245 916,213",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Restaurant Managers Room 1.jpg",
+        "chatRoom": "restaurant_manager_c"
+      }
+    },
+    {
+      "id": "stewardesses_c",
+      "name": "Stewardesses' Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "926,213 926,244 948,244 948,213",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Stewardesses Room 1.jpg",
+        "chatRoom": "stewardesses_c"
+      }
+    },
+    {
+      "id": "crew_passage_c",
+      "name": "Crew Passage",
+      "class": "crew",
+      "type": "passage",
+      "coordinates": "916,107 917,245 925,245 925,107",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Crew Passage 1.jpg",
+        "chatRoom": "crew_passage_c"
+      }
+    },
+    {
+      "id": "first_class_gents_lavatory_c",
+      "name": "Gentlemen's Lavatory",
+      "class": "first",
+      "type": "lavatory",
+      "coordinates": "926,141 926,180 974,180 974,150 955,150 954,141",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Gentlemens Lavatory 1.jpg",
+        "chatRoom": "first_class_gents_lavatory_c"
+      }
+    },
+    {
+      "id": "first_class_ladies_lavatory_c",
+      "name": "Ladies' Lavatory",
+      "class": "first",
+      "type": "lavatory",
+      "coordinates": "926,181 926,212 974,212 974,181",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Ladies Lavatory 1.jpg",
+        "chatRoom": "first_class_ladies_lavatory_c"
+      }
+    },
+    {
+      "id": "first_class_gents_bath_c",
+      "name": "Gentlemen's Bath",
+      "class": "first",
+      "type": "bathroom",
+      "coordinates": "963,117 963,140 987,140 987,117",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Gentlemens Bath 1.jpg",
+        "chatRoom": "first_class_gents_bath_c"
+      }
+    },
+    {
+      "id": "first_class_ladies_bath_c",
+      "name": "Ladies' Bath",
+      "class": "first",
+      "type": "bathroom",
+      "coordinates": "957,213 957,235 980,235 980,213",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck 1st Class Ladies Bath 1.jpg",
+        "chatRoom": "first_class_ladies_bath_c"
+      }
+    },
+    {
+      "id": "seamens_mess_c",
+      "name": "Seamen's Mess",
+      "class": "crew",
+      "type": "mess",
+      "coordinates": "2838,56 2838,89 2840,92 2839,115 2843,117 2856,117 2859,120 2859,133 2863,135 2880,134 2882,120 2903,120 2904,69 2844,54",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Seamens Mess 1.jpg",
+        "chatRoom": "seamens_mess_c"
+      }
+    },
+    {
+      "id": "petty_officers_c",
+      "name": "Petty Officers' Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2905,70 2905,120 2927,120 2927,75",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Petty Officers Room 1.jpg",
+        "chatRoom": "petty_officers_c"
+      }
+    },
+    {
+      "id": "bosuns_mates_c",
+      "name": "Boatswain's Mates' Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2929,75 2928,119 2955,120 2959,118 2959,108 2957,105 2959,101 2959,85 2954,82",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Boatswains Mates Room 1.jpg",
+        "chatRoom": "bosuns_mates_c"
+      }
+    },
+    {
+      "id": "firemens_wash_place_c",
+      "name": "Firemen's Wash Place",
+      "class": "crew",
+      "type": "bathroom",
+      "coordinates": "2849,223 2849,230 2851,235 2850,297 2857,299 2898,289 2896,287 2895,279 2895,256 2897,255 2897,251 2895,250 2894,222 2853,221",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Firemens Wash Place 1.jpg",
+        "chatRoom": "firemens_wash_place_c"
+      }
+    },
+    {
+      "id": "greasers_mess_c",
+      "name": "Greasers' Mess",
+      "class": "crew",
+      "type": "mess",
+      "coordinates": "2908,221 2899,221 2895,223 2896,250 2899,253 2896,256 2896,279 2897,287 2901,289 2928,282 2928,237 2922,234 2921,229 2915,227 2912,223",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Greasers Mess 1.jpg",
+        "chatRoom": "greasers_mess_c"
+      }
+    },
+    {
+      "id": "lamp_trimmer_storekeeper_c",
+      "name": "Lamp Trimmer and Storekeeper's Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "2929,236 2929,281 2961,272 2961,236",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Lamp Trimmer and Storekeepers Room 1.jpg",
+        "chatRoom": "lamp_trimmer_storekeeper_c"
+      }
     }
   ]
 };

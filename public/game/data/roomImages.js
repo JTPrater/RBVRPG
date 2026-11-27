@@ -903,6 +903,89 @@ roomImages.oilskin_locker_bd = {
 
 // <<< the boat-deck officers' house
 
+// >>> C deck amidships and under the forecastle: our own renders (scripts/images/install_c_deck_midships.py)
+roomImages.doctor_c = {
+  images: ["C Deck Doctors Room 1.jpg", "C Deck Doctors Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.chief_steward_c = {
+  images: ["C Deck Chief Stewards Room 1.jpg", "C Deck Chief Stewards Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.restaurant_manager_c = {
+  images: ["C Deck Restaurant Managers Room 1.jpg", "C Deck Restaurant Managers Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.assistant_doctor_c = {
+  images: ["C Deck Assistant Doctors Room 1.jpg", "C Deck Assistant Doctors Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.stewardesses_c = {
+  images: ["C Deck Stewardesses Room 1.jpg", "C Deck Stewardesses Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.crew_passage_c = {
+  images: ["C Deck Crew Passage 1.jpg", "C Deck Crew Passage 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_gents_lavatory_c = {
+  images: ["C Deck 1st Class Gentlemens Lavatory 1.jpg", "C Deck 1st Class Gentlemens Lavatory 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_ladies_lavatory_c = {
+  images: ["C Deck 1st Class Ladies Lavatory 1.jpg", "C Deck 1st Class Ladies Lavatory 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_gents_bath_c = {
+  images: ["C Deck 1st Class Gentlemens Bath 1.jpg", "C Deck 1st Class Gentlemens Bath 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.first_class_ladies_bath_c = {
+  images: ["C Deck 1st Class Ladies Bath 1.jpg", "C Deck 1st Class Ladies Bath 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.seamens_mess_c = {
+  images: ["C Deck Seamens Mess 1.jpg", "C Deck Seamens Mess 2.jpg", "C Deck Seamens Mess 3.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.petty_officers_c = {
+  images: ["C Deck Petty Officers Room 1.jpg", "C Deck Petty Officers Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.bosuns_mates_c = {
+  images: ["C Deck Boatswains Mates Room 1.jpg", "C Deck Boatswains Mates Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.firemens_wash_place_c = {
+  images: ["C Deck Firemens Wash Place 1.jpg", "C Deck Firemens Wash Place 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.greasers_mess_c = {
+  images: ["C Deck Greasers Mess 1.jpg", "C Deck Greasers Mess 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.lamp_trimmer_storekeeper_c = {
+  images: ["C Deck Lamp Trimmer and Storekeepers Room 1.jpg", "C Deck Lamp Trimmer and Storekeepers Room 2.jpg"],
+  currentIndex: 0,
+};
+
+// <<< C deck amidships and under the forecastle
+
   RBV.data = RBV.data || {};
   RBV.data.roomImages = roomImages;
   window.roomImages = roomImages;
