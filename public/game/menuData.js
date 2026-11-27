@@ -5850,5 +5850,83 @@ const MENU_DATA = [
     "warm": 0,
     "price": 0,
     "description": "The only meal that will have you asking:\nWHERE'S THE LAMB SAUCE?!?!"
+  },
+  {
+    "name": "Aspirin",
+    "image": "https://titanicvoyage-images.b-cdn.net/game/food/aspirin.png",
+    "localImage": "/images/game/menu/food/aspirin.png",
+    "topCategory": "food",
+    "subCategory": "medicine",
+    "hungry": 0,
+    "thirsty": 0,
+    "drunk": 0,
+    "warm": 0,
+    "price": 1,
+    "description": "Commonly used as relief for pain or fevers, Aspirin is one of the most important medications that\n all passenger vessels are required to carry, as per the Board of Trade Regulations."
+  },
+  {
+    "name": "Coughing Pills",
+    "image": "https://titanicvoyage-images.b-cdn.net/game/food/coughingPills.png",
+    "localImage": "/images/game/menu/food/coughingPills.png",
+    "topCategory": "food",
+    "subCategory": "medicine",
+    "hungry": 0,
+    "thirsty": 0,
+    "drunk": 0,
+    "warm": 0,
+    "price": 1,
+    "description": "While these won't help to cure that nasty cough which may be plaguing you, they will\nhelp to ease it somewhat, helping you feel better, while also mitigating the potential spread of disease!"
+  },
+  {
+    "name": "Mothersills Seasickness Remedy",
+    "image": "https://titanicvoyage-images.b-cdn.net/game/food/mothersillSeasicknessRemedy.png",
+    "localImage": "/images/game/menu/food/mothersillSeasicknessRemedy.png",
+    "topCategory": "food",
+    "subCategory": "medicine",
+    "hungry": 0,
+    "thirsty": 0,
+    "drunk": 0,
+    "warm": 0,
+    "price": 1,
+    "description": "ACTS IN THIRTY MINUTES. SURE CURE. MOTHERSILLS, after the most thorough tests, is now officially\nadopted and recommended by many transatlantic liners.\nGuaranteed not to contain cocaine, morphine, opium, or any of the coal-tar products."
+  },
+  {
+    "name": "Bicarbonate of Soda",
+    "image": "https://titanicvoyage-images.b-cdn.net/game/food/bicarbonateSoda.png",
+    "localImage": "/images/game/menu/soft_beverages/bicarbonateSoda.png",
+    "topCategory": "soft_beverages",
+    "subCategory": "medicine",
+    "hungry": 0,
+    "thirsty": 0,
+    "drunk": 0,
+    "warm": 0,
+    "price": 1,
+    "description": "More commonly known as baking soda, this is a common remedy for cases of indigestion or\nacid reflux. Just mix it into a cup of water and drink, and sweet relief will soon be yours."
+  },
+  {
+    "name": "Laudanum",
+    "image": "https://titanicvoyage-images.b-cdn.net/game/food/laudanum.png",
+    "localImage": "/images/game/menu/soft_beverages/laudanum.png",
+    "topCategory": "soft_beverages",
+    "subCategory": "medicine",
+    "hungry": 0,
+    "thirsty": 0,
+    "drunk": 0,
+    "warm": 0,
+    "price": 1,
+    "description": "A wildly popular drug since the Victorian era. Laudanum is a tincture of\n opium containing approximately 10% powdered opium, used to treat a variety of ailments\nincluding fevers and pain, inability to sleep, and even the crying of young babies."
+  },
+  {
+    "name": "Wake-Up Juice",
+    "image": "https://titanicvoyage-images.b-cdn.net/game/food/wakeUpJuice.png",
+    "localImage": "/images/game/menu/soft_beverages/wakeUpJuice.png",
+    "topCategory": "soft_beverages",
+    "subCategory": "medicine",
+    "hungry": 0,
+    "thirsty": 0,
+    "drunk": -25,
+    "warm": 0,
+    "price": 5,
+    "description": "A horrifying concoction that only the wisest of the old\nwestern bartenders are qualified to make. In about ten\nminutes, you will be as sober as a priest on Sunday."
   }
 ];

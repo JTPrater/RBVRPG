@@ -152,6 +152,8 @@
     "Alcoholic Beverages": "Bebidas alcohólicas",
     "Soft Beverages": "Bebidas sin alcohol",
     "Light Fare": "Platos ligeros",
+    "Medicine": "Medicinas",
+    "Medicinal Drinks": "Bebidas medicinales",
     "All": "Todo",
     "Beer": "Cerveza",
     "Cocktails": "Cócteles",

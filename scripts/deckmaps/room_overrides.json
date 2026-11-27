@@ -1980,6 +1980,164 @@
      276
     ]
    ]
+  },
+  "third_class_entrance_c": {
+   "seeds": [
+    [
+     359,
+     53
+    ]
+   ]
+  },
+  "third_class_general_room_c": {
+   "seeds": [
+    [
+     298,
+     276
+    ]
+   ]
+  },
+  "third_class_waiting_room_c": {
+   "seeds": [
+    [
+     314,
+     34
+    ],
+    [
+     319,
+     61
+    ]
+   ]
+  },
+  "surgery_c": {
+   "seeds": [
+    [
+     288,
+     61
+    ]
+   ]
+  },
+  "infectious_hospital_2_c": {
+   "seeds": [
+    [
+     209,
+     63
+    ]
+   ]
+  },
+  "infectious_hospital_1_c": {
+   "seeds": [
+    [
+     264,
+     39
+    ],
+    [
+     261,
+     63
+    ]
+   ]
+  },
+  "infectious_hospitals_passage_c": {
+   "seeds": [
+    [
+     230,
+     78
+    ],
+    [
+     291,
+     77
+    ]
+   ],
+   "shape": "box"
+  },
+  "infectious_hospitals_bath_c": {
+   "seeds": [
+    [
+     206,
+     102
+    ]
+   ]
+  },
+  "hospital_attendants_c": {
+   "seeds": [
+    [
+     312,
+     78
+    ],
+    [
+     317,
+     89
+    ],
+    [
+     312,
+     99
+    ]
+   ],
+   "shape": "box"
+  },
+  "hospital_1_c": {
+   "seeds": [
+    [
+     272,
+     94
+    ],
+    [
+     279,
+     114
+    ]
+   ]
+  },
+  "hospital_2_c": {
+   "seeds": [
+    [
+     243,
+     94
+    ],
+    [
+     242,
+     114
+    ]
+   ]
+  },
+  "hospital_3_c": {
+   "seeds": [
+    [
+     229,
+     159
+    ]
+   ]
+  },
+  "hospital_4_c": {
+   "seeds": [
+    [
+     212,
+     113
+    ],
+    [
+     208,
+     128
+    ]
+   ]
+  },
+  "hospital_passage_c": {
+   "seeds": [
+    [
+     299,
+     111
+    ],
+    [
+     242,
+     140
+    ]
+   ]
+  },
+  "hospital_bath_c": {
+   "seeds": [
+    [
+     262,
+     152
+    ]
+   ]
   }
  },
  "d_deck": {

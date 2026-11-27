@@ -802,6 +802,89 @@ roomImages.officers_wc_bd = {
 
 // <<< the boat-deck officers' house
 
+// >>> C deck aft, under the poop: our own renders (scripts/images/install_c_deck_aft.py)
+roomImages.third_class_entrance_c = {
+  images: ["C Deck 3rd Class Entrance 1.jpg", "C Deck 3rd Class Entrance 2.jpg", "C Deck 3rd Class Entrance 3.jpg", "C Deck 3rd Class Entrance 4.jpg", "C Deck 3rd Class Entrance 5.jpg", "C Deck 3rd Class Entrance 6.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.third_class_general_room_c = {
+  images: ["C Deck 3rd Class General Room 1.jpg", "C Deck 3rd Class General Room 2.jpg", "C Deck 3rd Class General Room 3.jpg", "C Deck 3rd Class General Room 4.jpg", "C Deck 3rd Class General Room 5.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.third_class_waiting_room_c = {
+  images: ["C Deck 3rd Class Waiting Room 1.jpg", "C Deck 3rd Class Waiting Room 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.surgery_c = {
+  images: ["C Deck Surgery 1.jpg", "C Deck Surgery 2.jpg", "C Deck Surgery 3.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.infectious_hospital_1_c = {
+  images: ["C Deck Infectious Hospital One 1.jpg", "C Deck Infectious Hospital One 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.infectious_hospital_2_c = {
+  images: ["C Deck Infectious Hospital Two 1.jpg", "C Deck Infectious Hospital Two 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.hospital_1_c = {
+  images: ["C Deck Hospital One 1.jpg", "C Deck Hospital One 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.hospital_2_c = {
+  images: ["C Deck Hospital Two 1.jpg", "C Deck Hospital Two 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.hospital_3_c = {
+  images: ["C Deck Hospital Three 1.jpg", "C Deck Hospital Three 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.hospital_4_c = {
+  images: ["C Deck Hospital Four 1.jpg", "C Deck Hospital Four 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.hospital_attendants_c = {
+  images: ["C Deck Hospital Attendants 1.jpg", "C Deck Hospital Attendants 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.infectious_hospitals_passage_c = {
+  images: ["C Deck Infectious Hospitals Passage 1.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.infectious_hospitals_bath_c = {
+  images: ["C Deck Infectious Hospitals Bath 1.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.hospital_passage_c = {
+  images: ["C Deck Hospital Passage 1.jpg", "C Deck Hospital Passage 2.jpg", "C Deck Hospital Passage 3.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.hospital_bath_c = {
+  images: ["C Deck Hospital Bath 1.jpg", "C Deck Hospital Bath 2.jpg"],
+  currentIndex: 0,
+};
+
+roomImages.padded_room = {
+  images: ["C Deck Padded Room 1.jpg", "C Deck Padded Room 2.jpg"],
+  currentIndex: 0,
+};
+
+// <<< C deck aft
+
   RBV.data = RBV.data || {};
   RBV.data.roomImages = roomImages;
   window.roomImages = roomImages;

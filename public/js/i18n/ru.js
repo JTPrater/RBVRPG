@@ -160,6 +160,8 @@
     "Alcoholic Beverages": "Алкогольные",
     "Soft Beverages": "Безалкогольные",
     "Light Fare": "Лёгкие блюда",
+    "Medicine": "Лекарства",
+    "Medicinal Drinks": "Микстуры",
     "All": "Всё",
     "Beer": "Пиво",
     "Cocktails": "Коктейли",
