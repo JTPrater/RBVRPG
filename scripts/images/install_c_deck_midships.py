@@ -1,4 +1,4 @@
-"""C deck amidships, forward and under the forecastle, in the game: the rooms' pictures (2026-11-27; 42 rooms in three
+"""C deck amidships, forward and under the forecastle, in the game: the rooms' pictures (2026-11-27; 46 rooms in four
 releases).
 
 The pictures are our own renders (blender/c_deck_midships/renders, 1920 x 1080; see its README.md, which is
@@ -88,6 +88,11 @@ ROOMS = [
     ("potato_store_c", "C Deck Potato Store", ["Potato_Store"], "lamp"),
     ("galley_store_c", "C Deck Galley Store", ["Galley_Store"], "lamp"),
     ("firemens_wcs_c", "C Deck Firemens WCs", ["Firemens_WCs"], "3"),
+    # the doctor's consulting room, the deck engineers' room aft, two first-class pantries
+    ("consulting_room_c", "C Deck Consulting Room", ["Consulting_Room"], "3"),
+    ("deck_engineers_c", "C Deck Deck Engineers Room", ["Deck_Engineers"], "3"),
+    ("forward_pantry_c", "C Deck Forward Pantry", ["Forward_Pantry"], "lamp"),
+    ("midship_pantry_c", "C Deck Midship Pantry", ["Midship_Pantry"], "lamp"),
 ]
 ON_PLAN = [r for r in ROOMS if r[0] != "padded_room"]       # the padded room is the moderators' cell, on no plan
 KINDS = (("day", None), ("sunset", "britannic (twilight)"), ("night", "britannic (night)"))

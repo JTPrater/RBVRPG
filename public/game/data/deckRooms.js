@@ -2246,6 +2246,54 @@
         "image": "C Deck Firemens WCs 1.jpg",
         "chatRoom": "firemens_wcs_c"
       }
+    },
+    {
+      "id": "consulting_room_c",
+      "name": "Consulting Room",
+      "class": "crew",
+      "type": "surgery",
+      "coordinates": "847,13 847,42 888,42 888,13",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Consulting Room 1.jpg",
+        "chatRoom": "consulting_room_c"
+      }
+    },
+    {
+      "id": "deck_engineers_c",
+      "name": "Deck Engineer and Assistant's Room",
+      "class": "crew",
+      "type": "cabin",
+      "coordinates": "177,259 177,292 201,295 201,259",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Deck Engineers Room 1.jpg",
+        "chatRoom": "deck_engineers_c"
+      }
+    },
+    {
+      "id": "forward_pantry_c",
+      "name": "Forward Pantry",
+      "class": "crew",
+      "type": "pantry",
+      "coordinates": "2140,178 2140,215 2164,215 2164,178",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Forward Pantry 1.jpg",
+        "chatRoom": "forward_pantry_c"
+      }
+    },
+    {
+      "id": "midship_pantry_c",
+      "name": "Midship Pantry",
+      "class": "crew",
+      "type": "pantry",
+      "coordinates": "1526,178 1526,196 1561,196 1561,178",
+      "isSVG": true,
+      "location": {
+        "image": "C Deck Midship Pantry 1.jpg",
+        "chatRoom": "midship_pantry_c"
+      }
     }
   ]
 };

@@ -2385,6 +2385,11 @@ document.addEventListener("DOMContentLoaded", function () {
         potato_store_c: "Potato Store",
         galley_store_c: "Galley Store",
         firemens_wcs_c: "Firemen's W.C.s",
+        // C deck: the doctor's consulting room, the deck engineers' room, two pantries (2026-11-27)
+        consulting_room_c: "Consulting Room",
+        deck_engineers_c: "Deck Engineer and Assistant's Room",
+        forward_pantry_c: "Forward Pantry",
+        midship_pantry_c: "Midship Pantry",
         padded_room: "Padded Room",
         hell: "Hell",
       };
