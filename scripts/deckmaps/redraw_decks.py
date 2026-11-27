@@ -37,9 +37,13 @@ ACCENT = (176, 58, 46)      # the red centreline and frame marks
 # Walls that the 1914 drawing does not show, in map pixels (x0, y0, x1, y1, inclusive), drawn in the drawing's own
 # ink. C deck: the second-class gymnasium at No 5 hatch, starboard (it was added after 1914; measured from the
 # third-party plan's sheet 2 and fitted to this map's walls: its fore wall is the entrance's after bulkhead, its
-# inboard wall runs on from the stair casing's side, 4.9 m by 5.75 m inside).
+# inboard wall runs on from the stair casing's side, 4.9 m by 5.75 m inside). Under the forecastle, port side: the
+# partition between the seamen's mess and the petty officers' room (the 1914 drawing has one mess there; Britannic as
+# built has the petty officers' room in its fore end, measured on the same sheet: from the ship's side down to the
+# carpenter's store, the room 2.05 m fore and aft; the 1914 "P. Officers" room forward of it is the boatswain's mates').
 ADDED_WALLS = {
-    "c_deck": [(497, 208, 534, 209), (496, 205, 497, 269), (496, 268, 568, 269), (567, 262, 568, 269)],
+    "c_deck": [(497, 208, 534, 209), (496, 205, 497, 269), (496, 268, 568, 269), (567, 262, 568, 269),
+               (2904, 67, 2905, 120)],
 }
 
 

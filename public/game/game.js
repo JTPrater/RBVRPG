@@ -2338,6 +2338,24 @@ document.addEventListener("DOMContentLoaded", function () {
         // C deck, the second-class house (2026-11-27)
         second_class_library_c: "2nd Class Library",
         second_class_gymnasium_c: "2nd Class Gymnasium",
+        // C deck amidships, the house abaft the turbine engine casing (2026-11-27)
+        doctor_c: "Doctor's Room",
+        assistant_doctor_c: "Assistant Doctor's Room",
+        chief_steward_c: "Chief Steward's Room",
+        restaurant_manager_c: "Restaurant Manager's Room",
+        stewardesses_c: "Stewardesses' Room",
+        crew_passage_c: "Crew Passage",
+        first_class_gents_lavatory_c: "Gentlemen's Lavatory",
+        first_class_ladies_lavatory_c: "Ladies' Lavatory",
+        first_class_gents_bath_c: "Gentlemen's Bath",
+        first_class_ladies_bath_c: "Ladies' Bath",
+        // C deck under the forecastle (2026-11-27)
+        seamens_mess_c: "Seamen's Mess",
+        petty_officers_c: "Petty Officers' Room",
+        bosuns_mates_c: "Boatswain's Mates' Room",
+        firemens_wash_place_c: "Firemen's Wash Place",
+        greasers_mess_c: "Greasers' Mess",
+        lamp_trimmer_storekeeper_c: "Lamp Trimmer and Storekeeper's Room",
         padded_room: "Padded Room",
         hell: "Hell",
       };
@@ -2488,6 +2506,8 @@ document.addEventListener("DOMContentLoaded", function () {
           "waiting-room",
           // C deck, the second-class house (2026-11-27): the library
           "library",
+          // C deck under the forecastle (2026-11-27): the seamen's and greasers' messes
+          "mess",
         ];
 
         const eatDrinkBtn = document.getElementById("eat-drink-btn");
