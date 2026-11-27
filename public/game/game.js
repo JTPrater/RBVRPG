@@ -2601,9 +2601,10 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         }
 
-        // Engine order telegraph: bridge/wheelhouse prop only
+        // Engine order telegraph: on the bridge only. The telegraphs stood on the
+        // open bridge in front of the wheelhouse; the wheelhouse held the wheel.
         if (window.RBV && window.RBV.telegraph) {
-          if (room.id === "bridge_bd" || room.id === "wheelhouse_bd") {
+          if (room.id === "bridge_bd") {
             window.RBV.telegraph.show();
           } else {
             window.RBV.telegraph.hide();
